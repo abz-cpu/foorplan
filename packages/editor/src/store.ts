@@ -8,7 +8,7 @@ import {
 } from '@floorplan/core';
 import { BASE_PX_PER_MM, ZOOM_MAX, ZOOM_MIN } from './constants';
 
-export type Tool = 'select' | 'wall' | 'room';
+export type Tool = 'select' | 'wall' | 'room' | 'door' | 'window' | 'stairs';
 export type SaveState = 'saved' | 'saving' | 'unsaved';
 
 export interface Viewport {

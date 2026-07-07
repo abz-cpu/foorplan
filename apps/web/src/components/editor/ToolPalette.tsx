@@ -18,6 +18,9 @@ export const TOOL_HINTS: Record<Tool, string> = {
   select: 'Select — tap a room to edit it, drag empty space to pan',
   wall: 'Wall — click to place points, click the last point again or Esc to finish',
   room: 'Room — drag a rectangle to add a room',
+  door: 'Door — click a wall to place, drag with Select to slide',
+  window: 'Window — click a wall to place, drag with Select to slide',
+  stairs: 'Stairs — drag a rectangle to place a flight',
 };
 
 interface PaletteEntry {
@@ -30,9 +33,9 @@ const ENTRIES: PaletteEntry[] = [
   { id: 'select', tip: 'Select (V)', enabled: true },
   { id: 'wall', tip: 'Wall (W)', enabled: true },
   { id: 'room', tip: 'Room (R)', enabled: true },
-  { id: 'door', tip: 'Door — coming soon', enabled: false },
-  { id: 'window', tip: 'Window — coming soon', enabled: false },
-  { id: 'stairs', tip: 'Stairs — coming soon', enabled: false },
+  { id: 'door', tip: 'Door (D)', enabled: true },
+  { id: 'window', tip: 'Window (N)', enabled: true },
+  { id: 'stairs', tip: 'Stairs (S)', enabled: true },
 ];
 
 const EXTRA: PaletteEntry[] = [

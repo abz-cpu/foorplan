@@ -1,24 +1,37 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Circle, Group, Label, Layer, Line, Rect, Stage, Tag, Text } from 'react-konva';
+import { Arc, Circle, Group, Label, Layer, Line, Rect, Stage, Tag, Text } from 'react-konva';
 import type Konva from 'konva';
 import type { KonvaEventObject } from 'konva/lib/Node';
 import {
+  addOpening,
   addRoom,
   addWall,
+  clampOpeningOffset,
   DEFAULT_CEILING_HEIGHT_M,
+  DEFAULT_DOOR_WIDTH_MM,
   DEFAULT_WALL_THICKNESS_MM,
+  DEFAULT_WINDOW_WIDTH_MM,
   distance,
+  findWall,
   formatAreaM2,
   formatDims,
   formatMmAsM,
+  nearestOffsetOnWall,
+  nearestWall,
   newId,
+  openingJambs,
   roomAreaM2,
   snapPointToGrid,
+  snapValueToGrid,
   snapWallEnd,
+  updateOpening,
   updateRoom,
-  wallEndpoints,
+  wallNormal,
+  wallSegments,
+  type Opening,
   type Point,
   type RoomRect,
+  type Wall,
 } from '@floorplan/core';
 import {
   BASE_PX_PER_MM,
@@ -30,10 +43,11 @@ import {
   ZOOM_MIN,
   ZOOM_STEP,
 } from './constants';
-import { useEditorStore } from './store';
+import { useEditorStore, type Tool } from './store';
 
 /* Canvas drawing palette — matches the design drafts. */
 const WALL = '#1F312C';
+const WALL_LIGHT = '#4A5D57';
 const ACTION = '#0B7A5E';
 const SELECT_FILL = 'rgba(11,122,94,0.08)';
 const ROOM_EDGE = '#D8E1DD';
@@ -43,6 +57,145 @@ const SANS = "'Instrument Sans', system-ui, sans-serif";
 const MONO = "'IBM Plex Mono', monospace";
 
 const clampZoom = (z: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
+
+const isDraftingTool = (t: Tool) => t === 'room' || t === 'stairs';
+
+function StairsTreads({ room }: { room: RoomRect }) {
+  const horizontal = room.w >= room.h;
+  const spacing = 280;
+  const treads: number[] = [];
+  if (horizontal) {
+    for (let x = spacing; x < room.w - 40; x += spacing) treads.push(x);
+  } else {
+    for (let y = spacing; y < room.h - 40; y += spacing) treads.push(y);
+  }
+  return (
+    <>
+      {treads.map((t) => (
+        <Line
+          key={t}
+          points={horizontal ? [t, 0, t, room.h] : [0, t, room.w, t]}
+          stroke={WALL_LIGHT}
+          strokeWidth={16}
+          listening={false}
+        />
+      ))}
+      {horizontal ? (
+        <>
+          <Line points={[120, room.h / 2, room.w - 200, room.h / 2]} stroke={INK} strokeWidth={22} listening={false} />
+          <Line
+            points={[room.w - 320, room.h / 2 - 110, room.w - 200, room.h / 2, room.w - 320, room.h / 2 + 110]}
+            stroke={INK}
+            strokeWidth={22}
+            listening={false}
+          />
+        </>
+      ) : (
+        <>
+          <Line points={[room.w / 2, 120, room.w / 2, room.h - 200]} stroke={INK} strokeWidth={22} listening={false} />
+          <Line
+            points={[room.w / 2 - 110, room.h - 320, room.w / 2, room.h - 200, room.w / 2 + 110, room.h - 320]}
+            stroke={INK}
+            strokeWidth={22}
+            listening={false}
+          />
+        </>
+      )}
+    </>
+  );
+}
+
+function OpeningShape({
+  wall,
+  opening,
+  selected,
+  onSelect,
+  onGrab,
+}: {
+  wall: Wall;
+  opening: Opening;
+  selected: boolean;
+  onSelect: () => void;
+  onGrab: () => void;
+}) {
+  const { start, end } = openingJambs(wall, opening);
+  const n = wallNormal(wall);
+  const t = wall.thickness;
+  const color = selected ? ACTION : WALL;
+  const colorLight = selected ? ACTION : WALL_LIGHT;
+
+  const parts: React.ReactNode[] = [];
+  if (opening.kind === 'window') {
+    for (const s of [t * 0.28, -t * 0.28]) {
+      parts.push(
+        <Line
+          key={`w${s}`}
+          points={[start.x + n.x * s, start.y + n.y * s, end.x + n.x * s, end.y + n.y * s]}
+          stroke={color}
+          strokeWidth={22}
+          listening={false}
+        />,
+      );
+    }
+    for (const p of [start, end]) {
+      parts.push(
+        <Line
+          key={`j${p.x},${p.y}`}
+          points={[p.x + n.x * (t / 2), p.y + n.y * (t / 2), p.x - n.x * (t / 2), p.y - n.y * (t / 2)]}
+          stroke={color}
+          strokeWidth={22}
+          listening={false}
+        />,
+      );
+    }
+  } else {
+    const hinge = opening.hinge === 'left' ? start : end;
+    const jamb = opening.hinge === 'left' ? end : start;
+    const tip = { x: hinge.x + n.x * opening.widthMm, y: hinge.y + n.y * opening.widthMm };
+    const startDeg = (Math.atan2(jamb.y - hinge.y, jamb.x - hinge.x) * 180) / Math.PI;
+    const endDeg = (Math.atan2(tip.y - hinge.y, tip.x - hinge.x) * 180) / Math.PI;
+    let delta = endDeg - startDeg;
+    while (delta > 180) delta -= 360;
+    while (delta < -180) delta += 360;
+    parts.push(
+      <Line
+        key="leaf"
+        points={[hinge.x, hinge.y, tip.x, tip.y]}
+        stroke={colorLight}
+        strokeWidth={25}
+        listening={false}
+      />,
+      <Arc
+        key="swing"
+        x={hinge.x}
+        y={hinge.y}
+        innerRadius={opening.widthMm}
+        outerRadius={opening.widthMm}
+        angle={Math.abs(delta)}
+        rotation={delta >= 0 ? startDeg : endDeg}
+        stroke={colorLight}
+        strokeWidth={20}
+        listening={false}
+      />,
+    );
+  }
+
+  return (
+    <Group>
+      {parts}
+      {/* invisible grab/hit region across the opening */}
+      <Line
+        points={[start.x, start.y, end.x, end.y]}
+        stroke="rgba(0,0,0,0.001)"
+        strokeWidth={Math.max(t * 3, 360)}
+        onClick={onSelect}
+        onTap={onSelect}
+        onMouseDown={onGrab}
+        onTouchStart={onGrab}
+      />
+    </Group>
+  );
+}
 
 export function EditorCanvas({ className = '' }: { className?: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -66,10 +219,13 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
   /* Draft interaction state */
   const [wallStart, setWallStart] = useState<Point | null>(null);
   const [hoverPt, setHoverPt] = useState<Point | null>(null);
-  const [roomDraft, setRoomDraft] = useState<{ a: Point; b: Point } | null>(null);
+  const [rectDraft, setRectDraft] = useState<{ a: Point; b: Point; stairs: boolean } | null>(null);
   const [resizeDraft, setResizeDraft] = useState<RoomRect | null>(null);
+  const [openingHover, setOpeningHover] = useState<{ wall: Wall; offsetMm: number } | null>(null);
+  const [openingDraft, setOpeningDraft] = useState<{ id: string; offsetMm: number } | null>(null);
   const panDrag = useRef<{ pointer: Point; pan: Point } | null>(null);
   const pinch = useRef<{ dist: number; center: Point } | null>(null);
+  const openingDrag = useRef<{ id: string; wallId: string } | null>(null);
 
   /* Track container size */
   useEffect(() => {
@@ -82,27 +238,31 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
     return () => ro.disconnect();
   }, [setViewport]);
 
-  /* Reset drafts when the tool changes */
-  useEffect(() => {
+  const clearDrafts = useCallback(() => {
     setWallStart(null);
     setHoverPt(null);
-    setRoomDraft(null);
+    setRectDraft(null);
     setResizeDraft(null);
-  }, [tool]);
+    setOpeningHover(null);
+    setOpeningDraft(null);
+    openingDrag.current = null;
+  }, []);
+
+  /* Reset drafts when the tool changes */
+  useEffect(() => {
+    clearDrafts();
+  }, [tool, clearDrafts]);
 
   /* Escape cancels drafts and selection */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
-      setWallStart(null);
-      setHoverPt(null);
-      setRoomDraft(null);
-      setResizeDraft(null);
+      clearDrafts();
       select(null);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [select]);
+  }, [select, clearDrafts]);
 
   const toWorld = useCallback(
     (screen: Point): Point => ({
@@ -121,7 +281,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
     (raw: Point, start: Point | null): Point =>
       snapWallEnd(raw, start, {
         gridMm: snapEnabled ? GRID_MM : 1,
-        endpoints: wallEndpoints(doc),
+        endpoints: doc.walls.flatMap((w) => [w.a, w.b]),
         endpointToleranceMm: ENDPOINT_TOLERANCE_PX / scale,
         orthoToleranceDeg: snapEnabled ? 7 : 0,
       }),
@@ -133,6 +293,8 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
     [snapEnabled],
   );
 
+  const wallHitToleranceMm = 24 / scale;
+
   /* ---- shared pointer logic (mouse + single touch) ---- */
 
   const pointerDown = (isStageTarget: boolean, screen: Point) => {
@@ -143,6 +305,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
     }
     const raw = pointerWorld();
     if (!raw) return;
+
     if (tool === 'wall') {
       const pt = snapEnd(raw, wallStart);
       if (!wallStart) {
@@ -163,9 +326,29 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
         setWallStart(null);
         setHoverPt(pt);
       }
-    } else if (tool === 'room') {
+    } else if (isDraftingTool(tool)) {
       const a = snapFree(raw);
-      setRoomDraft({ a, b: a });
+      setRectDraft({ a, b: a, stairs: tool === 'stairs' });
+    } else if (tool === 'door' || tool === 'window') {
+      const hit = nearestWall(doc, raw, wallHitToleranceMm);
+      if (!hit) return;
+      const width = tool === 'door' ? DEFAULT_DOOR_WIDTH_MM : DEFAULT_WINDOW_WIDTH_MM;
+      const offset = clampOpeningOffset(
+        hit.wall,
+        snapEnabled ? snapValueToGrid(hit.offsetMm, GRID_MM) : hit.offsetMm,
+        width,
+      );
+      const opening: Opening = {
+        id: newId(),
+        wallId: hit.wall.id,
+        kind: tool,
+        offsetMm: offset,
+        widthMm: width,
+        hinge: 'left',
+      };
+      commit(tool === 'door' ? 'Place door' : 'Place window', addOpening(doc, opening));
+      select(opening.id);
+      setOpeningHover(null);
     }
   };
 
@@ -177,38 +360,74 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
       });
       return;
     }
+    if (openingDrag.current) {
+      const raw = pointerWorld();
+      const wall = findWall(doc, openingDrag.current.wallId);
+      if (raw && wall) {
+        setOpeningDraft({
+          id: openingDrag.current.id,
+          offsetMm: snapEnabled
+            ? snapValueToGrid(nearestOffsetOnWall(wall, raw), GRID_MM)
+            : nearestOffsetOnWall(wall, raw),
+        });
+      }
+      return;
+    }
     if (tool === 'wall') {
       const raw = pointerWorld();
       if (raw) setHoverPt(snapEnd(raw, wallStart));
-    } else if (tool === 'room' && roomDraft) {
+    } else if (isDraftingTool(tool) && rectDraft) {
       const raw = pointerWorld();
-      if (raw) setRoomDraft({ a: roomDraft.a, b: snapFree(raw) });
+      if (raw) setRectDraft({ ...rectDraft, b: snapFree(raw) });
+    } else if (tool === 'door' || tool === 'window') {
+      const raw = pointerWorld();
+      if (raw) {
+        const hit = nearestWall(doc, raw, wallHitToleranceMm);
+        setOpeningHover(hit ? { wall: hit.wall, offsetMm: hit.offsetMm } : null);
+      }
     }
   };
 
   const pointerUp = () => {
     panDrag.current = null;
-    if (tool === 'room' && roomDraft) {
-      const x = Math.min(roomDraft.a.x, roomDraft.b.x);
-      const y = Math.min(roomDraft.a.y, roomDraft.b.y);
-      const w = Math.abs(roomDraft.b.x - roomDraft.a.x);
-      const h = Math.abs(roomDraft.b.y - roomDraft.a.y);
+
+    if (openingDrag.current && openingDraft) {
+      const wall = findWall(doc, openingDrag.current.wallId);
+      const opening = doc.openings.find((o) => o.id === openingDrag.current?.id);
+      if (wall && opening) {
+        const clamped = clampOpeningOffset(wall, openingDraft.offsetMm, opening.widthMm);
+        if (clamped !== opening.offsetMm) {
+          commit('Move opening', updateOpening(doc, opening.id, { offsetMm: clamped }));
+        }
+      }
+      openingDrag.current = null;
+      setOpeningDraft(null);
+      return;
+    }
+    openingDrag.current = null;
+
+    if (isDraftingTool(tool) && rectDraft) {
+      const x = Math.min(rectDraft.a.x, rectDraft.b.x);
+      const y = Math.min(rectDraft.a.y, rectDraft.b.y);
+      const w = Math.abs(rectDraft.b.x - rectDraft.a.x);
+      const h = Math.abs(rectDraft.b.y - rectDraft.a.y);
       if (w >= MIN_ROOM_MM && h >= MIN_ROOM_MM) {
+        const stairs = rectDraft.stairs;
         const room: RoomRect = {
           id: newId(),
           x,
           y,
           w,
           h,
-          name: `Room ${doc.rooms.length + 1}`,
-          type: 'Other',
+          name: stairs ? 'Stairs' : `Room ${doc.rooms.length + 1}`,
+          type: stairs ? 'Stairs' : 'Other',
           ceilingHeightM: DEFAULT_CEILING_HEIGHT_M,
-          includeInGia: true,
+          includeInGia: !stairs,
         };
-        commit('Add room', addRoom(doc, room));
+        commit(stairs ? 'Add stairs' : 'Add room', addRoom(doc, room));
         select(room.id);
       }
-      setRoomDraft(null);
+      setRectDraft(null);
     }
   };
 
@@ -258,7 +477,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
     if (e.evt.touches.length === 2) {
       e.evt.preventDefault();
       pinch.current = touchCenterDist(e.evt.touches);
-      setRoomDraft(null);
+      setRectDraft(null);
       return;
     }
     const t = e.evt.touches[0];
@@ -352,14 +571,30 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
     ));
   };
 
-  const roomDraftRect = roomDraft
+  const rectDraftRect = rectDraft
     ? {
-        x: Math.min(roomDraft.a.x, roomDraft.b.x),
-        y: Math.min(roomDraft.a.y, roomDraft.b.y),
-        w: Math.abs(roomDraft.b.x - roomDraft.a.x),
-        h: Math.abs(roomDraft.b.y - roomDraft.a.y),
+        x: Math.min(rectDraft.a.x, rectDraft.b.x),
+        y: Math.min(rectDraft.a.y, rectDraft.b.y),
+        w: Math.abs(rectDraft.b.x - rectDraft.a.x),
+        h: Math.abs(rectDraft.b.y - rectDraft.a.y),
       }
     : null;
+
+  /* Ghost preview for door/window placement */
+  const openingGhost = (() => {
+    if ((tool !== 'door' && tool !== 'window') || !openingHover) return null;
+    const width = tool === 'door' ? DEFAULT_DOOR_WIDTH_MM : DEFAULT_WINDOW_WIDTH_MM;
+    const temp: Opening = {
+      id: 'ghost',
+      wallId: openingHover.wall.id,
+      kind: tool,
+      offsetMm: clampOpeningOffset(openingHover.wall, openingHover.offsetMm, width),
+      widthMm: width,
+      hinge: 'left',
+    };
+    const { start, end } = openingJambs(openingHover.wall, temp);
+    return { start, end, thickness: openingHover.wall.thickness };
+  })();
 
   return (
     <div
@@ -400,10 +635,11 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
         onTouchEnd={onTouchEnd}
       >
         <Layer>
-          {/* Rooms */}
+          {/* Rooms (incl. stairs) */}
           {doc.rooms.map((room) => {
             const r = resizeDraft?.id === room.id ? resizeDraft : room;
             const isSel = selectedId === room.id;
+            const stairs = room.type === 'Stairs';
             return (
               <Group
                 key={room.id}
@@ -427,38 +663,47 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
                   strokeWidth={isSel ? 34 : 18}
                   dash={isSel ? [110, 75] : undefined}
                 />
-                <Text
-                  text={r.name}
-                  width={r.w}
-                  y={r.h / 2 - 320}
-                  align="center"
-                  fontSize={260}
-                  fontFamily={SANS}
-                  fontStyle="600"
-                  fill={INK}
-                  listening={false}
-                />
-                <Text
-                  text={formatAreaM2(roomAreaM2(r))}
-                  width={r.w}
-                  y={r.h / 2 + 60}
-                  align="center"
-                  fontSize={185}
-                  fontFamily={MONO}
-                  fill={FAINT}
-                  listening={false}
-                />
+                {stairs ? (
+                  <StairsTreads room={r} />
+                ) : (
+                  <>
+                    <Text
+                      text={r.name}
+                      width={r.w}
+                      y={r.h / 2 - 320}
+                      align="center"
+                      fontSize={260}
+                      fontFamily={SANS}
+                      fontStyle="600"
+                      fill={INK}
+                      listening={false}
+                    />
+                    <Text
+                      text={formatAreaM2(roomAreaM2(r))}
+                      width={r.w}
+                      y={r.h / 2 + 60}
+                      align="center"
+                      fontSize={185}
+                      fontFamily={MONO}
+                      fill={FAINT}
+                      listening={false}
+                    />
+                  </>
+                )}
               </Group>
             );
           })}
 
-          {/* Walls */}
+          {/* Walls (cut around openings) */}
           {doc.walls.map((w) => {
             const isSel = selectedId === w.id;
-            return (
+            const openings = doc.openings.map((o) =>
+              openingDraft && o.id === openingDraft.id ? { ...o, offsetMm: openingDraft.offsetMm } : o,
+            );
+            return wallSegments(w, openings).map((seg, i) => (
               <Line
-                key={w.id}
-                points={[w.a.x, w.a.y, w.b.x, w.b.y]}
+                key={`${w.id}-${i}`}
+                points={[seg.a.x, seg.a.y, seg.b.x, seg.b.y]}
                 stroke={isSel ? ACTION : WALL}
                 strokeWidth={w.thickness}
                 lineCap="square"
@@ -466,8 +711,41 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
                 onClick={() => tool === 'select' && select(w.id)}
                 onTap={() => tool === 'select' && select(w.id)}
               />
+            ));
+          })}
+
+          {/* Openings */}
+          {doc.openings.map((o) => {
+            const wall = findWall(doc, o.wallId);
+            if (!wall) return null;
+            const effective = openingDraft && o.id === openingDraft.id ? { ...o, offsetMm: openingDraft.offsetMm } : o;
+            return (
+              <OpeningShape
+                key={o.id}
+                wall={wall}
+                opening={effective}
+                selected={selectedId === o.id}
+                onSelect={() => tool === 'select' && select(o.id)}
+                onGrab={() => {
+                  if (tool !== 'select') return;
+                  select(o.id);
+                  openingDrag.current = { id: o.id, wallId: o.wallId };
+                }}
+              />
             );
           })}
+
+          {/* Door/window placement ghost */}
+          {openingGhost && (
+            <Line
+              points={[openingGhost.start.x, openingGhost.start.y, openingGhost.end.x, openingGhost.end.y]}
+              stroke={ACTION}
+              strokeWidth={Math.max(openingGhost.thickness * 1.6, 220)}
+              opacity={0.4}
+              lineCap="butt"
+              listening={false}
+            />
+          )}
 
           {/* Wall draft preview */}
           {tool === 'wall' && hoverPt && !wallStart && (
@@ -501,14 +779,14 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
             </>
           )}
 
-          {/* Room draft preview */}
-          {roomDraftRect && roomDraftRect.w > 0 && roomDraftRect.h > 0 && (
+          {/* Room/stairs draft preview */}
+          {rectDraftRect && rectDraftRect.w > 0 && rectDraftRect.h > 0 && (
             <>
               <Rect
-                x={roomDraftRect.x}
-                y={roomDraftRect.y}
-                width={roomDraftRect.w}
-                height={roomDraftRect.h}
+                x={rectDraftRect.x}
+                y={rectDraftRect.y}
+                width={rectDraftRect.w}
+                height={rectDraftRect.h}
                 fill={SELECT_FILL}
                 stroke={ACTION}
                 strokeWidth={26}
@@ -516,13 +794,13 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
                 listening={false}
               />
               <Label
-                x={roomDraftRect.x + roomDraftRect.w / 2}
-                y={roomDraftRect.y - 380}
+                x={rectDraftRect.x + rectDraftRect.w / 2}
+                y={rectDraftRect.y - 380}
                 listening={false}
               >
                 <Tag fill="#FFFFFF" opacity={0.94} cornerRadius={90} />
                 <Text
-                  text={formatDims(roomDraftRect.w, roomDraftRect.h)}
+                  text={formatDims(rectDraftRect.w, rectDraftRect.h)}
                   fontSize={210}
                   fontFamily={MONO}
                   fill={ACTION}

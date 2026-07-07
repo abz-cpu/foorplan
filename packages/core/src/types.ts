@@ -51,11 +51,24 @@ export interface TextLabel {
   text: string;
 }
 
+/** A door or window cut into a wall, positioned along it. */
+export interface Opening {
+  id: string;
+  wallId: string;
+  kind: 'door' | 'window';
+  /** centre of the opening measured along the wall from endpoint `a`, mm */
+  offsetMm: number;
+  widthMm: number;
+  /** door only: which jamb carries the hinge (relative to a→b direction) */
+  hinge: 'left' | 'right';
+}
+
 export interface FloorDoc {
   schemaVersion: 1;
   walls: Wall[];
   rooms: RoomRect[];
   labels: TextLabel[];
+  openings: Opening[];
 }
 
 export type PropertyStatus = 'draft' | 'ready' | 'exported';
@@ -63,3 +76,5 @@ export type PropertyStatus = 'draft' | 'ready' | 'exported';
 export const DEFAULT_WALL_THICKNESS_MM = 100;
 export const DEFAULT_CEILING_HEIGHT_M = 2.4;
 export const DEFAULT_GRID_MM = 100;
+export const DEFAULT_DOOR_WIDTH_MM = 826;
+export const DEFAULT_WINDOW_WIDTH_MM = 1200;

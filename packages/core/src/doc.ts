@@ -1,7 +1,7 @@
-import type { FloorDoc, RoomRect, TextLabel, Wall } from './types';
+import type { FloorDoc, Opening, RoomRect, TextLabel, Wall } from './types';
 
 export function emptyFloorDoc(): FloorDoc {
-  return { schemaVersion: 1, walls: [], rooms: [], labels: [] };
+  return { schemaVersion: 1, walls: [], rooms: [], labels: [], openings: [] };
 }
 
 export function serializeDoc(doc: FloorDoc): string {
@@ -18,7 +18,14 @@ export function parseDoc(json: string): FloorDoc {
     walls: raw.walls ?? [],
     rooms: raw.rooms ?? [],
     labels: raw.labels ?? [],
+    // additive field — docs saved before openings existed parse fine
+    openings: raw.openings ?? [],
   };
+}
+
+/** Normalise docs loaded from storage that predate newer additive fields. */
+export function normalizeDoc(doc: FloorDoc): FloorDoc {
+  return doc.openings ? doc : { ...doc, openings: [] };
 }
 
 /* Immutable update helpers — every mutation returns a new doc. */
@@ -49,13 +56,29 @@ export function updateWall(doc: FloorDoc, id: string, patch: Partial<Omit<Wall, 
   };
 }
 
-/** Remove any entity (wall, room, or label) by id. */
+export function addOpening(doc: FloorDoc, opening: Opening): FloorDoc {
+  return { ...doc, openings: [...doc.openings, opening] };
+}
+
+export function updateOpening(
+  doc: FloorDoc,
+  id: string,
+  patch: Partial<Omit<Opening, 'id' | 'wallId'>>,
+): FloorDoc {
+  return {
+    ...doc,
+    openings: doc.openings.map((o) => (o.id === id ? { ...o, ...patch } : o)),
+  };
+}
+
+/** Remove any entity by id. Deleting a wall also removes its openings. */
 export function deleteEntity(doc: FloorDoc, id: string): FloorDoc {
   return {
     ...doc,
     walls: doc.walls.filter((w) => w.id !== id),
     rooms: doc.rooms.filter((r) => r.id !== id),
     labels: doc.labels.filter((l) => l.id !== id),
+    openings: doc.openings.filter((o) => o.id !== id && o.wallId !== id),
   };
 }
 
@@ -65,6 +88,10 @@ export function findRoom(doc: FloorDoc, id: string): RoomRect | undefined {
 
 export function findWall(doc: FloorDoc, id: string): Wall | undefined {
   return doc.walls.find((w) => w.id === id);
+}
+
+export function findOpening(doc: FloorDoc, id: string): Opening | undefined {
+  return doc.openings.find((o) => o.id === id);
 }
 
 /** All wall endpoints — snap candidates for the wall tool. */

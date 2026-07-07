@@ -1,4 +1,5 @@
 import { docBounds } from './geometry';
+import { wallSegments } from './openings';
 import type { FloorDoc } from './types';
 
 export interface ThumbnailOptions {
@@ -45,9 +46,11 @@ export function docToThumbnailSvg(doc: FloorDoc, options: ThumbnailOptions = {})
     );
   }
   for (const w of doc.walls) {
-    parts.push(
-      `<line x1="${tx(w.a.x)}" y1="${ty(w.a.y)}" x2="${tx(w.b.x)}" y2="${ty(w.b.y)}" stroke="${stroke}" stroke-width="3" stroke-linecap="square"/>`,
-    );
+    for (const seg of wallSegments(w, doc.openings ?? [])) {
+      parts.push(
+        `<line x1="${tx(seg.a.x)}" y1="${ty(seg.a.y)}" x2="${tx(seg.b.x)}" y2="${ty(seg.b.y)}" stroke="${stroke}" stroke-width="3" stroke-linecap="square"/>`,
+      );
+    }
   }
   parts.push('</svg>');
   return parts.join('');

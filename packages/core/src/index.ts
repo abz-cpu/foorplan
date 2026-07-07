@@ -6,3 +6,7 @@ export * from './doc';
 export * from './history';
 export * from './format';
 export * from './thumbnail';
+export * from './openings';
+export * from './measure';
+export * from './csv';
+export * from './shapes';

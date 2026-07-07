@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft,
   Check,
+  ChevronDown,
   Download,
   HardDrive,
   Maximize,
@@ -11,10 +12,18 @@ import {
   Redo2,
   Undo2,
 } from 'lucide-react';
-import { deleteEntity, type FloorDoc } from '@floorplan/core';
+import {
+  buildRoomScheduleCsv,
+  deleteEntity,
+  normalizeDoc,
+  type FloorDoc,
+  type PropertyStatus,
+} from '@floorplan/core';
 import type { FloorRecord, PropertyRecord } from '@floorplan/data';
 import { EditorCanvas, useEditorStore, ZOOM_STEP } from '@floorplan/editor';
-import { BrandMark, StatusPill } from '@floorplan/ui';
+import { downloadBlob, slugify } from '@floorplan/export';
+import { BrandMark, StatusPill, useToast } from '@floorplan/ui';
+import { ExportModal } from '../components/export/ExportModal';
 import { RoomPanel } from '../components/editor/RoomPanel';
 import { ToolPalette, TOOL_HINTS } from '../components/editor/ToolPalette';
 import { repos } from '../lib/repos';
@@ -47,9 +56,13 @@ function TopBarButton({
 
 export default function EditorPage() {
   const { propertyId } = useParams<{ propertyId: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [property, setProperty] = useState<PropertyRecord | null>(null);
   const [floors, setFloors] = useState<FloorRecord[]>([]);
   const [notFound, setNotFound] = useState(false);
+  const [statusMenuOpen, setStatusMenuOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(searchParams.get('export') === '1');
+  const toast = useToast();
 
   const tool = useEditorStore((s) => s.tool);
   const setTool = useEditorStore((s) => s.setTool);
@@ -86,8 +99,9 @@ export default function EditorPage() {
       setFloors(fls);
       const first = fls[0];
       if (first) {
-        lastSavedRef.current = first.doc;
-        loadFloor(first.id, first.doc);
+        const doc = normalizeDoc(first.doc);
+        lastSavedRef.current = doc;
+        loadFloor(first.id, doc);
       }
     })();
     return () => {
@@ -127,8 +141,9 @@ export default function EditorPage() {
     if (floor.id === floorId) return;
     await flushSave();
     const fresh = (await repos.floors.get(floor.id)) ?? floor;
-    lastSavedRef.current = fresh.doc;
-    loadFloor(fresh.id, fresh.doc);
+    const doc = normalizeDoc(fresh.doc);
+    lastSavedRef.current = doc;
+    loadFloor(fresh.id, doc);
   };
 
   const addFloor = async () => {
@@ -163,6 +178,15 @@ export default function EditorPage() {
         case 'r':
           store.setTool('room');
           break;
+        case 'd':
+          store.setTool('door');
+          break;
+        case 'n':
+          store.setTool('window');
+          break;
+        case 's':
+          store.setTool('stairs');
+          break;
         case '+':
         case '=':
           store.zoomBy(ZOOM_STEP);
@@ -183,6 +207,32 @@ export default function EditorPage() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+
+  const setStatus = async (status: PropertyStatus) => {
+    if (!property) return;
+    await repos.properties.update(property.id, { status });
+    setProperty({ ...property, status });
+    setStatusMenuOpen(false);
+  };
+
+  const downloadCsv = async () => {
+    if (!property) return;
+    await flushSave();
+    const fresh = await repos.floors.listByProperty(property.id);
+    const csv = buildRoomScheduleCsv(
+      `${property.addressLine1}${property.postcode ? `, ${property.postcode}` : ''}`,
+      fresh.map((f) => ({ name: f.name, doc: normalizeDoc(f.doc) })),
+    );
+    downloadBlob(`${slugify(property.addressLine1)}-room-schedule.csv`, new Blob([csv], { type: 'text/csv' }));
+    toast('Room schedule downloaded');
+  };
+
+  const closeExport = () => {
+    setExportOpen(false);
+    if (searchParams.get('export')) setSearchParams({}, { replace: true });
+  };
+
+  const activeFloor = floors.find((f) => f.id === floorId);
 
   if (notFound) {
     return (
@@ -211,7 +261,40 @@ export default function EditorPage() {
           <span className="truncate text-[13.5px] font-semibold tracking-tight">
             {property ? `${property.addressLine1}${property.postcode ? `, ${property.postcode}` : ''}` : '…'}
           </span>
-          {property && <StatusPill status={property.status} small />}
+          {property && (
+            <div className="relative">
+              <button
+                type="button"
+                title="Change status"
+                onClick={() => setStatusMenuOpen((o) => !o)}
+                className="flex cursor-pointer items-center gap-1"
+              >
+                <StatusPill status={property.status} small />
+                <ChevronDown size={12} className="text-ink-faint" />
+              </button>
+              {statusMenuOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setStatusMenuOpen(false)} />
+                  <div className="absolute left-0 top-7 z-50 w-40 overflow-hidden rounded-xl border border-line bg-white p-1.5 shadow-toast">
+                    {(['draft', 'ready'] as const).map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => void setStatus(s)}
+                        className="flex w-full cursor-pointer items-center justify-between rounded-lg px-2.5 py-2 text-left text-[12.5px] font-medium text-ink-mid hover:bg-shell"
+                      >
+                        <StatusPill status={s} small />
+                        {property.status === s && <Check size={13} className="text-action" />}
+                      </button>
+                    ))}
+                    <p className="px-2.5 pb-1 pt-1.5 text-[10.5px] leading-snug text-ink-ghost">
+                      Exported is set automatically when you export the plan.
+                    </p>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="flex-1" />
@@ -247,9 +330,8 @@ export default function EditorPage() {
 
         <button
           type="button"
-          disabled
-          title="Export — coming soon"
-          className="flex h-[35px] cursor-not-allowed items-center gap-1.5 rounded-[9px] bg-action px-3.5 text-[13px] font-semibold text-white opacity-50 shadow-cta"
+          onClick={() => setExportOpen(true)}
+          className="flex h-[35px] cursor-pointer items-center gap-1.5 rounded-[9px] bg-action px-3.5 text-[13px] font-semibold text-white shadow-cta hover:bg-action-hover"
         >
           <Download size={14} strokeWidth={2.2} />
           Export Plan
@@ -315,8 +397,21 @@ export default function EditorPage() {
           </div>
         </div>
 
-        <RoomPanel />
+        <RoomPanel onDownloadCsv={() => void downloadCsv()} />
       </div>
+
+      {exportOpen && property && (
+        <ExportModal
+          address={`${property.addressLine1}${property.postcode ? `, ${property.postcode}` : ''}`}
+          floorName={activeFloor?.name ?? 'Ground Floor'}
+          doc={doc}
+          onClose={closeExport}
+          onExported={() => {
+            void setStatus('exported');
+            toast('Plan exported');
+          }}
+        />
+      )}
     </div>
   );
 }

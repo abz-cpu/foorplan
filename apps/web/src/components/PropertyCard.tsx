@@ -56,14 +56,13 @@ export function PropertyCard({
         >
           <Sparkles size={15} strokeWidth={1.8} />
         </button>
-        <button
-          type="button"
-          title="Export plan — coming soon"
-          disabled
-          className="flex h-8 w-8 cursor-not-allowed items-center justify-center rounded-lg border border-line bg-white text-ink-mid opacity-45"
+        <Link
+          to={`/editor/${record.id}?export=1`}
+          title="Export plan"
+          className="flex h-8 w-8 items-center justify-center rounded-lg border border-line bg-white text-ink-mid hover:bg-shell"
         >
           <Download size={15} />
-        </button>
+        </Link>
         <button
           type="button"
           title="Delete property"
@@ -108,6 +107,13 @@ export function PropertyRow({
           className="flex h-[30px] items-center rounded-lg bg-action-soft px-3 text-xs font-semibold text-action-soft-ink hover:bg-action-soft-hover"
         >
           Open
+        </Link>
+        <Link
+          to={`/editor/${record.id}?export=1`}
+          title="Export plan"
+          className="flex h-[30px] w-[30px] items-center justify-center rounded-lg border border-line bg-white text-ink-mid hover:bg-shell"
+        >
+          <Download size={14} />
         </Link>
         <button
           type="button"

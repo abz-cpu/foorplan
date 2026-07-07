@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
-import { docToThumbnailSvg, floorGiaM2, formatAreaM2 } from '@floorplan/core';
+import {
+  docToThumbnailSvg,
+  emptyFloorDoc,
+  floorGiaM2,
+  formatAreaM2,
+  normalizeDoc,
+} from '@floorplan/core';
 import type { FloorRecord, PropertyRecord } from '@floorplan/data';
 import { repos } from './repos';
 
@@ -29,11 +35,12 @@ export function useDashboardData() {
     const records = await repos.properties.list();
     const withFloors = await Promise.all(
       records.map(async (record) => {
-        const floors = await repos.floors.listByProperty(record.id);
+        const raw = await repos.floors.listByProperty(record.id);
+        const floors = raw.map((f) => ({ ...f, doc: normalizeDoc(f.doc) }));
         return {
           record,
           floors,
-          thumbnailSvg: docToThumbnailSvg(floors[0]?.doc ?? { schemaVersion: 1 as const, walls: [], rooms: [], labels: [] }),
+          thumbnailSvg: docToThumbnailSvg(floors[0]?.doc ?? emptyFloorDoc()),
           meta: buildMeta(floors),
         };
       }),

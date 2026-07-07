@@ -32,4 +32,7 @@ pnpm build
 - ✅ Phase 0 — scaffold, design tokens, CI
 - ✅ Phase 1 — properties dashboard, guest-mode local-first storage (IndexedDB)
 - ✅ Phase 2 (slice) — canvas editor: walls, rooms, snapping, undo/redo, GIA
-- ⬜ Doors/windows/stairs, room auto-detection (JSTS), exports, Supabase + PowerSync sync, Capacitor packaging — see the project plan
+- ✅ Phase 3 (slice) — doors (swing arcs, slide-along-wall), windows (double-line), stairs (treads), exact wall-length entry
+- ✅ Phase 4 (slice) — heat-loss perimeter + footprint area (polygon union), floor summary, room-schedule CSV export
+- ✅ Phase 5 — export modal: vector PDF, 300-DPI PNG/JPG, SVG · A4/A3 · portrait/landscape · measurements + RICS disclaimer toggles · Draft→Ready→Exported status workflow
+- ⬜ Room auto-detection (JSTS), photo underlay, furniture symbols, measure/text tools, AI assistant, Supabase + PowerSync sync, Capacitor packaging — see the project plan

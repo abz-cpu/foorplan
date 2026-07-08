@@ -51,6 +51,11 @@ Any subset of these can be skipped — each feature (cloud sync, Claude-powered 
 - ✅ Claude-powered assistant — `supabase/functions/assistant` edge function, same shape as the on-device heuristic
 - ✅ Stripe billing — Checkout, Billing Portal, and webhook sync scaffolded (`supabase/functions/stripe-*`)
 - ✅ Capacitor packaging — iOS + Android projects generated, native gesture guards, brand icons/splash; Android debug build verified with `gradle assembleDebug` (iOS needs Xcode on macOS to build)
+- ✅ Editor UX pass — multi-select/marquee/batch delete, right-click contextual action menu, fixed occluded-shape clicks (nested rooms/stairs) and the delete-property overlay bug, floor-tab delete, dashboard thumbnail toggle
+- ✅ Display preferences — Tweaks panel (grid style: dots/lines/none, dimension labels, room-area labels, furniture layer) and a Technical/Presentation plan-mode toggle with zonal room shading by type
+- ✅ Wall intelligence — auto-classified internal vs external wall thickness, rectilinear (L-shaped/staggered) room auto-detection, rotatable North compass reflected in the exported sheet, "Copy Perimeter to Next Floor" for matching storeys
+- ✅ Faster drawing — live keyboard "laser measure" wall entry (arrow key + exact length + Enter) and a furniture wall-alignment anchor that snaps placed/dragged symbols flush against the nearest wall, rotated to face it
+- ✅ Onboarding — a "Try a demo plan" starter flat on the empty dashboard and a first-visit welcome guide in the editor
 - ⬜ Blocked on credentials/infra to actually run: a provisioned Supabase project (apply the migrations), `ANTHROPIC_API_KEY`, a Stripe test-mode account, and a macOS machine for the iOS build — see `docs/floorplan-saas/PROJECT_PLAN.md#next-steps`
 - ⬜ True offline-first sync (PowerSync) remains a deliberate follow-up once the direct-Supabase adapter above is live — see the Status note in `docs/floorplan-saas/PROJECT_PLAN.md`
 

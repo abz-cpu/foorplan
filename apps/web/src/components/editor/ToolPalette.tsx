@@ -106,7 +106,10 @@ export function ToolPalette({
   const [symbolsOpen, setSymbolsOpen] = useState(false);
 
   return (
-    <div className={`relative ${className}`}>
+    // NOTE: `className` carries the page's `absolute …` placement — don't add
+    // another position class here or it fights it; the absolute wrapper is
+    // already the positioning context the popover needs.
+    <div className={className}>
       <div className="flex flex-col gap-0.5 rounded-[13px] border border-line bg-white p-[5px] shadow-float">
         {ENTRIES.map((entry) => (
           <button

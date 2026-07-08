@@ -1,4 +1,4 @@
-import { degrees, LineCapStyle, PDFDocument, rgb, type PDFFont } from 'pdf-lib';
+import { degrees, LineCapStyle, PDFDocument, rgb, StandardFonts, type PDFFont } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
 import type { Shape } from '@floorplan/core';
 
@@ -30,17 +30,20 @@ export async function shapesToPdfBytes(
   const pdf = await PDFDocument.create();
   pdf.registerFontkit(fontkit);
 
-  // Fetch and embed the custom fonts so they match the brand exactly and work offline.
-  // The service worker caches these routes, so they resolve instantly offline.
-  const [regularBytes, boldBytes, monoBytes, monoMediumBytes] = await Promise.all([
-    fetch('/fonts/InstrumentSans-Regular.ttf').then((res) => res.arrayBuffer()),
-    fetch('/fonts/InstrumentSans-SemiBold.ttf').then((res) => res.arrayBuffer()),
+  // Embed the real brand monospace so measurement labels match the app
+  // exactly and still work fully offline (service worker caches these
+  // routes). Sans-serif falls back to a PDF standard font: Instrument Sans
+  // isn't distributed as a raw TTF (only woff/woff2, which fontkit can't
+  // embed) without fetching from an external font host, which would make
+  // PDF export depend on network access — not acceptable for an
+  // offline-first export path.
+  const [monoBytes, monoMediumBytes] = await Promise.all([
     fetch('/fonts/IBMPlexMono-Regular.ttf').then((res) => res.arrayBuffer()),
     fetch('/fonts/IBMPlexMono-Medium.ttf').then((res) => res.arrayBuffer()),
   ]);
 
-  const sansRegular = await pdf.embedFont(regularBytes);
-  const sansBold = await pdf.embedFont(boldBytes);
+  const sansRegular = await pdf.embedFont(StandardFonts.Helvetica);
+  const sansBold = await pdf.embedFont(StandardFonts.HelveticaBold);
   const ibmMono = await pdf.embedFont(monoBytes);
   const ibmMonoMedium = await pdf.embedFont(monoMediumBytes);
 

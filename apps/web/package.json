@@ -10,6 +10,12 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@capacitor/android": "^8.4.1",
+    "@capacitor/app": "^8.1.0",
+    "@capacitor/core": "^8.4.1",
+    "@capacitor/ios": "^8.4.1",
+    "@capacitor/splash-screen": "^8.0.1",
+    "@capacitor/status-bar": "^8.0.2",
     "@floorplan/core": "workspace:*",
     "@floorplan/data": "workspace:*",
     "@floorplan/editor": "workspace:*",
@@ -24,6 +30,7 @@
     "react-router-dom": "^6.30.1"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.4.1",
     "@types/react": "^18.3.23",
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react-swc": "^3.11.0",

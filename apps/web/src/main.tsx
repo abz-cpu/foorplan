@@ -11,7 +11,10 @@ import '@fontsource/instrument-sans/700.css';
 import '@fontsource/ibm-plex-mono/400.css';
 import '@fontsource/ibm-plex-mono/500.css';
 import App from './App';
+import { installAndroidBackButtonHandler } from './lib/nativeBackButton';
 import './index.css';
+
+installAndroidBackButtonHandler();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

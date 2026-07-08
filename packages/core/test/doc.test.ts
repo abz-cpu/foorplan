@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   addRoom,
   addWall,
+  copyPerimeterWalls,
   deleteEntities,
   deleteEntity,
   emptyFloorDoc,
@@ -11,6 +12,7 @@ import {
   updateRoom,
   wallEndpoints,
 } from '../src/doc';
+import { detectRooms } from '../src/detect';
 import { docToThumbnailSvg } from '../src/thumbnail';
 import type { RoomRect, Wall } from '../src/types';
 
@@ -71,6 +73,31 @@ describe('setNorthAngle', () => {
     expect(setNorthAngle(emptyFloorDoc(), 370).northAngleDeg).toBe(10);
     expect(setNorthAngle(emptyFloorDoc(), -15).northAngleDeg).toBe(345);
     expect(setNorthAngle(emptyFloorDoc(), -360).northAngleDeg).toBe(0);
+  });
+});
+
+describe('copyPerimeterWalls', () => {
+  it('keeps only exterior walls, drops the internal partition, rooms, and openings', () => {
+    let doc = emptyFloorDoc();
+    doc = addWall(doc, { id: 'top', a: { x: 0, y: 0 }, b: { x: 8000, y: 0 }, thickness: 100 });
+    doc = addWall(doc, { id: 'right', a: { x: 8000, y: 0 }, b: { x: 8000, y: 6000 }, thickness: 100 });
+    doc = addWall(doc, { id: 'bottom', a: { x: 8000, y: 6000 }, b: { x: 0, y: 6000 }, thickness: 100 });
+    doc = addWall(doc, { id: 'left', a: { x: 0, y: 6000 }, b: { x: 0, y: 0 }, thickness: 100 });
+    doc = addWall(doc, { id: 'partition', a: { x: 4000, y: 0 }, b: { x: 4000, y: 6000 }, thickness: 100 });
+    doc = { ...doc, rooms: detectRooms(doc) };
+    expect(doc.rooms).toHaveLength(2); // sanity-check the fixture itself
+
+    const next = copyPerimeterWalls(doc);
+    expect(next.walls).toHaveLength(4);
+    expect(next.rooms).toHaveLength(0);
+    expect(next.openings).toHaveLength(0);
+    expect(next.symbols).toHaveLength(0);
+    expect(next.labels).toHaveLength(0);
+    // fresh ids, not reused across floors
+    expect(next.walls.map((w) => w.id)).not.toContain('top');
+    // geometry preserved
+    const topCopy = next.walls.find((w) => w.a.x === 0 && w.a.y === 0 && w.b.x === 8000);
+    expect(topCopy).toBeDefined();
   });
 });
 

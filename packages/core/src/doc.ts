@@ -1,3 +1,4 @@
+import { newId } from './ids';
 import { classifyExternalWalls } from './measure';
 import type { SymbolInstance } from './symbols';
 import {
@@ -131,6 +132,22 @@ export function setUnderlay(doc: FloorDoc, underlay: Underlay | null): FloorDoc 
 export function setNorthAngle(doc: FloorDoc, deg: number): FloorDoc {
   const wrapped = ((deg % 360) + 360) % 360;
   return { ...doc, northAngleDeg: wrapped };
+}
+
+/**
+ * A fresh floor doc containing only `source`'s exterior/perimeter walls
+ * (via classifyExternalWalls), fresh ids, no rooms/openings/symbols/labels.
+ * "Copy Perimeter to Next Floor": every storey shares the same building
+ * envelope, so starting the next floor from that shell instead of a blank
+ * canvas is real time saved without carrying over a lower floor's internal
+ * layout, doors, or windows, which are rarely the same upstairs.
+ */
+export function copyPerimeterWalls(source: FloorDoc): FloorDoc {
+  const externalIds = classifyExternalWalls(source);
+  const walls = source.walls
+    .filter((w) => externalIds.has(w.id))
+    .map((w) => ({ ...w, id: newId() }));
+  return { ...emptyFloorDoc(), walls };
 }
 
 /** Remove any entity by id. Deleting a wall also removes its openings. */

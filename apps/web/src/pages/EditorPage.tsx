@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   Check,
   ChevronDown,
+  Copy,
   Download,
   HardDrive,
   Maximize,
@@ -16,6 +17,7 @@ import {
 } from 'lucide-react';
 import {
   buildRoomScheduleCsv,
+  copyPerimeterWalls,
   deleteEntities,
   normalizeDoc,
   type FloorDoc,
@@ -172,6 +174,19 @@ export default function EditorPage() {
     setFloors((f) => [...f, created]);
     lastSavedRef.current = created.doc;
     loadFloor(created.id, created.doc);
+  };
+
+  const addFloorWithPerimeter = async () => {
+    if (!propertyId) return;
+    await flushSave();
+    const name = FLOOR_NAMES[floors.length] ?? `Floor ${floors.length}`;
+    const created = await repos.floors.create(propertyId, name, floors.length);
+    const perimeterDoc = copyPerimeterWalls(doc);
+    await repos.floors.saveDoc(created.id, perimeterDoc);
+    setFloors((f) => [...f, { ...created, doc: perimeterDoc }]);
+    lastSavedRef.current = perimeterDoc;
+    loadFloor(created.id, perimeterDoc);
+    toast('Perimeter walls copied to new floor');
   };
 
   const requestDeleteFloor = (id: string) => {
@@ -454,6 +469,16 @@ export default function EditorPage() {
             >
               <Plus size={14} strokeWidth={2.2} />
             </button>
+            {doc.walls.length > 0 && (
+              <button
+                type="button"
+                title="Copy perimeter to a new floor"
+                onClick={() => void addFloorWithPerimeter()}
+                className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-ink-faint hover:bg-shell hover:text-ink"
+              >
+                <Copy size={13} strokeWidth={2.2} />
+              </button>
+            )}
           </div>
 
           <div className="absolute bottom-3.5 right-3.5 z-10 flex gap-2">

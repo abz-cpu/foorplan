@@ -20,10 +20,48 @@ export type Tool =
   | 'measure'
   | 'text';
 export type SaveState = 'saved' | 'saving' | 'unsaved';
+export type GridStyle = 'dots' | 'lines' | 'none';
 
 export interface Viewport {
   width: number;
   height: number;
+}
+
+/** Rendering preferences — a per-device display setting, not floor
+ *  document data, so they're persisted to localStorage and apply across
+ *  every property/floor rather than being saved into the doc. */
+interface ViewPrefs {
+  gridStyle: GridStyle;
+  showDimensions: boolean;
+  showRoomLabels: boolean;
+  showFurniture: boolean;
+}
+
+const VIEW_PREFS_KEY = 'floorplan:viewPrefs';
+const DEFAULT_VIEW_PREFS: ViewPrefs = {
+  gridStyle: 'dots',
+  showDimensions: false,
+  showRoomLabels: true,
+  showFurniture: true,
+};
+
+function loadViewPrefs(): ViewPrefs {
+  try {
+    const raw = localStorage.getItem(VIEW_PREFS_KEY);
+    if (!raw) return DEFAULT_VIEW_PREFS;
+    return { ...DEFAULT_VIEW_PREFS, ...JSON.parse(raw) };
+  } catch {
+    return DEFAULT_VIEW_PREFS;
+  }
+}
+
+function saveViewPrefs(prefs: ViewPrefs) {
+  try {
+    localStorage.setItem(VIEW_PREFS_KEY, JSON.stringify(prefs));
+  } catch {
+    // Storage unavailable (private browsing, quota) — preference just
+    // doesn't persist across reloads, which is harmless.
+  }
 }
 
 interface EditorState {
@@ -46,6 +84,10 @@ interface EditorState {
   viewport: Viewport;
   /** which symbol the symbol tool places */
   symbolKind: SymbolKind;
+  gridStyle: GridStyle;
+  showDimensions: boolean;
+  showRoomLabels: boolean;
+  showFurniture: boolean;
 
   loadFloor(floorId: string, doc: FloorDoc): void;
   setTool(tool: Tool): void;
@@ -67,6 +109,10 @@ interface EditorState {
   setViewport(viewport: Viewport): void;
   markSaving(): void;
   markSaved(): void;
+  setGridStyle(style: GridStyle): void;
+  toggleShowDimensions(): void;
+  toggleShowRoomLabels(): void;
+  toggleShowFurniture(): void;
 }
 
 const clampZoom = (z: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
@@ -90,6 +136,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
     saveState: 'saved',
     viewport: { width: 800, height: 600 },
     symbolKind: 'sofa',
+    ...loadViewPrefs(),
 
     setSymbolKind(kind) {
       set({ symbolKind: kind, tool: 'symbol' });
@@ -237,6 +284,29 @@ export const useEditorStore = create<EditorState>((set, get) => {
 
     markSaved() {
       set({ saveState: 'saved' });
+    },
+
+    setGridStyle(gridStyle) {
+      set({ gridStyle });
+      saveViewPrefs({ ...get(), gridStyle });
+    },
+
+    toggleShowDimensions() {
+      const showDimensions = !get().showDimensions;
+      set({ showDimensions });
+      saveViewPrefs({ ...get(), showDimensions });
+    },
+
+    toggleShowRoomLabels() {
+      const showRoomLabels = !get().showRoomLabels;
+      set({ showRoomLabels });
+      saveViewPrefs({ ...get(), showRoomLabels });
+    },
+
+    toggleShowFurniture() {
+      const showFurniture = !get().showFurniture;
+      set({ showFurniture });
+      saveViewPrefs({ ...get(), showFurniture });
     },
   };
 });

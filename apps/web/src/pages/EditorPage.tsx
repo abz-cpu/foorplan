@@ -10,6 +10,7 @@ import {
   Minus,
   Plus,
   Redo2,
+  SlidersHorizontal,
   Trash2,
   Undo2,
 } from 'lucide-react';
@@ -23,7 +24,7 @@ import {
 import type { FloorRecord, PropertyRecord } from '@floorplan/data';
 import { BASE_PX_PER_MM, EditorCanvas, useEditorStore, ZOOM_STEP } from '@floorplan/editor';
 import { downloadBlob, slugify } from '@floorplan/export';
-import { BrandMark, StatusPill, useToast } from '@floorplan/ui';
+import { BrandMark, SegmentedControl, StatusPill, Toggle, useToast } from '@floorplan/ui';
 import { ExportModal } from '../components/export/ExportModal';
 import { RoomPanel } from '../components/editor/RoomPanel';
 import { ToolPalette, TOOL_HINTS } from '../components/editor/ToolPalette';
@@ -64,6 +65,7 @@ export default function EditorPage() {
   const [floors, setFloors] = useState<FloorRecord[]>([]);
   const [notFound, setNotFound] = useState(false);
   const [statusMenuOpen, setStatusMenuOpen] = useState(false);
+  const [tweaksOpen, setTweaksOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(searchParams.get('export') === '1');
   // 2-step confirm, same pattern as property delete on the dashboard —
   // first click arms, second click within 3s executes.
@@ -83,6 +85,14 @@ export default function EditorPage() {
   const redo = useEditorStore((s) => s.redo);
   const snapEnabled = useEditorStore((s) => s.snapEnabled);
   const toggleSnap = useEditorStore((s) => s.toggleSnap);
+  const gridStyle = useEditorStore((s) => s.gridStyle);
+  const setGridStyle = useEditorStore((s) => s.setGridStyle);
+  const showDimensions = useEditorStore((s) => s.showDimensions);
+  const toggleShowDimensions = useEditorStore((s) => s.toggleShowDimensions);
+  const showRoomLabels = useEditorStore((s) => s.showRoomLabels);
+  const toggleShowRoomLabels = useEditorStore((s) => s.toggleShowRoomLabels);
+  const showFurniture = useEditorStore((s) => s.showFurniture);
+  const toggleShowFurniture = useEditorStore((s) => s.toggleShowFurniture);
   const saveState = useEditorStore((s) => s.saveState);
   const doc = useEditorStore((s) => s.doc);
   const floorId = useEditorStore((s) => s.floorId);
@@ -466,6 +476,68 @@ export default function EditorPage() {
               <Check size={12} strokeWidth={2.5} />
               {snapEnabled ? 'Snap on' : 'Snap off'}
             </button>
+
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setTweaksOpen((o) => !o)}
+                title="Display settings"
+                className={`flex h-full cursor-pointer items-center gap-1.5 rounded-[9px] border border-line bg-white px-3 py-1.5 text-[11.5px] font-semibold shadow-segment ${
+                  tweaksOpen ? 'text-action-soft-ink' : 'text-ink-mid'
+                }`}
+              >
+                <SlidersHorizontal size={12} strokeWidth={2.5} />
+                Tweaks
+              </button>
+              {tweaksOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setTweaksOpen(false)} />
+                  <div className="absolute bottom-10 right-0 z-50 w-64 rounded-xl border border-line-soft bg-ink p-4 text-white shadow-toast">
+                    <div className="text-[11px] font-semibold tracking-[0.07em] text-white/50">CANVAS</div>
+                    <div className="mt-2.5 flex items-center justify-between">
+                      <span className="text-[13px] font-medium">Grid style</span>
+                      <SegmentedControl
+                        options={[
+                          { value: 'dots', label: 'Dots' },
+                          { value: 'lines', label: 'Lines' },
+                          { value: 'none', label: 'None' },
+                        ]}
+                        value={gridStyle}
+                        onChange={setGridStyle}
+                      />
+                    </div>
+                    <div className="mt-3 flex items-center justify-between">
+                      <Toggle
+                        dark
+                        checked={showDimensions}
+                        onChange={toggleShowDimensions}
+                        label="Show dimensions"
+                      />
+                    </div>
+
+                    <div className="mt-4 border-t border-white/10 pt-3 text-[11px] font-semibold tracking-[0.07em] text-white/50">
+                      LAYERS
+                    </div>
+                    <div className="mt-2.5 flex items-center justify-between">
+                      <Toggle
+                        dark
+                        checked={showRoomLabels}
+                        onChange={toggleShowRoomLabels}
+                        label="Room area labels"
+                      />
+                    </div>
+                    <div className="mt-2.5 flex items-center justify-between">
+                      <Toggle
+                        dark
+                        checked={showFurniture}
+                        onChange={toggleShowFurniture}
+                        label="Furniture symbols"
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
 

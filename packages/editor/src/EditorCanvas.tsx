@@ -43,6 +43,7 @@ import {
   updateOpening,
   updateRoom,
   updateSymbol,
+  wallLengthMm,
   wallNormal,
   wallSegments,
   type Opening,
@@ -306,6 +307,10 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
   const pan = useEditorStore((s) => s.pan);
   const snapEnabled = useEditorStore((s) => s.snapEnabled);
   const viewport = useEditorStore((s) => s.viewport);
+  const gridStyle = useEditorStore((s) => s.gridStyle);
+  const showDimensions = useEditorStore((s) => s.showDimensions);
+  const showRoomLabels = useEditorStore((s) => s.showRoomLabels);
+  const showFurniture = useEditorStore((s) => s.showFurniture);
   const select = useEditorStore((s) => s.select);
   const toggleSelect = useEditorStore((s) => s.toggleSelect);
   const selectMany = useEditorStore((s) => s.selectMany);
@@ -904,6 +909,13 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
     return { start, end, thickness: openingHover.wall.thickness };
   })();
 
+  const gridBackgroundImage =
+    gridStyle === 'dots'
+      ? 'radial-gradient(#DCE6E2 1px, transparent 1px)'
+      : gridStyle === 'lines'
+        ? 'linear-gradient(#E3EBE8 1px, transparent 1px), linear-gradient(90deg, #E3EBE8 1px, transparent 1px)'
+        : 'none';
+
   return (
     <div
       ref={containerRef}
@@ -917,7 +929,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
         WebkitUserSelect: 'none',
         WebkitTouchCallout: 'none',
         background: '#FBFDFC',
-        backgroundImage: 'radial-gradient(#DCE6E2 1px, transparent 1px)',
+        backgroundImage: gridBackgroundImage,
         backgroundSize: `${DISPLAY_GRID_MM * scale}px ${DISPLAY_GRID_MM * scale}px`,
         backgroundPosition: `${pan.x}px ${pan.y}px`,
         cursor:
@@ -1026,16 +1038,18 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
                       fill={INK}
                       listening={false}
                     />
-                    <Text
-                      text={formatAreaM2(roomAreaM2(r))}
-                      width={r.w}
-                      y={r.h / 2 + 60}
-                      align="center"
-                      fontSize={185}
-                      fontFamily={MONO}
-                      fill={FAINT}
-                      listening={false}
-                    />
+                    {showRoomLabels && (
+                      <Text
+                        text={formatAreaM2(roomAreaM2(r))}
+                        width={r.w}
+                        y={r.h / 2 + 60}
+                        align="center"
+                        fontSize={185}
+                        fontFamily={MONO}
+                        fill={FAINT}
+                        listening={false}
+                      />
+                    )}
                   </>
                 )}
               </Group>
@@ -1067,6 +1081,34 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
             ));
           })}
 
+          {/* Persistent wall-length dimensions ("Tweaks" > Show dimensions) —
+              labelled at the true endpoint-to-endpoint length, offset just
+              outside the wall so it doesn't sit under the stroke. */}
+          {showDimensions &&
+            doc.walls.map((w) => {
+              const mid = { x: (w.a.x + w.b.x) / 2, y: (w.a.y + w.b.y) / 2 };
+              const n = wallNormal(w);
+              const offset = w.thickness / 2 + 220;
+              return (
+                <Label
+                  key={`dim-${w.id}`}
+                  x={mid.x + n.x * offset}
+                  y={mid.y + n.y * offset}
+                  offsetX={0}
+                  listening={false}
+                >
+                  <Tag fill="#FFFFFF" opacity={0.85} cornerRadius={40} />
+                  <Text
+                    text={formatMmAsM(wallLengthMm(w))}
+                    fontSize={155}
+                    fontFamily={MONO}
+                    fill={WALL_LIGHT}
+                    padding={40}
+                  />
+                </Label>
+              );
+            })}
+
           {/* Openings */}
           {doc.openings.map((o) => {
             const wall = findWall(doc, o.wallId);
@@ -1093,7 +1135,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
           })}
 
           {/* Furniture symbols */}
-          {doc.symbols.map((sym) => (
+          {showFurniture && doc.symbols.map((sym) => (
             <SymbolNode
               key={sym.id}
               sym={sym}

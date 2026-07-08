@@ -7,6 +7,7 @@ import {
   emptyFloorDoc,
   parseDoc,
   serializeDoc,
+  setNorthAngle,
   updateRoom,
   wallEndpoints,
 } from '../src/doc';
@@ -58,6 +59,18 @@ describe('doc mutations are immutable', () => {
   it('deleteEntities with an empty list is a no-op (same reference)', () => {
     const d = addRoom(emptyFloorDoc(), room);
     expect(deleteEntities(d, [])).toBe(d);
+  });
+});
+
+describe('setNorthAngle', () => {
+  it('sets the angle', () => {
+    expect(setNorthAngle(emptyFloorDoc(), 45).northAngleDeg).toBe(45);
+  });
+
+  it('wraps into [0, 360)', () => {
+    expect(setNorthAngle(emptyFloorDoc(), 370).northAngleDeg).toBe(10);
+    expect(setNorthAngle(emptyFloorDoc(), -15).northAngleDeg).toBe(345);
+    expect(setNorthAngle(emptyFloorDoc(), -360).northAngleDeg).toBe(0);
   });
 });
 

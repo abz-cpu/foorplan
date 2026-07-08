@@ -127,6 +127,12 @@ export function setUnderlay(doc: FloorDoc, underlay: Underlay | null): FloorDoc 
   return { ...doc, underlay };
 }
 
+/** Degrees clockwise from up, wrapped into [0, 360). */
+export function setNorthAngle(doc: FloorDoc, deg: number): FloorDoc {
+  const wrapped = ((deg % 360) + 360) % 360;
+  return { ...doc, northAngleDeg: wrapped };
+}
+
 /** Remove any entity by id. Deleting a wall also removes its openings. */
 export function deleteEntity(doc: FloorDoc, id: string): FloorDoc {
   return deleteEntities(doc, [id]);

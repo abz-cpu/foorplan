@@ -83,6 +83,8 @@ export interface FloorDoc {
   openings: Opening[];
   symbols: import('./symbols').SymbolInstance[];
   underlay?: Underlay | null;
+  /** Degrees clockwise the North arrow is rotated from straight up (0 = up). */
+  northAngleDeg?: number;
 }
 
 export type PropertyStatus = 'draft' | 'ready' | 'exported';

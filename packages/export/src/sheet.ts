@@ -5,6 +5,7 @@ import {
   formatAreaM2,
   transformShapes,
   type FloorDoc,
+  type Point,
   type Shape,
 } from '@floorplan/core';
 
@@ -42,6 +43,16 @@ export const DISCLAIMER_TEXT =
   'Produced by L&D Energy. This plan is for illustrative purposes only and is not to scale. ' +
   'Measurements are approximate and follow RICS guidance; they should not be relied upon for ' +
   'valuation, flooring or furnishing purposes.';
+
+/** Rotates `p` around `center` by `deg` clockwise (screen/paper y-down coords). */
+function rotatePoint(p: Point, center: Point, deg: number): Point {
+  const rad = (deg * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  const dx = p.x - center.x;
+  const dy = p.y - center.y;
+  return { x: center.x + dx * cos - dy * sin, y: center.y + dx * sin + dy * cos };
+}
 
 function wrapText(text: string, maxChars: number): string[] {
   const words = text.split(' ');
@@ -167,24 +178,34 @@ export function buildFloorSheet(doc: FloorDoc, opts: SheetOptions): Sheet {
       );
     }
 
-    /* North arrow (top-right of content box) */
+    /* North arrow (top-right of content box), rotated to the plan's stored
+       north direction — 0deg (default) points straight up the page. */
     const nx = cx0 + cw - 6;
     const ny = cy0 + 8;
+    const center: Point = { x: nx, y: ny };
+    const northDeg = doc.northAngleDeg ?? 0;
+    const arrowPts = [
+      { x: nx - 1.6, y: ny + 2.2 },
+      { x: nx, y: ny - 2.6 },
+      { x: nx + 1.6, y: ny + 2.2 },
+      { x: nx, y: ny + 1 },
+      { x: nx - 1.6, y: ny + 2.2 },
+    ].map((p) => rotatePoint(p, center, northDeg));
+    const labelPt = rotatePoint({ x: nx, y: ny + 7.6 }, center, northDeg);
     shapes.push(
       { kind: 'arc', cx: nx, cy: ny, r: 4.4, startDeg: 0, endDeg: 359.99, anticlockwise: false, stroke: '#7C9A90', width: 0.4 },
+      { kind: 'polyline', points: arrowPts, stroke: '#4A5D57', width: 0.5 },
       {
-        kind: 'polyline',
-        points: [
-          { x: nx - 1.6, y: ny + 2.2 },
-          { x: nx, y: ny - 2.6 },
-          { x: nx + 1.6, y: ny + 2.2 },
-          { x: nx, y: ny + 1 },
-          { x: nx - 1.6, y: ny + 2.2 },
-        ],
-        stroke: '#4A5D57',
-        width: 0.5,
+        kind: 'text',
+        x: labelPt.x,
+        y: labelPt.y,
+        text: 'N',
+        size: 2.8,
+        color: '#4A5D57',
+        font: 'sans',
+        weight: 700,
+        align: 'center',
       },
-      { kind: 'text', x: nx, y: ny + 7.6, text: 'N', size: 2.8, color: '#4A5D57', font: 'sans', weight: 700, align: 'center' },
     );
   }
 

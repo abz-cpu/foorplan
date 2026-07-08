@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
+  Compass,
   Copy,
   Download,
   FlipHorizontal2,
@@ -10,6 +11,7 @@ import {
   LockOpen,
   PanelsTopLeft,
   RefreshCw,
+  RotateCcw,
   RotateCw,
   ScanSearch,
   Sparkles,
@@ -31,6 +33,7 @@ import {
   roomAreaM2,
   roomPerimeterM,
   ROOM_TYPES,
+  setNorthAngle,
   setUnderlay,
   SYMBOL_DEFS,
   updateLabel,
@@ -252,6 +255,11 @@ export function RoomPanel({
     }
     commit('Auto-set wall thickness', applyAutoWallThickness(doc));
     toast('External walls thickened, internal walls reset');
+  };
+
+  const northAngleDeg = doc.northAngleDeg ?? 0;
+  const commitNorthAngle = (deg: number) => {
+    commit('Rotate north', setNorthAngle(doc, deg));
   };
 
   const handleUnderlayFile = (file: File) => {
@@ -673,6 +681,42 @@ export function RoomPanel({
                     label="Auto-set wall thickness"
                     onClick={handleAutoWallThickness}
                   />
+                </div>
+              </div>
+
+              <div>
+                <SectionLabel>PLAN ORIENTATION</SectionLabel>
+                <div className="flex items-center gap-3 rounded-xl border border-line px-3.5 py-3">
+                  <Compass
+                    size={30}
+                    strokeWidth={1.5}
+                    className="flex-none text-ink-soft"
+                    style={{ transform: `rotate(${northAngleDeg}deg)` }}
+                  />
+                  <div className="flex-1">
+                    <div className="text-[12.5px] font-medium text-ink-mid">North is {northAngleDeg}°</div>
+                    <p className="text-[11px] leading-relaxed text-ink-ghost">
+                      Rotates the North arrow shown on exported plans.
+                    </p>
+                  </div>
+                  <div className="flex flex-none gap-1">
+                    <button
+                      type="button"
+                      title="Rotate 15° counter-clockwise"
+                      onClick={() => commitNorthAngle(northAngleDeg - 15)}
+                      className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg border border-line bg-white text-ink-mid hover:bg-shell"
+                    >
+                      <RotateCcw size={13} />
+                    </button>
+                    <button
+                      type="button"
+                      title="Rotate 15° clockwise"
+                      onClick={() => commitNorthAngle(northAngleDeg + 15)}
+                      className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg border border-line bg-white text-ink-mid hover:bg-shell"
+                    >
+                      <RotateCw size={13} />
+                    </button>
+                  </div>
                 </div>
               </div>
 

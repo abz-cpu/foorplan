@@ -51,6 +51,39 @@ describe('detectRooms', () => {
     expect(detectRooms(doc)).toHaveLength(0);
   });
 
+  it('decomposes an L-shaped enclosure into a small set of rectangles sharing one name', () => {
+    // Full left column (0-5000 wide, full 0-6000 height) plus a bottom-right
+    // band (5000-8000 wide, 3000-6000 height) — the top-right 3000x3000
+    // corner is left open, carving an L out of the overall 8000x6000 box.
+    let doc = emptyFloorDoc();
+    doc = addWall(doc, wall('t1', 0, 0, 5000, 0));
+    doc = addWall(doc, wall('notch-v', 5000, 0, 5000, 3000));
+    doc = addWall(doc, wall('notch-h', 5000, 3000, 8000, 3000));
+    doc = addWall(doc, wall('r', 8000, 3000, 8000, 6000));
+    doc = addWall(doc, wall('b', 8000, 6000, 0, 6000));
+    doc = addWall(doc, wall('l', 0, 6000, 0, 0));
+
+    const rooms = detectRooms(doc);
+    expect(rooms).toHaveLength(2);
+    expect(rooms[0].name).toBe(rooms[1].name); // both pieces of the same logical room
+    expect(rooms.every((r) => r.type === 'Other')).toBe(true);
+
+    const totalAreaM2 = rooms.reduce((sum, r) => sum + (r.w * r.h) / 1e6, 0);
+    // True L-shape area is 39m²; decomposing into independent rects applies
+    // the wall inset along the artificial split line too, so the total is a
+    // little under that — bounded, and always a conservative undercount.
+    expect(totalAreaM2).toBeGreaterThan(34);
+    expect(totalAreaM2).toBeLessThan(39);
+
+    // The open top-right notch must never be detected as a room.
+    const notchCenter = { x: 6500, y: 1500 };
+    const coversNotch = rooms.some(
+      (r) =>
+        notchCenter.x > r.x && notchCenter.x < r.x + r.w && notchCenter.y > r.y && notchCenter.y < r.y + r.h,
+    );
+    expect(coversNotch).toBe(false);
+  });
+
   it('skips cells already containing a room', () => {
     const room: RoomRect = {
       id: 'r1',

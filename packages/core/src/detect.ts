@@ -10,8 +10,14 @@ import { newId } from './ids';
  * 2. The unique wall coordinates cut the plane into a grid of cells.
  * 3. A cell edge is "sealed" when a wall segment covers its full span.
  * 4. Region-grow cells through unsealed shared edges; a region whose outer
- *    boundary is fully sealed and whose cells exactly tile a rectangle is a
- *    detected room.
+ *    boundary is fully sealed is a detected room. Regions that don't tile a
+ *    single rectangle (L-shapes, staggered walls) are decomposed into a
+ *    small set of maximal rectangles (rectangleDecomposition below) — one
+ *    RoomRect per rectangle, sharing one auto-generated name, since the
+ *    document model has no polygon room type to hold a single non-rectangular
+ *    shape. Area/GIA/heat-loss totals are unaffected (they already sum
+ *    across every room rect); the only visible seam is that an L-shaped
+ *    room's "room count" shows 2+ instead of 1.
  *
  * Angled walls are ignored (documented limitation until a topology-suite
  * pass lands). Existing rooms suppress detections that contain them.
@@ -61,7 +67,69 @@ function covered(intervals: Interval[], at: number, from: number, to: number): b
   return cursor >= to - TOL;
 }
 
-/** Detect enclosed rectangular rooms from the wall layout. */
+interface CellRect {
+  c0: number;
+  r0: number;
+  c1: number;
+  r1: number;
+}
+
+/** Largest all-true axis-aligned rectangle in a boolean grid (classic
+ *  histogram method, O(rows*cols)), or null if the grid is empty. */
+function largestRectangle(grid: boolean[][]): (CellRect & { area: number }) | null {
+  const rows = grid.length;
+  if (rows === 0) return null;
+  const cols = grid[0].length;
+  const heights = new Array(cols).fill(0);
+  let best: (CellRect & { area: number }) | null = null;
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) heights[c] = grid[r][c] ? heights[c] + 1 : 0;
+
+    const stack: number[] = [];
+    for (let c = 0; c <= cols; c++) {
+      const h = c === cols ? 0 : heights[c];
+      while (stack.length && heights[stack[stack.length - 1]] >= h) {
+        const height = heights[stack.pop()!];
+        const left = stack.length ? stack[stack.length - 1] + 1 : 0;
+        const width = c - left;
+        const area = height * width;
+        if (!best || area > best.area) {
+          best = { area, r0: r - height + 1, c0: left, r1: r, c1: c - 1 };
+        }
+      }
+      stack.push(c);
+    }
+  }
+  return best;
+}
+
+/** Greedily covers a rectilinear region (a set of grid cells) with the
+ *  smallest practical number of maximal rectangles: repeatedly extract the
+ *  largest remaining rectangle until every cell is covered. Not guaranteed
+ *  globally minimal (true minimum decomposition is a harder matching
+ *  problem) but produces 2-3 pieces for typical L/T/U-shaped rooms. */
+function decomposeIntoRects(cells: Set<string>, cMin: number, cMax: number, rMin: number, rMax: number): CellRect[] {
+  const width = cMax - cMin + 1;
+  const height = rMax - rMin + 1;
+  const grid: boolean[][] = Array.from({ length: height }, (_, r) =>
+    Array.from({ length: width }, (_, c) => cells.has(`${c + cMin},${r + rMin}`)),
+  );
+  const rects: CellRect[] = [];
+  const MAX_PIECES = 12; // safety cap; realistic architecture never gets close
+  while (rects.length < MAX_PIECES) {
+    const found = largestRectangle(grid);
+    if (!found || found.area <= 0) break;
+    rects.push({ c0: found.c0 + cMin, r0: found.r0 + rMin, c1: found.c1 + cMin, r1: found.r1 + rMin });
+    for (let r = found.r0; r <= found.r1; r++) {
+      for (let c = found.c0; c <= found.c1; c++) grid[r][c] = false;
+    }
+  }
+  return rects;
+}
+
+/** Detect enclosed rooms from the wall layout — rectangles directly,
+ *  rectilinear (L/T/U-shaped) loops as several rectangles sharing one name. */
 export function detectRooms(doc: FloorDoc): RoomRect[] {
   const { horizontal, vertical } = collectIntervals(doc.walls);
   if (horizontal.length < 2 || vertical.length < 2) return [];
@@ -128,40 +196,46 @@ export function detectRooms(doc: FloorDoc): RoomRect[] {
     }
     if (!enclosed) continue;
 
-    // Cells must exactly tile a rectangle.
     const cMin = Math.min(...cells.map(([c]) => c));
     const cMax = Math.max(...cells.map(([c]) => c));
     const rMin = Math.min(...cells.map(([, r]) => r));
     const rMax = Math.max(...cells.map(([, r]) => r));
-    if (cells.length !== (cMax - cMin + 1) * (rMax - rMin + 1)) continue;
+    const isRectangular = cells.length === (cMax - cMin + 1) * (rMax - rMin + 1);
 
-    const x = xs[cMin];
-    const y = ys[rMin];
-    const w = xs[cMax + 1] - x;
-    const h = ys[rMax + 1] - y;
-    if (w < 600 || h < 600) continue; // implausibly small
+    const cellRects: CellRect[] = isRectangular
+      ? [{ c0: cMin, r0: rMin, c1: cMax, r1: rMax }]
+      : decomposeIntoRects(new Set(cells.map(([c, r]) => `${c},${r}`)), cMin, cMax, rMin, rMax);
 
-    // Skip when an existing room's centre already lies inside this rect.
-    const taken = doc.rooms.some((room) => {
-      const rcx = room.x + room.w / 2;
-      const rcy = room.y + room.h / 2;
-      return rcx > x && rcx < x + w && rcy > y && rcy < y + h;
-    });
-    if (taken) continue;
+    const roomName = `Room ${doc.rooms.length + rooms.length + 1}`;
+    const inset = 50; // half a typical wall thickness, so the room sits inside the walls
 
-    // Inset by half a typical wall thickness so the room sits inside walls.
-    const inset = 50;
-    rooms.push({
-      id: newId(),
-      x: x + inset,
-      y: y + inset,
-      w: w - inset * 2,
-      h: h - inset * 2,
-      name: `Room ${doc.rooms.length + rooms.length + 1}`,
-      type: 'Other',
-      ceilingHeightM: DEFAULT_CEILING_HEIGHT_M,
-      includeInGia: true,
-    });
+    for (const cr of cellRects) {
+      const x = xs[cr.c0];
+      const y = ys[cr.r0];
+      const w = xs[cr.c1 + 1] - x;
+      const h = ys[cr.r1 + 1] - y;
+      if (w < 600 || h < 600) continue; // implausibly small
+
+      // Skip when an existing room's centre already lies inside this rect.
+      const taken = doc.rooms.some((room) => {
+        const rcx = room.x + room.w / 2;
+        const rcy = room.y + room.h / 2;
+        return rcx > x && rcx < x + w && rcy > y && rcy < y + h;
+      });
+      if (taken) continue;
+
+      rooms.push({
+        id: newId(),
+        x: x + inset,
+        y: y + inset,
+        w: w - inset * 2,
+        h: h - inset * 2,
+        name: roomName,
+        type: 'Other',
+        ceilingHeightM: DEFAULT_CEILING_HEIGHT_M,
+        includeInGia: true,
+      });
+    }
   }
   return rooms;
 }

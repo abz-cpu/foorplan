@@ -25,6 +25,7 @@ import {
   DEFAULT_DOOR_WIDTH_MM,
   DEFAULT_WALL_THICKNESS_MM,
   DEFAULT_WINDOW_WIDTH_MM,
+  deleteEntities,
   distance,
   findWall,
   formatAreaM2,
@@ -355,6 +356,15 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
      shoots the wall out and continues the chain. */
   const [keyedDirection, setKeyedDirection] = useState<Point | null>(null);
   const [keyedLength, setKeyedLength] = useState('');
+  /* Right-click contextual action menu — screen coords are relative to the
+     canvas container, same space getPointerPosition() returns, so it can be
+     positioned with plain CSS left/top alongside the Stage. */
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    ids: string[];
+    kind: 'room' | 'wall' | 'opening' | 'symbol' | 'label';
+  } | null>(null);
   const panDrag = useRef<{ pointer: Point; pan: Point } | null>(null);
   const pinch = useRef<{ dist: number; center: Point } | null>(null);
   const openingDrag = useRef<{ id: string; wallId: string } | null>(null);
@@ -382,6 +392,21 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
       window.removeEventListener('keyup', onKeyUp);
     };
   }, []);
+
+  /* Close the right-click context menu on Escape, or whenever the active
+     tool changes (switching tools mid-menu should cancel it). */
+  useEffect(() => {
+    if (!contextMenu) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setContextMenu(null);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [contextMenu]);
+
+  useEffect(() => {
+    setContextMenu(null);
+  }, [tool, doc]);
 
   /* Laser-measure keyboard wall entry — only listens while the Wall tool is
      active and a chain is in progress (there's a fixed start point to
@@ -579,6 +604,38 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
       return best;
     },
     [doc.rooms, resizeDraft],
+  );
+
+  // What's under a point, for the right-click context menu — checked in
+  // roughly visual stacking order (small/specific things before the room
+  // fill that sits behind everything).
+  const pickEntityAt = useCallback(
+    (p: Point): { id: string; kind: 'room' | 'wall' | 'opening' | 'symbol' | 'label' } | undefined => {
+      for (let i = doc.symbols.length - 1; i >= 0; i--) {
+        const s = doc.symbols[i];
+        if (p.x >= s.x - 50 && p.x <= s.x + s.w + 50 && p.y >= s.y - 50 && p.y <= s.y + s.h + 50) {
+          return { id: s.id, kind: 'symbol' };
+        }
+      }
+      for (let i = doc.labels.length - 1; i >= 0; i--) {
+        const l = doc.labels[i];
+        if (p.x >= l.x - 300 && p.x <= l.x + 300 && p.y >= l.y - 150 && p.y <= l.y + 150) {
+          return { id: l.id, kind: 'label' };
+        }
+      }
+      const hit = nearestWall(doc, p, wallHitToleranceMm);
+      if (hit) {
+        const opening = doc.openings.find(
+          (o) => o.wallId === hit.wall.id && Math.abs(hit.offsetMm - o.offsetMm) <= o.widthMm / 2 + 100,
+        );
+        if (opening) return { id: opening.id, kind: 'opening' };
+        return { id: hit.wall.id, kind: 'wall' };
+      }
+      const room = pickRoomAt(p);
+      if (room) return { id: room.id, kind: 'room' };
+      return undefined;
+    },
+    [doc, wallHitToleranceMm, pickRoomAt],
   );
 
   // Marquee (rubber-band) select: returns every entity whose bounding box
@@ -828,6 +885,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
   /* ---- mouse events ---- */
 
   const onMouseDown = (e: KonvaEventObject<MouseEvent>) => {
+    setContextMenu(null);
     if (e.evt.button === 1) {
       e.evt.preventDefault();
       panDrag.current = { pointer: { x: e.evt.clientX, y: e.evt.clientY }, pan };
@@ -992,6 +1050,96 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
 
   const zonesPresent: RoomType[] = ROOM_TYPES.filter((t) => doc.rooms.some((r) => r.type === t));
 
+  /* Right-click context menu actions. The [tool, doc] effect above closes
+     the menu automatically once any of these commits, so none of them need
+     to clear contextMenu themselves. */
+  type MenuItem = { label: string; onClick: () => void; danger?: boolean };
+
+  const buildContextMenuItems = (menu: NonNullable<typeof contextMenu>): MenuItem[] => {
+    const { ids, kind } = menu;
+    const deleteLabel = ids.length > 1 ? `Delete ${ids.length} items` : 'Delete';
+    const deleteItem: MenuItem = {
+      label: deleteLabel,
+      danger: true,
+      onClick: () => commit(deleteLabel, deleteEntities(doc, ids)),
+    };
+
+    if (ids.length > 1) return [deleteItem];
+
+    const id = ids[0];
+    if (kind === 'room') {
+      const room = doc.rooms.find((r) => r.id === id);
+      if (!room) return [deleteItem];
+      const items: MenuItem[] = [];
+      if (room.type !== 'Stairs') {
+        items.push({
+          label: 'Duplicate room',
+          onClick: () => {
+            const copy: RoomRect = { ...room, id: newId(), x: room.x + 300, y: room.y + 300 };
+            commit('Duplicate room', addRoom(doc, copy));
+            select(copy.id);
+          },
+        });
+      }
+      items.push(deleteItem);
+      return items;
+    }
+    if (kind === 'symbol') {
+      const sym = doc.symbols.find((s) => s.id === id);
+      if (!sym) return [deleteItem];
+      return [
+        {
+          label: 'Rotate 90°',
+          onClick: () => commit('Rotate furniture', updateSymbol(doc, id, { rotationDeg: (sym.rotationDeg + 90) % 360 })),
+        },
+        {
+          label: 'Mirror',
+          onClick: () => commit('Mirror furniture', updateSymbol(doc, id, { mirrored: !sym.mirrored })),
+        },
+        {
+          label: 'Duplicate',
+          onClick: () => {
+            const copy: SymbolInstance = { ...sym, id: newId(), x: sym.x + 300, y: sym.y + 300 };
+            commit('Duplicate furniture', addSymbol(doc, copy));
+            select(copy.id);
+          },
+        },
+        deleteItem,
+      ];
+    }
+    if (kind === 'opening') {
+      const opening = doc.openings.find((o) => o.id === id);
+      if (!opening) return [deleteItem];
+      const items: MenuItem[] = [];
+      if (opening.kind === 'door') {
+        items.push({
+          label: 'Flip hinge side',
+          onClick: () =>
+            commit('Flip hinge', updateOpening(doc, id, { hinge: opening.hinge === 'left' ? 'right' : 'left' })),
+        });
+      }
+      items.push(deleteItem);
+      return items;
+    }
+    if (kind === 'label') {
+      const label = doc.labels.find((l) => l.id === id);
+      if (!label) return [deleteItem];
+      return [
+        {
+          label: 'Duplicate',
+          onClick: () => {
+            const copy = { ...label, id: newId(), x: label.x + 300, y: label.y + 300 };
+            commit('Duplicate label', addLabel(doc, copy));
+            select(copy.id);
+          },
+        },
+        deleteItem,
+      ];
+    }
+    // wall
+    return [deleteItem];
+  };
+
   const gridBackgroundImage =
     gridStyle === 'dots'
       ? 'radial-gradient(#DCE6E2 1px, transparent 1px)'
@@ -1039,7 +1187,25 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
         onWheel={onWheel}
         onContextMenu={(e) => {
           e.evt.preventDefault();
-          endWallChain();
+          // A wall chain, room drag, or any other draft in progress takes
+          // priority — right-click just cancels it, matching the prior
+          // behaviour, rather than also popping up a menu.
+          if (wallStart || rectDraft || resizeDraft || marqueeDraft || openingDraft || tool !== 'select') {
+            endWallChain();
+            setContextMenu(null);
+            return;
+          }
+          const screen = stageRef.current?.getPointerPosition();
+          const raw = pointerWorld();
+          if (!screen || !raw) return;
+          const hit = pickEntityAt(raw);
+          if (!hit) {
+            setContextMenu(null);
+            return;
+          }
+          const ids = selectedIds.includes(hit.id) && selectedIds.length > 1 ? selectedIds : [hit.id];
+          if (ids.length === 1) select(hit.id);
+          setContextMenu({ x: screen.x, y: screen.y, ids, kind: hit.kind });
         }}
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
@@ -1464,6 +1630,71 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
           ))}
         </div>
       )}
+
+      {contextMenu &&
+        (() => {
+          const items = buildContextMenuItems(contextMenu);
+          const menuWidth = 190;
+          const menuHeight = items.length * 32 + 12;
+          const left = Math.min(contextMenu.x, Math.max(8, viewport.width - menuWidth - 8));
+          const top = Math.min(contextMenu.y, Math.max(8, viewport.height - menuHeight - 8));
+          return (
+            <>
+              <div
+                style={{ position: 'absolute', inset: 0, zIndex: 40 }}
+                onClick={() => setContextMenu(null)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setContextMenu(null);
+                }}
+              />
+              <div
+                style={{
+                  position: 'absolute',
+                  left,
+                  top,
+                  zIndex: 50,
+                  width: menuWidth,
+                  borderRadius: 10,
+                  background: '#FFFFFF',
+                  border: `1px solid ${ROOM_EDGE}`,
+                  boxShadow: '0 10px 28px rgba(0,0,0,0.16)',
+                  padding: 6,
+                  fontFamily: SANS,
+                }}
+              >
+                {items.map((item, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={item.onClick}
+                    style={{
+                      display: 'block',
+                      width: '100%',
+                      textAlign: 'left',
+                      padding: '7px 10px',
+                      fontSize: 12.5,
+                      fontWeight: 600,
+                      color: item.danger ? '#B3432B' : INK,
+                      background: 'transparent',
+                      border: 'none',
+                      borderRadius: 7,
+                      cursor: 'pointer',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = '#F1F5F3';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'transparent';
+                    }}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </>
+          );
+        })()}
     </div>
   );
 }

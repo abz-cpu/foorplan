@@ -23,14 +23,12 @@ import {
   formatAreaM2,
   formatMmAsM,
   formatMmForInput,
-  generateDescription,
   normalizeDoc,
   parseLengthToMm,
   roomAreaM2,
   roomPerimeterM,
   ROOM_TYPES,
   setUnderlay,
-  suggestRoomNames,
   SYMBOL_DEFS,
   updateLabel,
   updateOpening,
@@ -44,6 +42,7 @@ import {
 } from '@floorplan/core';
 import { useEditorStore } from '@floorplan/editor';
 import { useToast } from '@floorplan/ui';
+import { generateDescriptionSmart, isAssistantCloudBacked, suggestRoomNamesSmart } from '../../lib/assistant';
 import { RoomScheduleModal } from './RoomScheduleModal';
 
 export interface PanelFloor {
@@ -134,6 +133,8 @@ export function RoomPanel({
   const [aiText, setAiText] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [namingBusy, setNamingBusy] = useState(false);
+  const [generateBusy, setGenerateBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const room = doc.rooms.find((r) => r.id === selectedId);
@@ -202,7 +203,7 @@ export function RoomPanel({
     }
   };
 
-  const handleDetectRooms = () => {
+  const handleDetectRooms = async () => {
     const found = detectRooms(doc);
     if (found.length === 0) {
       toast('No new enclosed rooms found');
@@ -216,7 +217,7 @@ export function RoomPanel({
     // as usable rooms, not generic "Room N" placeholders needing a second
     // manual step in the Assistant tab.
     const withNames = { ...doc, rooms: [...doc.rooms, ...found] };
-    const suggestions = suggestRoomNames(withNames, floorIndex);
+    const suggestions = await suggestRoomNamesSmart(withNames, floorIndex);
     let next = withNames;
     for (const s of suggestions) {
       if (found.some((f) => f.id === s.roomId)) {
@@ -252,24 +253,34 @@ export function RoomPanel({
     doc: f.id === floorId ? doc : normalizeDoc(f.doc),
   }));
 
-  const handleSuggestNames = () => {
+  const handleSuggestNames = async () => {
     const floorIndex = Math.max(
       floors.findIndex((f) => f.id === floorId),
       0,
     );
-    const suggestions = suggestRoomNames(doc, floorIndex);
-    if (suggestions.length === 0) {
-      toast('Draw some rooms first');
-      return;
+    setNamingBusy(true);
+    try {
+      const suggestions = await suggestRoomNamesSmart(doc, floorIndex);
+      if (suggestions.length === 0) {
+        toast('Draw some rooms first');
+        return;
+      }
+      let next = doc;
+      for (const s of suggestions) next = updateRoom(next, s.roomId, { name: s.name, type: s.type });
+      commit('Auto-name rooms', next);
+      toast(`${suggestions.length} room${suggestions.length === 1 ? '' : 's'} named`);
+    } finally {
+      setNamingBusy(false);
     }
-    let next = doc;
-    for (const s of suggestions) next = updateRoom(next, s.roomId, { name: s.name, type: s.type });
-    commit('Auto-name rooms', next);
-    toast(`${suggestions.length} room${suggestions.length === 1 ? '' : 's'} named`);
   };
 
-  const handleGenerate = () => {
-    setAiText(generateDescription({ address, floors: assistantFloors }));
+  const handleGenerate = async () => {
+    setGenerateBusy(true);
+    try {
+      setAiText(await generateDescriptionSmart({ address, floors: assistantFloors }));
+    } finally {
+      setGenerateBusy(false);
+    }
   };
 
   const footprint = floorFootprint(doc);
@@ -309,10 +320,11 @@ export function RoomPanel({
             </p>
             <button
               type="button"
-              onClick={handleSuggestNames}
-              className="h-8 cursor-pointer rounded-lg border border-[#DCD0F5] bg-ai-soft px-3 text-[12.5px] font-semibold text-[#5B32B4] hover:bg-[#EDE5FB]"
+              onClick={() => void handleSuggestNames()}
+              disabled={namingBusy}
+              className="h-8 cursor-pointer rounded-lg border border-[#DCD0F5] bg-ai-soft px-3 text-[12.5px] font-semibold text-[#5B32B4] hover:bg-[#EDE5FB] disabled:cursor-not-allowed disabled:opacity-60"
             >
-              Suggest names
+              {namingBusy ? 'Thinking…' : 'Suggest names'}
             </button>
           </div>
 
@@ -345,29 +357,32 @@ export function RoomPanel({
                   </button>
                   <button
                     type="button"
-                    onClick={handleGenerate}
-                    className="flex h-[30px] cursor-pointer items-center gap-1.5 rounded-lg border border-input bg-white px-2.5 text-xs font-semibold text-ink-mid hover:bg-shell"
+                    onClick={() => void handleGenerate()}
+                    disabled={generateBusy}
+                    className="flex h-[30px] cursor-pointer items-center gap-1.5 rounded-lg border border-input bg-white px-2.5 text-xs font-semibold text-ink-mid hover:bg-shell disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     <RefreshCw size={12} />
-                    Regenerate
+                    {generateBusy ? 'Regenerating…' : 'Regenerate'}
                   </button>
                 </div>
               </>
             ) : (
               <button
                 type="button"
-                onClick={handleGenerate}
-                className="flex h-8 cursor-pointer items-center gap-1.5 rounded-lg bg-ai px-3 text-[12.5px] font-semibold text-white hover:bg-[#5B32B4]"
+                onClick={() => void handleGenerate()}
+                disabled={generateBusy}
+                className="flex h-8 cursor-pointer items-center gap-1.5 rounded-lg bg-ai px-3 text-[12.5px] font-semibold text-white hover:bg-[#5B32B4] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <Sparkles size={13} />
-                Generate description
+                {generateBusy ? 'Generating…' : 'Generate description'}
               </button>
             )}
           </div>
 
           <p className="px-0.5 text-[11.5px] leading-relaxed text-ink-ghost">
-            Drafts are generated on this device from your plan data only. Claude-powered
-            suggestions arrive with cloud sync. Review before publishing.
+            {isAssistantCloudBacked()
+              ? 'Signed in and online, suggestions use Claude for higher-quality drafts and fall back to this device otherwise. Review before publishing.'
+              : 'Drafts are generated on this device from your plan data only. Claude-powered suggestions arrive with cloud sync. Review before publishing.'}
           </p>
         </div>
       ) : (
@@ -590,7 +605,7 @@ export function RoomPanel({
                   <PanelButton
                     icon={<ScanSearch size={13} />}
                     label="Detect rooms from walls"
-                    onClick={handleDetectRooms}
+                    onClick={() => void handleDetectRooms()}
                   />
                   <PanelButton
                     icon={<ListChecks size={13} />}

@@ -1,8 +1,9 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Cloud } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { ArrowLeft, Cloud, CreditCard } from 'lucide-react';
 import { createSupabaseRepositories, ensureOrgForCurrentUser, adoptGuestDataToAccount } from '@floorplan/data';
 import { BrandMark, Button, TextInput, useToast } from '@floorplan/ui';
+import { openBillingPortal, startCheckout } from '../lib/billing';
 import { guestRepos } from '../lib/repos';
 import { getSupabaseClient, isCloudConfigured, useAuthSession, signOut } from '../lib/supabase';
 
@@ -19,6 +20,18 @@ export default function AccountPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
+  const [billingBusy, setBillingBusy] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  useEffect(() => {
+    const checkout = searchParams.get('checkout');
+    if (!checkout) return;
+    toast(checkout === 'success' ? 'Subscription active — thank you!' : 'Checkout cancelled');
+    setSearchParams((params) => {
+      params.delete('checkout');
+      return params;
+    });
+  }, [searchParams, setSearchParams, toast]);
 
   if (!isCloudConfigured() || !client) {
     return (
@@ -81,6 +94,28 @@ export default function AccountPage() {
     }
   };
 
+  const handleUpgrade = async () => {
+    setBillingBusy(true);
+    setError(null);
+    try {
+      await startCheckout();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Checkout failed');
+      setBillingBusy(false);
+    }
+  };
+
+  const handleManageBilling = async () => {
+    setBillingBusy(true);
+    setError(null);
+    try {
+      await openBillingPortal();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not open billing portal');
+      setBillingBusy(false);
+    }
+  };
+
   if (session) {
     return (
       <div className="mx-auto max-w-[480px] px-6 py-16">
@@ -100,6 +135,21 @@ export default function AccountPage() {
           <Button className="mt-3.5" onClick={handleImportGuestData} disabled={importing}>
             <Cloud size={15} /> {importing ? 'Importing…' : 'Import guest data'}
           </Button>
+        </div>
+
+        <div className="mt-4 rounded-[14px] border border-line bg-white p-5">
+          <h2 className="text-[13.5px] font-semibold text-ink-mid">Billing</h2>
+          <p className="mt-1 text-[13px] text-ink-faint">
+            Upgrade for unlimited properties and priority export rendering.
+          </p>
+          <div className="mt-3.5 flex gap-2.5">
+            <Button onClick={() => void handleUpgrade()} disabled={billingBusy}>
+              <CreditCard size={15} /> Upgrade to Pro
+            </Button>
+            <Button variant="outline" onClick={() => void handleManageBilling()} disabled={billingBusy}>
+              Manage billing
+            </Button>
+          </div>
         </div>
 
         {error && <p className="mt-4 text-[13px] text-red-600">{error}</p>}

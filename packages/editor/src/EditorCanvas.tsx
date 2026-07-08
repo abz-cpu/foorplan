@@ -36,6 +36,7 @@ import {
   newId,
   openingJambs,
   parseLengthToMm,
+  pointAlongWall,
   roomAreaM2,
   ROOM_TYPES,
   snapPointToGrid,
@@ -638,6 +639,32 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
     [doc, wallHitToleranceMm, pickRoomAt],
   );
 
+  // Furniture wall-alignment anchor: placing or dragging a symbol within
+  // reach of a wall snaps it flush against the wall's face and rotates it
+  // so its back (every symbol is authored with its back edge at local
+  // y=0 — the headboard end of a bed, the backrest of a sofa, etc.) faces
+  // that wall, on whichever side of the wall the point actually sits.
+  const alignToNearbyWall = useCallback(
+    (p: Point, w: number, h: number): { x: number; y: number; rotationDeg: number } | null => {
+      const hit = nearestWall(doc, p, h / 2 + 400);
+      if (!hit) return null;
+      const n = wallNormal(hit.wall);
+      const wallPt = pointAlongWall(hit.wall, hit.offsetMm);
+      const toP = { x: p.x - wallPt.x, y: p.y - wallPt.y };
+      const dot = toP.x * n.x + toP.y * n.y;
+      // roomNormal points from the wall out into whichever room `p` is in.
+      const roomNormal = dot >= 0 ? n : { x: -n.x, y: -n.y };
+      const backDir = { x: -roomNormal.x, y: -roomNormal.y };
+      const rotationDeg = ((Math.atan2(backDir.x, -backDir.y) * 180) / Math.PI + 360) % 360;
+      const faceX = wallPt.x + roomNormal.x * (hit.wall.thickness / 2);
+      const faceY = wallPt.y + roomNormal.y * (hit.wall.thickness / 2);
+      const centerX = faceX + roomNormal.x * (h / 2);
+      const centerY = faceY + roomNormal.y * (h / 2);
+      return { x: centerX - w / 2, y: centerY - h / 2, rotationDeg };
+    },
+    [doc],
+  );
+
   // Marquee (rubber-band) select: returns every entity whose bounding box
   // overlaps the drag rectangle, across all five entity types. A simple AABB
   // overlap test — good enough for "select everything roughly in this area"
@@ -754,15 +781,16 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
       setOpeningHover(null);
     } else if (tool === 'symbol') {
       const def = SYMBOL_DEFS[symbolKind];
+      const aligned = alignToNearbyWall(raw, def.w, def.h);
       const centre = snapFree(raw);
       const sym: SymbolInstance = {
         id: newId(),
         kind: symbolKind,
-        x: centre.x - def.w / 2,
-        y: centre.y - def.h / 2,
+        x: aligned ? aligned.x : centre.x - def.w / 2,
+        y: aligned ? aligned.y : centre.y - def.h / 2,
         w: def.w,
         h: def.h,
-        rotationDeg: 0,
+        rotationDeg: aligned ? aligned.rotationDeg : 0,
       };
       commit(`Place ${def.name.toLowerCase()}`, addSymbol(doc, sym));
       select(sym.id);
@@ -1397,8 +1425,17 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
                 else select(sym.id);
               }}
               onMove={(x, y) => {
-                const snapped = snapFree({ x, y });
-                commit('Move symbol', updateSymbol(doc, sym.id, { x: snapped.x, y: snapped.y }));
+                const centre = { x: x + sym.w / 2, y: y + sym.h / 2 };
+                const aligned = alignToNearbyWall(centre, sym.w, sym.h);
+                if (aligned) {
+                  commit(
+                    'Move symbol',
+                    updateSymbol(doc, sym.id, { x: aligned.x, y: aligned.y, rotationDeg: aligned.rotationDeg }),
+                  );
+                } else {
+                  const snapped = snapFree({ x, y });
+                  commit('Move symbol', updateSymbol(doc, sym.id, { x: snapped.x, y: snapped.y }));
+                }
               }}
             />
           ))}

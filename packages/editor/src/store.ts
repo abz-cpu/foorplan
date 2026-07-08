@@ -21,6 +21,8 @@ export type Tool =
   | 'text';
 export type SaveState = 'saved' | 'saving' | 'unsaved';
 export type GridStyle = 'dots' | 'lines' | 'none';
+/** Technical = plain line-art (default); Presentation = rooms shaded by zone/type. */
+export type PlanMode = 'technical' | 'presentation';
 
 export interface Viewport {
   width: number;
@@ -35,6 +37,7 @@ interface ViewPrefs {
   showDimensions: boolean;
   showRoomLabels: boolean;
   showFurniture: boolean;
+  planMode: PlanMode;
 }
 
 const VIEW_PREFS_KEY = 'floorplan:viewPrefs';
@@ -43,13 +46,17 @@ const DEFAULT_VIEW_PREFS: ViewPrefs = {
   showDimensions: false,
   showRoomLabels: true,
   showFurniture: true,
+  planMode: 'technical',
 };
 
 function loadViewPrefs(): ViewPrefs {
   try {
     const raw = localStorage.getItem(VIEW_PREFS_KEY);
     if (!raw) return DEFAULT_VIEW_PREFS;
-    return { ...DEFAULT_VIEW_PREFS, ...JSON.parse(raw) };
+    // Only merge the known preference fields — a stored value may carry
+    // stray fields from before pickViewPrefs() existed (or from a bug),
+    // and those must never leak into the store's initial state.
+    return pickViewPrefs({ ...DEFAULT_VIEW_PREFS, ...JSON.parse(raw) });
   } catch {
     return DEFAULT_VIEW_PREFS;
   }
@@ -62,6 +69,21 @@ function saveViewPrefs(prefs: ViewPrefs) {
     // Storage unavailable (private browsing, quota) — preference just
     // doesn't persist across reloads, which is harmless.
   }
+}
+
+/** Narrow the live store state down to just the persisted view-pref fields —
+ *  never spread the full state into saveViewPrefs, or the current floor's
+ *  doc/floorId/pan/zoom get written under this key too and clobber the next
+ *  session's initial state (loadViewPrefs() is spread in at store creation,
+ *  before loadFloor() runs). */
+function pickViewPrefs(state: ViewPrefs): ViewPrefs {
+  return {
+    gridStyle: state.gridStyle,
+    showDimensions: state.showDimensions,
+    showRoomLabels: state.showRoomLabels,
+    showFurniture: state.showFurniture,
+    planMode: state.planMode,
+  };
 }
 
 interface EditorState {
@@ -88,6 +110,7 @@ interface EditorState {
   showDimensions: boolean;
   showRoomLabels: boolean;
   showFurniture: boolean;
+  planMode: PlanMode;
 
   loadFloor(floorId: string, doc: FloorDoc): void;
   setTool(tool: Tool): void;
@@ -113,6 +136,7 @@ interface EditorState {
   toggleShowDimensions(): void;
   toggleShowRoomLabels(): void;
   toggleShowFurniture(): void;
+  setPlanMode(mode: PlanMode): void;
 }
 
 const clampZoom = (z: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
@@ -288,25 +312,30 @@ export const useEditorStore = create<EditorState>((set, get) => {
 
     setGridStyle(gridStyle) {
       set({ gridStyle });
-      saveViewPrefs({ ...get(), gridStyle });
+      saveViewPrefs(pickViewPrefs({ ...get(), gridStyle }));
     },
 
     toggleShowDimensions() {
       const showDimensions = !get().showDimensions;
       set({ showDimensions });
-      saveViewPrefs({ ...get(), showDimensions });
+      saveViewPrefs(pickViewPrefs({ ...get(), showDimensions }));
     },
 
     toggleShowRoomLabels() {
       const showRoomLabels = !get().showRoomLabels;
       set({ showRoomLabels });
-      saveViewPrefs({ ...get(), showRoomLabels });
+      saveViewPrefs(pickViewPrefs({ ...get(), showRoomLabels }));
     },
 
     toggleShowFurniture() {
       const showFurniture = !get().showFurniture;
       set({ showFurniture });
-      saveViewPrefs({ ...get(), showFurniture });
+      saveViewPrefs(pickViewPrefs({ ...get(), showFurniture }));
+    },
+
+    setPlanMode(planMode) {
+      set({ planMode });
+      saveViewPrefs(pickViewPrefs({ ...get(), planMode }));
     },
   };
 });

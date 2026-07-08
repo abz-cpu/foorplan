@@ -36,6 +36,7 @@ import {
   openingJambs,
   parseLengthToMm,
   roomAreaM2,
+  ROOM_TYPES,
   snapPointToGrid,
   snapValueToGrid,
   snapWallEnd,
@@ -50,6 +51,7 @@ import {
   type Opening,
   type Point,
   type RoomRect,
+  type RoomType,
   type SymbolInstance,
   type Wall,
 } from '@floorplan/core';
@@ -75,6 +77,20 @@ const INK = '#22332F';
 const FAINT = '#71827C';
 const SANS = "'Instrument Sans', system-ui, sans-serif";
 const MONO = "'IBM Plex Mono', monospace";
+
+/** Presentation-mode zonal shading — one soft fill/edge pair per room type,
+ *  used instead of the plain white technical-drawing fill. */
+const ROOM_ZONE_COLORS: Record<RoomType, { fill: string; edge: string }> = {
+  'Living Room': { fill: '#E4EEE8', edge: '#9DBFAC' },
+  'Kitchen / Diner': { fill: '#FBEED9', edge: '#E0B871' },
+  Bedroom: { fill: '#E3EAF7', edge: '#9FB4DE' },
+  Bathroom: { fill: '#DFF1F0', edge: '#8FC9C5' },
+  WC: { fill: '#E8F1EF', edge: '#A9CAC4' },
+  Hallway: { fill: '#EEECE6', edge: '#C3BCAC' },
+  Stairs: { fill: '#EAE3F2', edge: '#B9A4D1' },
+  Utility: { fill: '#F0E8E1', edge: '#CBAF98' },
+  Other: { fill: '#EDEDED', edge: '#C6C6C6' },
+};
 
 const clampZoom = (z: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
 
@@ -312,6 +328,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
   const showDimensions = useEditorStore((s) => s.showDimensions);
   const showRoomLabels = useEditorStore((s) => s.showRoomLabels);
   const showFurniture = useEditorStore((s) => s.showFurniture);
+  const planMode = useEditorStore((s) => s.planMode);
   const select = useEditorStore((s) => s.select);
   const toggleSelect = useEditorStore((s) => s.toggleSelect);
   const selectMany = useEditorStore((s) => s.selectMany);
@@ -973,6 +990,8 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
     return { start, end, thickness: openingHover.wall.thickness };
   })();
 
+  const zonesPresent: RoomType[] = ROOM_TYPES.filter((t) => doc.rooms.some((r) => r.type === t));
+
   const gridBackgroundImage =
     gridStyle === 'dots'
       ? 'radial-gradient(#DCE6E2 1px, transparent 1px)'
@@ -1053,6 +1072,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
             const r = resizeDraft?.id === room.id ? resizeDraft : room;
             const isSel = selectedIds.includes(room.id);
             const stairs = room.type === 'Stairs';
+            const zone = planMode === 'presentation' ? ROOM_ZONE_COLORS[room.type] : null;
             return (
               <Group
                 key={room.id}
@@ -1082,8 +1102,8 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
                 <Rect
                   width={r.w}
                   height={r.h}
-                  fill={isSel ? SELECT_FILL : '#FFFFFF'}
-                  stroke={isSel ? ACTION : ROOM_EDGE}
+                  fill={isSel ? SELECT_FILL : (zone?.fill ?? '#FFFFFF')}
+                  stroke={isSel ? ACTION : (zone?.edge ?? ROOM_EDGE)}
                   strokeWidth={isSel ? 34 : 18}
                   dash={isSel ? [110, 75] : undefined}
                 />
@@ -1407,6 +1427,43 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
           {selectedRoom && tool === 'select' && renderResizeHandles(selectedRoom)}
         </Layer>
       </Stage>
+
+      {planMode === 'presentation' && zonesPresent.length > 0 && (
+        <div
+          style={{
+            position: 'absolute',
+            left: 16,
+            top: 16,
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: '6px 14px',
+            maxWidth: 320,
+            padding: '10px 14px',
+            borderRadius: 12,
+            background: 'rgba(255,255,255,0.92)',
+            border: `1px solid ${ROOM_EDGE}`,
+            boxShadow: '0 4px 14px rgba(0,0,0,0.08)',
+            pointerEvents: 'none',
+            fontFamily: SANS,
+          }}
+        >
+          {zonesPresent.map((type) => (
+            <div key={type} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span
+                style={{
+                  width: 10,
+                  height: 10,
+                  borderRadius: 3,
+                  background: ROOM_ZONE_COLORS[type].fill,
+                  border: `1.5px solid ${ROOM_ZONE_COLORS[type].edge}`,
+                  flex: 'none',
+                }}
+              />
+              <span style={{ fontSize: 11.5, fontWeight: 600, color: INK }}>{type}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

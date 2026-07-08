@@ -95,6 +95,8 @@ export default function EditorPage() {
   const toggleShowRoomLabels = useEditorStore((s) => s.toggleShowRoomLabels);
   const showFurniture = useEditorStore((s) => s.showFurniture);
   const toggleShowFurniture = useEditorStore((s) => s.toggleShowFurniture);
+  const planMode = useEditorStore((s) => s.planMode);
+  const setPlanMode = useEditorStore((s) => s.setPlanMode);
   const saveState = useEditorStore((s) => s.saveState);
   const doc = useEditorStore((s) => s.doc);
   const floorId = useEditorStore((s) => s.floorId);
@@ -518,7 +520,25 @@ export default function EditorPage() {
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setTweaksOpen(false)} />
                   <div className="absolute bottom-10 right-0 z-50 w-64 rounded-xl border border-line-soft bg-ink p-4 text-white shadow-toast">
-                    <div className="text-[11px] font-semibold tracking-[0.07em] text-white/50">CANVAS</div>
+                    <div className="text-[11px] font-semibold tracking-[0.07em] text-white/50">STYLE</div>
+                    <div className="mt-2.5 flex items-center justify-between">
+                      <span className="text-[13px] font-medium">Plan mode</span>
+                      <SegmentedControl
+                        options={[
+                          { value: 'technical', label: 'Technical' },
+                          { value: 'presentation', label: 'Presentation' },
+                        ]}
+                        value={planMode}
+                        onChange={setPlanMode}
+                      />
+                    </div>
+                    <p className="mt-2 text-[11.5px] leading-snug text-white/50">
+                      Presentation mode shades each room by type — handy for client-facing plans.
+                    </p>
+
+                    <div className="mt-4 border-t border-white/10 pt-3 text-[11px] font-semibold tracking-[0.07em] text-white/50">
+                      CANVAS
+                    </div>
                     <div className="mt-2.5 flex items-center justify-between">
                       <span className="text-[13px] font-medium">Grid style</span>
                       <SegmentedControl

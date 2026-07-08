@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { floorFootprint } from '../src/measure';
+import { classifyExternalWalls, floorFootprint } from '../src/measure';
 import { buildRoomScheduleCsv } from '../src/csv';
-import { emptyFloorDoc } from '../src/doc';
-import type { FloorDoc, RoomRect } from '../src/types';
+import { addWall, emptyFloorDoc } from '../src/doc';
+import { detectRooms } from '../src/detect';
+import type { FloorDoc, RoomRect, Wall } from '../src/types';
 
 const room = (id: string, x: number, y: number, w: number, h: number, over: Partial<RoomRect> = {}): RoomRect => ({
   id,
@@ -48,6 +49,64 @@ describe('floorFootprint', () => {
     const fp = floorFootprint(doc);
     expect(fp.areaM2).toBeCloseTo(18, 5); // 6m x 3m
     expect(fp.exposedPerimeterM).toBeCloseTo(18, 5);
+  });
+});
+
+describe('classifyExternalWalls', () => {
+  const wall = (id: string, ax: number, ay: number, bx: number, by: number): Wall => ({
+    id,
+    a: { x: ax, y: ay },
+    b: { x: bx, y: by },
+    thickness: 100,
+  });
+
+  it('marks the perimeter external and the shared partition internal', () => {
+    // Two 4x3m rooms side by side -> one 8x3m footprint with a partition wall down the middle.
+    const doc: FloorDoc = {
+      ...emptyFloorDoc(),
+      rooms: [room('a', 0, 0, 4000, 3000), room('b', 4000, 0, 4000, 3000)],
+      walls: [
+        wall('top', 0, 0, 8000, 0),
+        wall('bottom', 0, 3000, 8000, 3000),
+        wall('left', 0, 0, 0, 3000),
+        wall('right', 8000, 0, 8000, 3000),
+        wall('partition', 4000, 0, 4000, 3000),
+      ],
+    };
+    const external = classifyExternalWalls(doc);
+    expect(external.has('top')).toBe(true);
+    expect(external.has('bottom')).toBe(true);
+    expect(external.has('left')).toBe(true);
+    expect(external.has('right')).toBe(true);
+    expect(external.has('partition')).toBe(false);
+  });
+
+  it('returns an empty set when there are no rooms', () => {
+    const doc: FloorDoc = { ...emptyFloorDoc(), walls: [wall('a', 0, 0, 1000, 0)] };
+    expect(classifyExternalWalls(doc).size).toBe(0);
+  });
+
+  it('classifies correctly against detectRooms output, where adjacent rooms are inset from wall centrelines and never actually touch', () => {
+    // Regression test: detectRooms insets each room by half the bounding
+    // wall's thickness (so GIA excludes wall thickness), which means two
+    // rooms either side of a shared internal wall always leave a gap at
+    // that wall — a naive room-union-boundary match would misclassify the
+    // partition as external and, worse, misclassify true perimeter walls
+    // as internal whenever a wall's exact midpoint lands in that gap.
+    let doc: FloorDoc = emptyFloorDoc();
+    doc = addWall(doc, { id: 'top', a: { x: -2900, y: -3800 }, b: { x: 5500, y: -3800 }, thickness: 100 });
+    doc = addWall(doc, { id: 'right', a: { x: 5500, y: -3800 }, b: { x: 5500, y: 2100 }, thickness: 100 });
+    doc = addWall(doc, { id: 'bottom', a: { x: 5500, y: 2100 }, b: { x: -2900, y: 2100 }, thickness: 100 });
+    doc = addWall(doc, { id: 'left', a: { x: -2900, y: 2100 }, b: { x: -2900, y: -3800 }, thickness: 100 });
+    // Deliberately placed near the horizontal midpoint of top/bottom, the
+    // exact condition that broke the earlier boundary-matching approach.
+    doc = addWall(doc, { id: 'partition', a: { x: 1300, y: -3800 }, b: { x: 1300, y: 2100 }, thickness: 100 });
+    doc = { ...doc, rooms: detectRooms(doc) };
+    expect(doc.rooms).toHaveLength(2);
+
+    const external = classifyExternalWalls(doc);
+    expect(external).toEqual(new Set(['top', 'right', 'bottom', 'left']));
+    expect(external.has('partition')).toBe(false);
   });
 });
 

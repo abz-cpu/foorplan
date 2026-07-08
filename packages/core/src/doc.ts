@@ -1,5 +1,15 @@
+import { classifyExternalWalls } from './measure';
 import type { SymbolInstance } from './symbols';
-import type { FloorDoc, Opening, RoomRect, TextLabel, Underlay, Wall } from './types';
+import {
+  DEFAULT_WALL_THICKNESS_MM,
+  EXTERNAL_WALL_THICKNESS_MM,
+  type FloorDoc,
+  type Opening,
+  type RoomRect,
+  type TextLabel,
+  type Underlay,
+  type Wall,
+} from './types';
 
 export function emptyFloorDoc(): FloorDoc {
   return { schemaVersion: 1, walls: [], rooms: [], labels: [], openings: [], symbols: [] };
@@ -57,6 +67,24 @@ export function updateWall(doc: FloorDoc, id: string, patch: Partial<Omit<Wall, 
   return {
     ...doc,
     walls: doc.walls.map((w) => (w.id === id ? { ...w, ...patch } : w)),
+  };
+}
+
+/**
+ * One-shot bulk classification: sets every wall on the exposed (heat-loss)
+ * boundary to the external thickness and every other wall to the internal
+ * default. A deliberate, undoable user action rather than continuous
+ * background reclassification, so it never fights a manual per-wall
+ * thickness edit made afterwards.
+ */
+export function applyAutoWallThickness(doc: FloorDoc): FloorDoc {
+  const externalIds = classifyExternalWalls(doc);
+  return {
+    ...doc,
+    walls: doc.walls.map((w) => ({
+      ...w,
+      thickness: externalIds.has(w.id) ? EXTERNAL_WALL_THICKNESS_MM : DEFAULT_WALL_THICKNESS_MM,
+    })),
   };
 }
 

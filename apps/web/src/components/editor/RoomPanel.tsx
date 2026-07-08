@@ -4,6 +4,7 @@ import {
   Download,
   FlipHorizontal2,
   ImagePlus,
+  Layers,
   ListChecks,
   Lock,
   LockOpen,
@@ -15,6 +16,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import {
+  applyAutoWallThickness,
   deleteEntities,
   deleteEntity,
   detectRooms,
@@ -149,6 +151,7 @@ export function RoomPanel({
   const [name, setName] = useState('');
   const [ceiling, setCeiling] = useState('');
   const [wallLen, setWallLen] = useState('');
+  const [wallThickness, setWallThickness] = useState('');
   const [openingWidth, setOpeningWidth] = useState('');
   const [labelText, setLabelText] = useState('');
 
@@ -159,6 +162,9 @@ export function RoomPanel({
   useEffect(() => {
     setWallLen(wall ? formatMmForInput(wallLengthMm(wall)) : '');
   }, [wall?.id, wall?.a, wall?.b, wall]);
+  useEffect(() => {
+    setWallThickness(wall ? String(wall.thickness) : '');
+  }, [wall?.id, wall?.thickness, wall]);
   useEffect(() => {
     setOpeningWidth(opening ? String(Math.round(opening.widthMm)) : '');
   }, [opening?.id, opening?.widthMm, opening]);
@@ -190,6 +196,15 @@ export function RoomPanel({
       );
     } else {
       setWallLen(formatMmForInput(currentMm));
+    }
+  };
+  const commitWallThickness = () => {
+    if (!wall) return;
+    const v = Number.parseInt(wallThickness, 10);
+    if (Number.isFinite(v) && v >= 50 && v <= 500 && v !== wall.thickness) {
+      commit('Set wall thickness', updateWall(doc, wall.id, { thickness: v }));
+    } else {
+      setWallThickness(String(wall.thickness));
     }
   };
   const commitOpeningWidth = () => {
@@ -228,6 +243,15 @@ export function RoomPanel({
     }
     commit('Detect rooms', next);
     toast(`${found.length} room${found.length === 1 ? '' : 's'} detected and named`);
+  };
+
+  const handleAutoWallThickness = () => {
+    if (doc.walls.length === 0) {
+      toast('Draw some walls first');
+      return;
+    }
+    commit('Auto-set wall thickness', applyAutoWallThickness(doc));
+    toast('External walls thickened, internal walls reset');
   };
 
   const handleUnderlayFile = (file: File) => {
@@ -590,7 +614,17 @@ export function RoomPanel({
               <p className="mt-1 text-[11px] text-ink-ghost">Accepts m, cm, mm, or feet/inches (13'9")</p>
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <StatTile label="Length" value={formatMmAsM(wallLengthMm(wall))} />
-                <StatTile label="Thickness" value={`${wall.thickness} mm`} />
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium text-ink-faint">Thickness (mm)</label>
+                  <input
+                    value={wallThickness}
+                    onChange={(e) => setWallThickness(e.target.value)}
+                    onBlur={commitWallThickness}
+                    onKeyDown={blurOnEnter}
+                    inputMode="numeric"
+                    className={numberInputClass}
+                  />
+                </div>
               </div>
               <DeleteButton
                 label="Delete wall"
@@ -633,6 +667,11 @@ export function RoomPanel({
                     icon={<Download size={13} />}
                     label="Download room schedule (CSV)"
                     onClick={onDownloadCsv}
+                  />
+                  <PanelButton
+                    icon={<Layers size={13} />}
+                    label="Auto-set wall thickness"
+                    onClick={handleAutoWallThickness}
                   />
                 </div>
               </div>

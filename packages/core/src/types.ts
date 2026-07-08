@@ -88,6 +88,9 @@ export interface FloorDoc {
 export type PropertyStatus = 'draft' | 'ready' | 'exported';
 
 export const DEFAULT_WALL_THICKNESS_MM = 100;
+/** Typical masonry/cavity wall thickness — applied to boundary walls by
+ *  "Auto-set wall thickness" (see measure.ts's classifyExternalWalls). */
+export const EXTERNAL_WALL_THICKNESS_MM = 200;
 export const DEFAULT_CEILING_HEIGHT_M = 2.4;
 export const DEFAULT_GRID_MM = 100;
 export const DEFAULT_DOOR_WIDTH_MM = 826;

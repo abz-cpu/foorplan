@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <style>
+    body { margin: 0; font-family: 'Instrument Sans', system-ui, sans-serif; -webkit-font-smoothing: antialiased; overflow: hidden; }
+    * { box-sizing: border-box; }
+  </style>
+</helmet>
+
+<div data-screen-label="Export Modal" style="height: 100vh; position: relative; background: #FBFDFC; color: #10201C;">
+
+  <!-- ===== Dimmed editor backdrop (static) ===== -->
+  <div style="position: absolute; inset: 0; overflow: hidden;">
+    <div style="height: 52px; background: #FFFFFF; border-bottom: 1px solid #E4EAE8;"></div>
+    <div style="position: absolute; inset: 52px 0 0; background-image: radial-gradient(#DCE6E2 1px, transparent 1px); background-size: 22px 22px;"></div>
+    <div style="position: absolute; inset: 52px 0 0; display: flex; align-items: center; justify-content: center;">
+      <svg viewBox="0 0 700 560" style="width: 620px; max-width: 90%;" fill="none">
+        <rect x="100" y="80" width="492" height="384" fill="#FFFFFF" stroke="#1F312C" stroke-width="8"></rect>
+        <path d="M364 80 V464 M100 284 H364 M364 212 H592 M364 302 H592 M464 212 V302" stroke="#1F312C" stroke-width="5"></path>
+      </svg>
+    </div>
+  </div>
+  <div style="position: absolute; inset: 0; background: rgba(14,30,26,0.44); backdrop-filter: blur(3px);"></div>
+
+  <!-- ===== Modal ===== -->
+  <div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px;">
+    <div style="width: 780px; max-width: 100%; max-height: 92vh; background: #FFFFFF; border-radius: 18px; box-shadow: 0 32px 80px rgba(10,22,19,0.35); display: flex; flex-direction: column; overflow: hidden;">
+
+      <!-- Header -->
+      <div style="display: flex; align-items: flex-start; justify-content: space-between; padding: 20px 22px 16px; border-bottom: 1px solid #EEF2F1;">
+        <div>
+          <h2 style="margin: 0; font-size: 18px; font-weight: 700; letter-spacing: -0.015em;">Export Plan</h2>
+          <p style="margin: 4px 0 0; font-size: 13px; color: #71827C;">14 Wolseley Road, SE18 · Ground &amp; First Floor</p>
+        </div>
+        <a href="Editor.dc.html" title="Close" style="width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 9px; color: #71827C; text-decoration: none;" style-hover="background: #F0F4F3; color: #10201C;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+        </a>
+      </div>
+
+      <!-- Body -->
+      <div style="display: grid; grid-template-columns: 316px 1fr; min-height: 0; flex: 1;">
+
+        <!-- Options column -->
+        <div style="padding: 18px 22px 20px; border-right: 1px solid #EEF2F1; overflow-y: auto; display: flex; flex-direction: column; gap: 17px;">
+
+          <div>
+            <div style="font-size: 12px; font-weight: 650; color: #4A5D57; margin-bottom: 7px;">Format</div>
+            <div style="display: flex; gap: 3px; background: #E8EEEC; padding: 3px; border-radius: 10px;">
+              <button onClick="{{ setPdf }}" style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 7px; height: 34px; border: none; border-radius: 8px; font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer; background: {{ pdfBg }}; color: {{ pdfFg }}; box-shadow: {{ pdfShadow }};">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"></path><path d="M14 2v4a2 2 0 0 0 2 2h4"></path></svg>
+                PDF
+              </button>
+              <button onClick="{{ setPng }}" style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 7px; height: 34px; border: none; border-radius: 8px; font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer; background: {{ pngBg }}; color: {{ pngFg }}; box-shadow: {{ pngShadow }};">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="9" cy="9" r="2"></circle><path d="m21 15-3.09-3.09a2 2 0 0 0-2.82 0L6 21"></path></svg>
+                PNG
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <div style="font-size: 12px; font-weight: 650; color: #4A5D57; margin-bottom: 7px;">Paper size</div>
+            <div style="display: flex; gap: 3px; background: #E8EEEC; padding: 3px; border-radius: 10px;">
+              <button onClick="{{ setA4 }}" style="flex: 1; height: 34px; border: none; border-radius: 8px; font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer; background: {{ a4Bg }}; color: {{ a4Fg }}; box-shadow: {{ a4Shadow }};">A4</button>
+              <button onClick="{{ setA3 }}" style="flex: 1; height: 34px; border: none; border-radius: 8px; font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer; background: {{ a3Bg }}; color: {{ a3Fg }}; box-shadow: {{ a3Shadow }};">A3</button>
+            </div>
+          </div>
+
+          <div>
+            <div style="font-size: 12px; font-weight: 650; color: #4A5D57; margin-bottom: 7px;">Orientation</div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+              <button onClick="{{ setPortrait }}" style="display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 12px 8px 10px; border-radius: 11px; font-family: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; border: 1.5px solid {{ portBorder }}; background: {{ portBg }}; color: {{ portFg }};">
+                <span style="width: 18px; height: 24px; border-radius: 3px; border: 2px solid currentColor;"></span>
+                Portrait
+              </button>
+              <button onClick="{{ setLandscape }}" style="display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 12px 8px 10px; border-radius: 11px; font-family: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; border: 1.5px solid {{ landBorder }}; background: {{ landBg }}; color: {{ landFg }};">
+                <span style="width: 24px; height: 18px; margin: 3px 0; border-radius: 3px; border: 2px solid currentColor;"></span>
+                Landscape
+              </button>
+            </div>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <div style="font-size: 12px; font-weight: 650; color: #4A5D57; margin-bottom: 3px;">Options</div>
+
+            <button onClick="{{ toggleMeasure }}" style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 2px; background: transparent; border: none; cursor: pointer; font-family: inherit; text-align: left;">
+              <span style="font-size: 13px; font-weight: 500; color: #33433E;">Include measurements</span>
+              <span style="width: 36px; height: 21px; border-radius: 20px; position: relative; flex: none; transition: background 0.15s; background: {{ measureTrack }};">
+                <span style="position: absolute; top: 2.5px; width: 16px; height: 16px; border-radius: 50%; background: #FFFFFF; box-shadow: 0 1px 3px rgba(16,32,28,0.3); transition: left 0.15s; left: {{ measureKnob }};"></span>
+              </span>
+            </button>
+
+            <button onClick="{{ toggleDisclaimer }}" style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 2px; background: transparent; border: none; cursor: pointer; font-family: inherit; text-align: left;">
+              <span style="font-size: 13px; font-weight: 500; color: #33433E;">Include L&amp;D Energy disclaimer</span>
+              <span style="width: 36px; height: 21px; border-radius: 20px; position: relative; flex: none; transition: background 0.15s; background: {{ discTrack }};">
+                <span style="position: absolute; top: 2.5px; width: 16px; height: 16px; border-radius: 50%; background: #FFFFFF; box-shadow: 0 1px 3px rgba(16,32,28,0.3); transition: left 0.15s; left: {{ discKnob }};"></span>
+              </span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Preview column -->
+        <div style="background: #EDF2F0; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 22px; position: relative; min-height: 380px;">
+          <span style="position: absolute; top: 12px; right: 14px; font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: #71827C; background: #FFFFFF; border: 1px solid #E4EAE8; padding: 3px 8px; border-radius: 6px;">{{ previewTag }}</span>
+
+          <div style="width: {{ sheetW }}px; height: {{ sheetH }}px; background: #FFFFFF; border-radius: 4px; box-shadow: 0 14px 36px rgba(16,32,28,0.18); display: flex; flex-direction: column; padding: 16px 16px 12px; transition: width 0.25s ease, height 0.25s ease;">
+            <div style="display: flex; align-items: center; justify-content: space-between; padding-bottom: 8px; border-bottom: 1px solid #EEF2F1;">
+              <div>
+                <div style="font-size: 9.5px; font-weight: 700; letter-spacing: -0.01em;">14 Wolseley Road, London SE18</div>
+                <div style="font-size: 7.5px; color: #8A9A94; margin-top: 1px;">Ground Floor · Approx. GIA 84 m²</div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 4px;">
+                <span style="width: 12px; height: 12px; border-radius: 3px; background: #0E3E36; display: flex; align-items: center; justify-content: center;"><svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="#8FD6C2" stroke-width="2.4"><path d="M4 4h16v16H4z"></path><path d="M12 4v8"></path><path d="M12 12h8"></path></svg></span>
+                <span style="font-size: 7px; font-weight: 700; color: #33433E;">L&amp;D ENERGY</span>
+              </div>
+            </div>
+
+            <div style="flex: 1; display: flex; align-items: center; justify-content: center; min-height: 0;">
+              <svg viewBox="40 30 620 500" style="max-width: 100%; max-height: 100%;" fill="none">
+                <rect x="100" y="80" width="492" height="384" fill="#FFFFFF" stroke="#22332F" stroke-width="7"></rect>
+                <path d="M364 80 V464 M100 284 H364 M364 212 H592 M364 302 H592 M464 212 V302" stroke="#22332F" stroke-width="4"></path>
+                <g style="font-family: 'Instrument Sans', sans-serif; font-size: 17px; font-weight: 600;" fill="#22332F">
+                  <text x="232" y="180" text-anchor="middle">Living Room</text>
+                  <text x="232" y="372" text-anchor="middle">Kitchen/Diner</text>
+                  <text x="478" y="140" text-anchor="middle">Hallway</text>
+                  <text x="414" y="260" text-anchor="middle" style="font-size: 14px;">WC</text>
+                  <text x="478" y="386" text-anchor="middle">Dining Room</text>
+                </g>
+                <sc-if value="{{ measurements }}" hint-placeholder-val="{{ true }}">
+                  <g style="font-family: 'IBM Plex Mono', monospace; font-size: 13px;" fill="#5E6F6A">
+                    <text x="232" y="202" text-anchor="middle">4.40 × 3.40 m</text>
+                    <text x="232" y="394" text-anchor="middle">4.40 × 3.00 m</text>
+                    <text x="478" y="162" text-anchor="middle">3.80 × 2.20 m</text>
+                    <text x="478" y="408" text-anchor="middle">3.80 × 2.70 m</text>
+                  </g>
+                  <g stroke="#7C9A90" stroke-width="1.5">
+                    <path d="M100 52 V72 M592 52 V72 M100 58 H592"></path>
+                    <path d="M72 80 H92 M72 464 H92 M78 80 V464"></path>
+                  </g>
+                  <g style="font-family: 'IBM Plex Mono', monospace; font-size: 14px;" fill="#4A5D57">
+                    <text x="346" y="46" text-anchor="middle">8.20 m</text>
+                    <text x="62" y="276" text-anchor="middle" transform="rotate(-90 62 276)">6.40 m</text>
+                  </g>
+                </sc-if>
+              </svg>
+            </div>
+
+            <sc-if value="{{ disclaimer }}" hint-placeholder-val="{{ true }}">
+              <div style="border-top: 1px solid #EEF2F1; padding-top: 6px; font-size: 6.2px; line-height: 1.5; color: #8A9A94;">
+                Produced by L&amp;D Energy. This plan is for illustrative purposes only and is not to scale. Measurements are approximate and follow RICS guidance; they should not be relied upon for valuation, flooring or furnishing purposes.
+              </div>
+            </sc-if>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div style="display: flex; align-items: center; gap: 12px; padding: 14px 22px; border-top: 1px solid #EEF2F1; background: #FBFDFC;">
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; color: #71827C;">{{ fileMeta }}</span>
+        <div style="flex: 1;"></div>
+        <a href="Editor.dc.html" style="height: 36px; display: flex; align-items: center; padding: 0 15px; border-radius: 9px; border: 1px solid #DCE4E1; background: #FFFFFF; color: #33433E; font-size: 13px; font-weight: 600; text-decoration: none;" style-hover="background: #F0F4F3;">Cancel</a>
+        <button onClick="{{ onGenerate }}" style="display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 16px; border: none; border-radius: 9px; font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer; color: #FFFFFF; box-shadow: 0 1px 2px rgba(11,58,46,0.25); background: {{ genBg }}; min-width: 158px; justify-content: center;">
+          <sc-if value="{{ isIdle }}" hint-placeholder-val="{{ true }}">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><path d="M12 15V3"></path></svg>
+          </sc-if>
+          <sc-if value="{{ isDone }}" hint-placeholder-val="{{ false }}">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>
+          </sc-if>
+          {{ genLabel }}
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Success toast -->
+  <sc-if value="{{ isDone }}" hint-placeholder-val="{{ false }}">
+    <div style="position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 9px; background: #10201C; color: #FFFFFF; padding: 10px 16px; border-radius: 11px; font-size: 13px; font-weight: 500; box-shadow: 0 10px 30px rgba(16,32,28,0.35); z-index: 60;">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#5FD3AE" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>
+      {{ toastText }}
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{
+  &quot;defaultFormat&quot;: { &quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;pdf&quot;, &quot;png&quot;], &quot;default&quot;: &quot;pdf&quot;, &quot;tsType&quot;: &quot;'pdf' | 'png'&quot;, &quot;section&quot;: &quot;Defaults&quot; },
+  &quot;defaultOrientation&quot;: { &quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;portrait&quot;, &quot;landscape&quot;], &quot;default&quot;: &quot;portrait&quot;, &quot;tsType&quot;: &quot;'portrait' | 'landscape'&quot;, &quot;section&quot;: &quot;Defaults&quot; }
+}">
+class Component extends DCLogic {
+  state = { format: null, paper: 'a4', orient: 'portrait', measurements: true, disclaimer: true, phase: 'idle' };
+
+  seg(active) {
+    return {
+      bg: active ? '#FFFFFF' : 'transparent',
+      fg: active ? '#10201C' : '#5E6F6A',
+      shadow: active ? '0 1px 3px rgba(16,32,28,0.12)' : 'none'
+    };
+  }
+
+  renderVals() {
+    const s = this.state;
+    const format = s.format ?? this.props.defaultFormat ?? 'pdf';
+    const orient = s.orient ?? this.props.defaultOrientation ?? 'portrait';
+
+    const pdf = this.seg(format === 'pdf'), png = this.seg(format === 'png');
+    const a4 = this.seg(s.paper === 'a4'), a3 = this.seg(s.paper === 'a3');
+
+    const base = s.paper === 'a4' ? 252 : 282;
+    const long = Math.round(base * 1.414);
+    const portrait = orient === 'portrait';
+    const sheetW = portrait ? base : long;
+    const sheetH = portrait ? long : base;
+
+    const dpi = format === 'png' ? '300 DPI' : 'Vector';
+    const size = format === 'png' ? (s.paper === 'a4' ? '2.1 MB' : '3.8 MB') : (s.paper === 'a4' ? '0.9 MB' : '1.2 MB');
+    const ext = format === 'png' ? 'png' : 'pdf';
+
+    const card = (active) => ({
+      border: active ? '#0B7A5E' : '#DCE4E1',
+      bg: active ? '#E9F2EF' : '#FFFFFF',
+      fg: active ? '#0B6B52' : '#5E6F6A'
+    });
+    const pc = card(portrait), lc = card(!portrait);
+
+    const phase = s.phase;
+    return {
+      setPdf: () => this.setState({ format: 'pdf', phase: 'idle' }),
+      setPng: () => this.setState({ format: 'png', phase: 'idle' }),
+      pdfBg: pdf.bg, pdfFg: pdf.fg, pdfShadow: pdf.shadow,
+      pngBg: png.bg, pngFg: png.fg, pngShadow: png.shadow,
+      setA4: () => this.setState({ paper: 'a4', phase: 'idle' }),
+      setA3: () => this.setState({ paper: 'a3', phase: 'idle' }),
+      a4Bg: a4.bg, a4Fg: a4.fg, a4Shadow: a4.shadow,
+      a3Bg: a3.bg, a3Fg: a3.fg, a3Shadow: a3.shadow,
+      setPortrait: () => this.setState({ orient: 'portrait', phase: 'idle' }),
+      setLandscape: () => this.setState({ orient: 'landscape', phase: 'idle' }),
+      portBorder: pc.border, portBg: pc.bg, portFg: pc.fg,
+      landBorder: lc.border, landBg: lc.bg, landFg: lc.fg,
+      toggleMeasure: () => this.setState(st => ({ measurements: !st.measurements, phase: 'idle' })),
+      measurements: s.measurements,
+      measureTrack: s.measurements ? '#0B7A5E' : '#C6D2CD',
+      measureKnob: s.measurements ? '17.5px' : '2.5px',
+      toggleDisclaimer: () => this.setState(st => ({ disclaimer: !st.disclaimer, phase: 'idle' })),
+      disclaimer: s.disclaimer,
+      discTrack: s.disclaimer ? '#0B7A5E' : '#C6D2CD',
+      discKnob: s.disclaimer ? '17.5px' : '2.5px',
+      sheetW, sheetH,
+      previewTag: (s.paper === 'a4' ? 'A4' : 'A3') + ' · ' + (portrait ? 'Portrait' : 'Landscape') + ' · ' + format.toUpperCase(),
+      fileMeta: 'wolseley-road-plan.' + ext + ' · ≈ ' + size + ' · ' + dpi,
+      isIdle: phase === 'idle',
+      isDone: phase === 'done',
+      genBg: phase === 'done' ? '#17A578' : (phase === 'working' ? '#5E9E8C' : '#0B7A5E'),
+      genLabel: phase === 'working' ? 'Preparing export…' : (phase === 'done' ? 'Export ready' : 'Generate Export'),
+      toastText: 'wolseley-road-plan.' + ext + ' downloaded',
+      onGenerate: () => {
+        if (this.state.phase === 'working') return;
+        this.setState({ phase: 'working' });
+        clearTimeout(this._t1); clearTimeout(this._t2);
+        this._t1 = setTimeout(() => this.setState({ phase: 'done' }), 1300);
+        this._t2 = setTimeout(() => this.setState({ phase: 'idle' }), 4200);
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <style>
+    body { margin: 0; font-family: 'Instrument Sans', system-ui, sans-serif; -webkit-font-smoothing: antialiased; overflow: hidden; }
+    * { box-sizing: border-box; }
+    input::placeholder, textarea::placeholder { color: #94A5A0; }
+  </style>
+</helmet>
+
+<div data-screen-label="Floor Plan Editor" style="height: 100vh; display: flex; flex-direction: column; background: #FFFFFF; color: #10201C;">
+
+  <!-- ============ Top Bar ============ -->
+  <header style="height: 52px; flex: none; background: #FFFFFF; border-bottom: 1px solid #E4EAE8; display: flex; align-items: center; gap: 10px; padding: 0 12px; z-index: 20;">
+    <a href="Dashboard.dc.html" title="Back to My Properties" style="width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; border-radius: 9px; color: #465650; text-decoration: none;" style-hover="background: #F0F4F3;">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19-7-7 7-7"></path><path d="M19 12H5"></path></svg>
+    </a>
+    <div style="width: 26px; height: 26px; border-radius: 7px; background: #0E3E36; display: flex; align-items: center; justify-content: center; flex: none;">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8FD6C2" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"></path><path d="M12 4v8"></path><path d="M12 12h8"></path><path d="M4 15h5"></path></svg>
+    </div>
+    <div style="display: flex; align-items: center; gap: 9px; min-width: 0;">
+      <span style="font-size: 13.5px; font-weight: 650; letter-spacing: -0.01em; white-space: nowrap;">14 Wolseley Road, SE18</span>
+      <span style="display: flex; align-items: center; gap: 5px; padding: 2px 8px 2px 6px; border-radius: 20px; font-size: 11px; font-weight: 600; background: #FFF3DE; color: #8A5A08;"><span style="width: 5px; height: 5px; border-radius: 50%; background: #E29A2B;"></span>Draft</span>
+    </div>
+
+    <div style="flex: 1;"></div>
+
+    <div style="display: flex; align-items: center; gap: 2px; background: #F0F4F3; border-radius: 9px; padding: 2px;">
+      <button onClick="{{ undo }}" title="Undo (⌘Z)" style="width: 31px; height: 30px; display: flex; align-items: center; justify-content: center; border: none; border-radius: 7px; background: transparent; color: #33433E; cursor: pointer;" style-hover="background: #FFFFFF; box-shadow: 0 1px 2px rgba(16,32,28,0.1);">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5 5.5 5.5 0 0 1-5.5 5.5H11"></path></svg>
+      </button>
+      <button onClick="{{ redo }}" title="Redo (⇧⌘Z)" style="width: 31px; height: 30px; display: flex; align-items: center; justify-content: center; border: none; border-radius: 7px; background: transparent; color: #93A5A0; cursor: pointer;" style-hover="background: #FFFFFF; box-shadow: 0 1px 2px rgba(16,32,28,0.1);">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 14 5-5-5-5"></path><path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5 5.5 5.5 0 0 0 9.5 20H13"></path></svg>
+      </button>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 2px; background: #F0F4F3; border-radius: 9px; padding: 2px;">
+      <button onClick="{{ zoomOut }}" title="Zoom out (−)" style="width: 31px; height: 30px; display: flex; align-items: center; justify-content: center; border: none; border-radius: 7px; background: transparent; color: #33433E; cursor: pointer;" style-hover="background: #FFFFFF; box-shadow: 0 1px 2px rgba(16,32,28,0.1);">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14"></path></svg>
+      </button>
+      <span style="min-width: 48px; text-align: center; font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 500; color: #33433E;">{{ zoomLabel }}</span>
+      <button onClick="{{ zoomIn }}" title="Zoom in (+)" style="width: 31px; height: 30px; display: flex; align-items: center; justify-content: center; border: none; border-radius: 7px; background: transparent; color: #33433E; cursor: pointer;" style-hover="background: #FFFFFF; box-shadow: 0 1px 2px rgba(16,32,28,0.1);">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14"></path><path d="M12 5v14"></path></svg>
+      </button>
+      <button onClick="{{ zoomFit }}" title="Fit to screen" style="width: 31px; height: 30px; display: flex; align-items: center; justify-content: center; border: none; border-radius: 7px; background: transparent; color: #33433E; cursor: pointer;" style-hover="background: #FFFFFF; box-shadow: 0 1px 2px rgba(16,32,28,0.1);">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"></path><path d="M21 8V5a2 2 0 0 0-2-2h-3"></path><path d="M3 16v3a2 2 0 0 0 2 2h3"></path><path d="M16 21h3a2 2 0 0 0 2-2v-3"></path></svg>
+      </button>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 7px; padding: 0 10px; font-size: 12px; font-weight: 500; color: #5E6F6A;">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#17A578" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"></path><path d="m9 13 2 2 4-4"></path></svg>
+      Autosaved to Cloud
+    </div>
+
+    <a href="Export%20Modal.dc.html" style="display: flex; align-items: center; gap: 7px; height: 35px; padding: 0 14px; background: #0B7A5E; color: #FFFFFF; border-radius: 9px; font-size: 13px; font-weight: 600; text-decoration: none; box-shadow: 0 1px 2px rgba(11,58,46,0.25);" style-hover="background: #086349;">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><path d="M12 15V3"></path></svg>
+      Export Plan
+    </a>
+  </header>
+
+  <!-- ============ Workspace ============ -->
+  <div style="flex: 1; display: flex; min-height: 0;">
+
+    <!-- Canvas area -->
+    <div style="flex: 1; position: relative; overflow: hidden; background: #FBFDFC;">
+
+      <!-- grid backgrounds (tweakable) -->
+      <sc-if value="{{ gridDots }}" hint-placeholder-val="{{ true }}">
+        <div style="position: absolute; inset: 0; background-image: radial-gradient(#DCE6E2 1px, transparent 1px); background-size: 22px 22px;"></div>
+      </sc-if>
+      <sc-if value="{{ gridLines }}" hint-placeholder-val="{{ false }}">
+        <div style="position: absolute; inset: 0; background-image: linear-gradient(#E8EFEC 1px, transparent 1px), linear-gradient(90deg, #E8EFEC 1px, transparent 1px); background-size: 22px 22px;"></div>
+      </sc-if>
+
+      <!-- Drawing -->
+      <div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;">
+        <svg viewBox="0 0 700 560" style="width: 660px; max-width: 92%; transform: scale({{ zoom }}); transition: transform 0.18s ease;" fill="none">
+          <!-- room fills (clickable) -->
+          <sc-for list="{{ rooms }}" as="r" hint-placeholder-count="5">
+            <g onClick="{{ r.onSelect }}" style="cursor: pointer;">
+              <rect x="{{ r.x }}" y="{{ r.y }}" width="{{ r.w }}" height="{{ r.h }}" fill="{{ r.fill }}"></rect>
+              <rect x="{{ r.x }}" y="{{ r.y }}" width="{{ r.w }}" height="{{ r.h }}" fill="transparent" stroke="{{ r.stroke }}" stroke-width="2" stroke-dasharray="6 4"></rect>
+              <text x="{{ r.cx }}" y="{{ r.cy }}" text-anchor="middle" fill="#22332F" style="font-family: 'Instrument Sans', sans-serif; font-size: 15px; font-weight: 600;">{{ r.name }}</text>
+              <text x="{{ r.cx }}" y="{{ r.cy2 }}" text-anchor="middle" fill="#71827C" style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px;">{{ r.areaLabel }}</text>
+            </g>
+          </sc-for>
+
+          <!-- selection handles -->
+          <sc-for list="{{ handles }}" as="hd" hint-placeholder-count="0">
+            <rect x="{{ hd.x }}" y="{{ hd.y }}" width="8" height="8" fill="#FFFFFF" stroke="#0B7A5E" stroke-width="2"></rect>
+          </sc-for>
+
+          <!-- walls -->
+          <rect x="100" y="80" width="492" height="384" stroke="#1F312C" stroke-width="8"></rect>
+          <path d="M364 80 V464 M100 284 H364 M364 212 H592 M364 302 H592 M464 212 V302" stroke="#1F312C" stroke-width="5"></path>
+
+          <!-- windows (double line on outer wall) -->
+          <g stroke="#1F312C" stroke-width="1.5">
+            <rect x="150" y="76" width="90" height="8" fill="#FFFFFF"></rect><path d="M150 80 h90"></path>
+            <rect x="420" y="76" width="70" height="8" fill="#FFFFFF"></rect><path d="M420 80 h70"></path>
+            <rect x="96" y="330" width="8" height="80" fill="#FFFFFF"></rect><path d="M100 330 v80"></path>
+            <rect x="180" y="460" width="100" height="8" fill="#FFFFFF"></rect><path d="M180 464 h100"></path>
+          </g>
+
+          <!-- doors: gap + swing arc -->
+          <g stroke="#4A5D57" stroke-width="1.5">
+            <rect x="500" y="459" width="52" height="10" fill="#FBFDFC" stroke="none"></rect>
+            <path d="M500 464 V412 A52 52 0 0 1 552 464" fill="none"></path>
+            <rect x="364" y="120" width="10" height="46" fill="#FFFFFF" stroke="none"></rect>
+            <path d="M369 120 H415 A46 46 0 0 1 369 166" fill="none"></path>
+            <rect x="364" y="320" width="10" height="46" fill="#FFFFFF" stroke="none"></rect>
+            <path d="M369 366 H415 A46 46 0 0 0 369 320" fill="none"></path>
+            <rect x="180" y="279" width="46" height="10" fill="#FFFFFF" stroke="none"></rect>
+            <path d="M180 284 V238 A46 46 0 0 1 226 284" fill="none"></path>
+          </g>
+
+          <!-- stairs -->
+          <g stroke="#4A5D57" stroke-width="1.5">
+            <path d="M472 216 h112 M472 228 h112 M472 240 h112 M472 252 h112 M472 264 h112 M472 276 h112 M472 288 h112"></path>
+            <path d="M478 250 h96 M566 242 l10 8 -10 8" stroke="#22332F" stroke-width="2"></path>
+          </g>
+
+          <!-- dimensions (tweakable) -->
+          <sc-if value="{{ showDims }}" hint-placeholder-val="{{ true }}">
+            <g stroke="#7C9A90" stroke-width="1.2">
+              <path d="M100 52 V72 M592 52 V72 M100 58 H592"></path>
+              <path d="M72 80 H92 M72 464 H92 M78 80 V464"></path>
+            </g>
+            <g style="font-family: 'IBM Plex Mono', monospace; font-size: 12px;" fill="#4A5D57">
+              <text x="346" y="48" text-anchor="middle">8.20 m</text>
+              <text x="64" y="276" text-anchor="middle" transform="rotate(-90 64 276)">6.40 m</text>
+            </g>
+            <g style="font-family: 'IBM Plex Mono', monospace; font-size: 11px;" fill="#0B7A5E">
+              <text x="{{ selDimX }}" y="{{ selDimY }}" text-anchor="middle" style="font-weight: 500;">{{ selDimLabel }}</text>
+            </g>
+          </sc-if>
+        </svg>
+      </div>
+
+      <!-- Left floating toolbar -->
+      <div style="position: absolute; left: 14px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 2px; background: #FFFFFF; border: 1px solid #E4EAE8; border-radius: 13px; padding: 5px; box-shadow: 0 8px 24px rgba(16,32,28,0.10); z-index: 10;">
+        <sc-for list="{{ tools }}" as="t" hint-placeholder-count="6">
+          <button onClick="{{ t.onPick }}" title="{{ t.tip }}" style="width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; border: none; border-radius: 9px; cursor: pointer; background: {{ t.bg }}; color: {{ t.fg }};" style-hover="background: {{ t.hoverBg }};">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="{{ t.icon }}"></path></svg>
+          </button>
+        </sc-for>
+        <div style="height: 1px; background: #E4EAE8; margin: 3px 5px;"></div>
+        <button onClick="{{ pickMeasure }}" title="Measure (M)" style="width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; border: none; border-radius: 9px; cursor: pointer; background: {{ measureBg }}; color: {{ measureFg }};" style-hover="background: {{ measureHoverBg }};">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21.3 8.7 8.7 21.3a1 1 0 0 1-1.4 0l-4.6-4.6a1 1 0 0 1 0-1.4L15.3 2.7a1 1 0 0 1 1.4 0l4.6 4.6a1 1 0 0 1 0 1.4Z"></path><path d="m7.5 10.5 2 2"></path><path d="m10.5 7.5 2 2"></path><path d="m13.5 4.5 2 2"></path></svg>
+        </button>
+        <button onClick="{{ pickText }}" title="Text label (T)" style="width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; border: none; border-radius: 9px; cursor: pointer; background: {{ textBg }}; color: {{ textFg }};" style-hover="background: {{ textHoverBg }};">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"></polyline><path d="M9 20h6"></path><path d="M12 4v16"></path></svg>
+        </button>
+      </div>
+
+      <!-- Active tool hint -->
+      <div style="position: absolute; top: 14px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; background: #10201C; color: #E7F0ED; padding: 7px 13px; border-radius: 20px; font-size: 12px; font-weight: 500; box-shadow: 0 6px 18px rgba(16,32,28,0.22); z-index: 10;">
+      <span style="width: 6px; height: 6px; border-radius: 50%; background: #5FD3AE;"></span>
+        {{ toolHint }}
+      </div>
+
+      <!-- Floor switcher -->
+      <div style="position: absolute; left: 14px; bottom: 14px; display: flex; gap: 3px; background: #FFFFFF; border: 1px solid #E4EAE8; border-radius: 11px; padding: 4px; box-shadow: 0 6px 18px rgba(16,32,28,0.10); z-index: 10;">
+        <button onClick="{{ pickGround }}" style="height: 32px; padding: 0 13px; border: none; border-radius: 8px; font-family: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; background: {{ groundBg }}; color: {{ groundFg }};">Ground Floor</button>
+        <button onClick="{{ pickFirst }}" style="height: 32px; padding: 0 13px; border: none; border-radius: 8px; font-family: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; background: {{ firstBg }}; color: {{ firstFg }};">First Floor</button>
+        <button title="Add floor" style="width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border: none; border-radius: 8px; background: transparent; color: #71827C; cursor: pointer;" style-hover="background: #F0F4F3; color: #10201C;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14"></path><path d="M12 5v14"></path></svg>
+        </button>
+      </div>
+
+      <!-- Scale + snap chips -->
+      <div style="position: absolute; right: 14px; bottom: 14px; display: flex; gap: 8px; z-index: 10;">
+        <span style="display: flex; align-items: center; gap: 6px; background: #FFFFFF; border: 1px solid #E4EAE8; border-radius: 9px; padding: 6px 11px; font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; color: #4A5D57; box-shadow: 0 4px 12px rgba(16,32,28,0.07);">1 : 50</span>
+        <span style="display: flex; align-items: center; gap: 6px; background: #FFFFFF; border: 1px solid #E4EAE8; border-radius: 9px; padding: 6px 11px; font-size: 11.5px; font-weight: 600; color: #0A6B4F; box-shadow: 0 4px 12px rgba(16,32,28,0.07);"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>Snap on</span>
+      </div>
+    </div>
+
+    <!-- ============ Right Properties Panel ============ -->
+    <aside style="width: 296px; flex: none; background: #FFFFFF; border-left: 1px solid #E4EAE8; display: flex; flex-direction: column; z-index: 15;">
+      <div style="display: flex; gap: 3px; padding: 10px 12px 0; border-bottom: 1px solid #EEF2F1;">
+        <button onClick="{{ tabProps }}" style="display: flex; align-items: center; gap: 6px; padding: 8px 12px 10px; border: none; background: transparent; font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer; color: {{ propsTabFg }}; box-shadow: {{ propsTabLine }};">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><path d="M3 9h18"></path><path d="M9 21V9"></path></svg>
+          Properties
+        </button>
+        <button onClick="{{ tabAi }}" style="display: flex; align-items: center; gap: 6px; padding: 8px 12px 10px; border: none; background: transparent; font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer; color: {{ aiTabFg }}; box-shadow: {{ aiTabLine }};">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"></path><path d="M20 3v4"></path><path d="M22 5h-4"></path></svg>
+          AI Assistant
+        </button>
+      </div>
+
+      <!-- Properties tab -->
+      <sc-if value="{{ showPropsTab }}" hint-placeholder-val="{{ true }}">
+        <div style="flex: 1; overflow-y: auto; padding: 16px 16px 12px; display: flex; flex-direction: column; gap: 18px;">
+          <div>
+            <div style="font-size: 11px; font-weight: 650; letter-spacing: 0.07em; color: #8A9A94; margin-bottom: 9px;">SELECTED ROOM</div>
+            <label style="display: block; font-size: 12px; font-weight: 600; color: #4A5D57; margin-bottom: 5px;">Room name</label>
+            <input value="{{ selName }}" onChange="{{ onName }}" style="width: 100%; height: 36px; padding: 0 11px; border: 1px solid #DCE4E1; border-radius: 9px; font-family: inherit; font-size: 13.5px; font-weight: 550; color: #10201C; outline: none; background: #FFFFFF;" style-focus="border-color: #0B7A5E; box-shadow: 0 0 0 3px rgba(11,122,94,0.13);">
+            <label style="display: block; font-size: 12px; font-weight: 600; color: #4A5D57; margin: 12px 0 5px;">Room type</label>
+            <select value="{{ selType }}" onChange="{{ onType }}" style="width: 100%; height: 36px; padding: 0 8px; border: 1px solid #DCE4E1; border-radius: 9px; font-family: inherit; font-size: 13px; color: #10201C; outline: none; background: #FFFFFF; cursor: pointer;">
+              <option>Living Room</option><option>Kitchen / Diner</option><option>Bedroom</option><option>Bathroom</option><option>WC</option><option>Hallway</option><option>Stairs</option><option>Utility</option><option>Other</option>
+            </select>
+          </div>
+
+          <div>
+            <div style="font-size: 11px; font-weight: 650; letter-spacing: 0.07em; color: #8A9A94; margin-bottom: 9px;">DIMENSIONS</div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+              <div style="background: #F7FAF9; border: 1px solid #EEF2F1; border-radius: 10px; padding: 10px 11px;">
+                <div style="font-size: 11px; color: #71827C; font-weight: 550;">Width</div>
+                <div style="font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-weight: 500; margin-top: 3px;">{{ selW }} m</div>
+              </div>
+              <div style="background: #F7FAF9; border: 1px solid #EEF2F1; border-radius: 10px; padding: 10px 11px;">
+                <div style="font-size: 11px; color: #71827C; font-weight: 550;">Length</div>
+                <div style="font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-weight: 500; margin-top: 3px;">{{ selL }} m</div>
+              </div>
+              <div style="background: #F7FAF9; border: 1px solid #EEF2F1; border-radius: 10px; padding: 10px 11px;">
+                <div style="font-size: 11px; color: #71827C; font-weight: 550;">Floor area</div>
+                <div style="font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-weight: 500; margin-top: 3px; color: #0B6B52;">{{ selArea }} m²</div>
+              </div>
+              <div style="background: #F7FAF9; border: 1px solid #EEF2F1; border-radius: 10px; padding: 10px 11px;">
+                <div style="font-size: 11px; color: #71827C; font-weight: 550;">Wall length</div>
+                <div style="font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-weight: 500; margin-top: 3px;">{{ selPerim }} m</div>
+              </div>
+            </div>
+            <label style="display: block; font-size: 12px; font-weight: 600; color: #4A5D57; margin: 12px 0 5px;">Ceiling height</label>
+            <div style="position: relative;">
+              <input value="{{ selCeil }}" onChange="{{ onCeil }}" style="width: 100%; height: 36px; padding: 0 34px 0 11px; border: 1px solid #DCE4E1; border-radius: 9px; font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: #10201C; outline: none;" style-focus="border-color: #0B7A5E; box-shadow: 0 0 0 3px rgba(11,122,94,0.13);">
+              <span style="position: absolute; right: 11px; top: 50%; transform: translateY(-50%); font-size: 12px; color: #8A9A94;">m</span>
+            </div>
+            <label style="display: flex; align-items: center; gap: 9px; margin-top: 13px; cursor: pointer;">
+              <input type="checkbox" checked="{{ selGia }}" onChange="{{ onGia }}" style="width: 15px; height: 15px; accent-color: #0B7A5E; cursor: pointer;">
+              <span style="font-size: 12.5px; color: #33433E; font-weight: 500;">Include in gross internal area</span>
+            </label>
+          </div>
+        </div>
+        <div style="flex: none; border-top: 1px solid #EEF2F1; padding: 13px 16px; display: flex; align-items: center; justify-content: space-between; background: #F7FAF9;">
+          <span style="font-size: 12px; font-weight: 600; color: #4A5D57;">Gross internal area</span>
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 14px; font-weight: 500; color: #0B6B52;">{{ gia }} m²</span>
+        </div>
+      </sc-if>
+
+      <!-- AI tab -->
+      <sc-if value="{{ showAiTab }}" hint-placeholder-val="{{ false }}">
+        <div style="flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px;">
+          <div style="border: 1px solid #E4EAE8; border-radius: 12px; padding: 13px 14px;">
+            <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 650;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6B4FBB" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><path d="M3 9h18"></path><path d="M9 21V9"></path></svg>
+              Auto-name rooms
+            </div>
+            <p style="margin: 6px 0 11px; font-size: 12.5px; line-height: 1.45; color: #5E6F6A;">Detect likely room types from the layout and label every room on this floor.</p>
+            <button onClick="{{ onSuggest }}" style="height: 32px; padding: 0 12px; border: 1px solid #DCD0F5; border-radius: 8px; background: #F5F1FD; color: #5B32B4; font-family: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;" style-hover="background: #EDE5FB;">{{ suggestLabel }}</button>
+          </div>
+
+          <div style="border: 1px solid #E4EAE8; border-radius: 12px; padding: 13px 14px;">
+            <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 650;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6B4FBB" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"></path><path d="M14 2v4a2 2 0 0 0 2 2h4"></path><path d="M8 13h8"></path><path d="M8 17h5"></path></svg>
+              Property description
+            </div>
+            <p style="margin: 6px 0 11px; font-size: 12.5px; line-height: 1.45; color: #5E6F6A;">Draft listing copy from room names, areas and floors — ready for Rightmove or your EPC report.</p>
+            <sc-if value="{{ aiText }}" hint-placeholder-val="{{ false }}">
+              <div style="background: #F7FAF9; border: 1px solid #EEF2F1; border-radius: 9px; padding: 11px 12px; font-size: 12.5px; line-height: 1.55; color: #33433E; margin-bottom: 10px;">{{ aiText }}</div>
+              <div style="display: flex; gap: 7px;">
+                <button onClick="{{ onCopy }}" style="display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px; border: 1px solid #DCE4E1; border-radius: 8px; background: #FFFFFF; color: #33433E; font-family: inherit; font-size: 12px; font-weight: 600; cursor: pointer;" style-hover="background: #F0F4F3;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="14" height="14" rx="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg>{{ copyLabel }}</button>
+                <button onClick="{{ onGenerate }}" style="display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px; border: 1px solid #DCE4E1; border-radius: 8px; background: #FFFFFF; color: #33433E; font-family: inherit; font-size: 12px; font-weight: 600; cursor: pointer;" style-hover="background: #F0F4F3;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>Regenerate</button>
+              </div>
+            </sc-if>
+            <sc-if value="{{ aiIdle }}" hint-placeholder-val="{{ true }}">
+              <button onClick="{{ onGenerate }}" style="display: flex; align-items: center; gap: 7px; height: 32px; padding: 0 12px; border: none; border-radius: 8px; background: #6B4FBB; color: #FFFFFF; font-family: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;" style-hover="background: #5B32B4;">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"></path></svg>
+                {{ genLabel }}
+              </button>
+            </sc-if>
+          </div>
+
+          <p style="margin: 0; font-size: 11.5px; line-height: 1.5; color: #8A9A94; padding: 0 2px;">AI suggestions use only the plan data in this property. Review before publishing.</p>
+        </div>
+      </sc-if>
+    </aside>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{
+  &quot;gridStyle&quot;: { &quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;dots&quot;, &quot;lines&quot;, &quot;none&quot;], &quot;default&quot;: &quot;dots&quot;, &quot;tsType&quot;: &quot;'dots' | 'lines' | 'none'&quot;, &quot;section&quot;: &quot;Canvas&quot; },
+  &quot;showDimensions&quot;: { &quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Canvas&quot; }
+}">
+class Component extends DCLogic {
+  state = {
+    tool: 'select',
+    tab: 'props',
+    zoom: 1,
+    floor: 'ground',
+    sel: 'living',
+    aiText: null,
+    aiBusy: false,
+    suggestBusy: false,
+    copied: false,
+    rooms: {
+      living:  { name: 'Living Room',   type: 'Living Room',    x: 104, y: 84,  w: 256, h: 196, wm: 4.4, lm: 3.4, ceil: '2.40', gia: true },
+      kitchen: { name: 'Kitchen/Diner', type: 'Kitchen / Diner', x: 104, y: 288, w: 256, h: 172, wm: 4.4, lm: 3.0, ceil: '2.40', gia: true },
+      hall:    { name: 'Hallway',       type: 'Hallway',        x: 368, y: 84,  w: 220, h: 124, wm: 3.8, lm: 2.2, ceil: '2.40', gia: true },
+      wc:      { name: 'WC',            type: 'WC',             x: 368, y: 216, w: 92,  h: 82,  wm: 1.6, lm: 1.5, ceil: '2.40', gia: true },
+      stairs:  { name: 'Stairs',        type: 'Stairs',         x: 468, y: 216, w: 120, h: 82,  wm: 2.1, lm: 1.5, ceil: '2.40', gia: false },
+      dining:  { name: 'Dining Room',   type: 'Living Room',    x: 368, y: 306, w: 220, h: 154, wm: 3.8, lm: 2.7, ceil: '2.40', gia: true }
+    }
+  };
+
+  toolDefs = [
+    { id: 'select', tip: 'Select (V)', icon: 'M4.04 4.69a.5.5 0 0 1 .65-.65l16 6.5a.5.5 0 0 1-.06.95l-6.13 1.58a2 2 0 0 0-1.44 1.43l-1.58 6.13a.5.5 0 0 1-.95.06z' },
+    { id: 'wall', tip: 'Wall (W)', icon: 'M3 5h18v14H3z M3 9.7h18 M3 14.3h18 M12 5v4.7 M7.5 9.7v4.6 M16.5 9.7v4.6 M12 14.3V19' },
+    { id: 'room', tip: 'Room (R)', icon: 'M3 3h18v18H3z M12 3v9 M12 12h9' },
+    { id: 'door', tip: 'Door (D)', icon: 'M4 20h16 M7 20V8 M7 8a12 12 0 0 1 12 12' },
+    { id: 'window', tip: 'Window (N)', icon: 'M3 9v6 M21 9v6 M3 10.2h18 M3 13.8h18' },
+    { id: 'stairs', tip: 'Stairs (S)', icon: 'M4 20h4v-4h4v-4h4V8h4' }
+  ];
+
+  componentDidMount() {
+    this._onKey = (e) => {
+      if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT')) return;
+      const map = { v: 'select', w: 'wall', r: 'room', d: 'door', n: 'window', s: 'stairs', m: 'measure', t: 'text' };
+      const k = e.key.toLowerCase();
+      if (map[k]) this.setState({ tool: map[k] });
+      if (e.key === '+' || e.key === '=') this.setState(st => ({ zoom: Math.min(2, +(st.zoom + 0.1).toFixed(2)) }));
+      if (e.key === '-') this.setState(st => ({ zoom: Math.max(0.4, +(st.zoom - 0.1).toFixed(2)) }));
+    };
+    window.addEventListener('keydown', this._onKey);
+  }
+  componentWillUnmount() { window.removeEventListener('keydown', this._onKey); }
+
+  patchRoom(id, patch) {
+    this.setState(s => ({ rooms: { ...s.rooms, [id]: { ...s.rooms[id], ...patch } } }));
+  }
+
+  renderVals() {
+    const s = this.state;
+    const gridStyle = this.props.gridStyle ?? 'dots';
+    const showDims = this.props.showDimensions ?? true;
+    const selId = s.sel;
+    const sel = s.rooms[selId];
+
+    const rooms = Object.entries(s.rooms).map(([id, r]) => {
+      const active = id === selId;
+      return {
+        ...r, id,
+        cx: r.x + r.w / 2,
+        cy: r.y + r.h / 2 - (r.h > 100 ? 4 : 2),
+        cy2: r.y + r.h / 2 + 14,
+        areaLabel: (r.wm * r.lm).toFixed(1) + ' m²',
+        fill: active ? 'rgba(11,122,94,0.08)' : (id === 'stairs' ? 'rgba(0,0,0,0.015)' : '#FFFFFF'),
+        stroke: active ? '#0B7A5E' : 'transparent',
+        onSelect: () => this.setState({ sel: id, tab: 'props' })
+      };
+    });
+
+    const handles = [
+      { x: sel.x - 4, y: sel.y - 4 }, { x: sel.x + sel.w - 4, y: sel.y - 4 },
+      { x: sel.x - 4, y: sel.y + sel.h - 4 }, { x: sel.x + sel.w - 4, y: sel.y + sel.h - 4 }
+    ];
+
+    const tools = this.toolDefs.map(t => ({
+      ...t,
+      bg: s.tool === t.id ? '#0E3E36' : 'transparent',
+      fg: s.tool === t.id ? '#8FD6C2' : '#33433E',
+      hoverBg: s.tool === t.id ? '#0E3E36' : '#F0F4F3',
+      onPick: () => this.setState({ tool: t.id })
+    }));
+
+    const tipMap = { select: 'Select — tap a room to edit it', wall: 'Wall — click and drag to draw', room: 'Room — drag a rectangle to add a room', door: 'Door — click a wall to place', window: 'Window — click a wall to place', stairs: 'Stairs — drag to place a flight', measure: 'Measure — click two points', text: 'Text — click to place a label' };
+
+    const gia = Object.values(s.rooms).filter(r => r.gia).reduce((a, r) => a + r.wm * r.lm, 0);
+
+    const isProps = s.tab === 'props';
+    const toolBtn = (id) => ({
+      bg: s.tool === id ? '#0E3E36' : 'transparent',
+      fg: s.tool === id ? '#8FD6C2' : '#33433E',
+      hover: s.tool === id ? '#0E3E36' : '#F0F4F3'
+    });
+    const mB = toolBtn('measure'), tB = toolBtn('text');
+    const ground = s.floor === 'ground';
+
+    return {
+      gridDots: gridStyle === 'dots',
+      gridLines: gridStyle === 'lines',
+      showDims,
+      zoom: s.zoom,
+      zoomLabel: Math.round(s.zoom * 100) + '%',
+      zoomIn: () => this.setState(st => ({ zoom: Math.min(2, +(st.zoom + 0.1).toFixed(2)) })),
+      zoomOut: () => this.setState(st => ({ zoom: Math.max(0.4, +(st.zoom - 0.1).toFixed(2)) })),
+      zoomFit: () => this.setState({ zoom: 1 }),
+      undo: () => {}, redo: () => {},
+      rooms, handles,
+      selDimX: sel.x + sel.w / 2,
+      selDimY: sel.y + 18,
+      selDimLabel: sel.wm.toFixed(2) + ' × ' + sel.lm.toFixed(2) + ' m',
+      tools,
+      toolHint: tipMap[s.tool],
+      pickMeasure: () => this.setState({ tool: 'measure' }),
+      measureBg: mB.bg, measureFg: mB.fg, measureHoverBg: mB.hover,
+      pickText: () => this.setState({ tool: 'text' }),
+      textBg: tB.bg, textFg: tB.fg, textHoverBg: tB.hover,
+      pickGround: () => this.setState({ floor: 'ground' }),
+      pickFirst: () => this.setState({ floor: 'first' }),
+      groundBg: ground ? '#0E3E36' : 'transparent', groundFg: ground ? '#D7EFE6' : '#5E6F6A',
+      firstBg: !ground ? '#0E3E36' : 'transparent', firstFg: !ground ? '#D7EFE6' : '#5E6F6A',
+      tabProps: () => this.setState({ tab: 'props' }),
+      tabAi: () => this.setState({ tab: 'ai' }),
+      propsTabFg: isProps ? '#0E3E36' : '#71827C',
+      propsTabLine: isProps ? 'inset 0 -2px 0 #0B7A5E' : 'none',
+      aiTabFg: !isProps ? '#0E3E36' : '#71827C',
+      aiTabLine: !isProps ? 'inset 0 -2px 0 #0B7A5E' : 'none',
+      showPropsTab: isProps,
+      showAiTab: !isProps,
+      selName: sel.name,
+      onName: e => this.patchRoom(selId, { name: e.target.value }),
+      selType: sel.type,
+      onType: e => this.patchRoom(selId, { type: e.target.value }),
+      selW: sel.wm.toFixed(2),
+      selL: sel.lm.toFixed(2),
+      selArea: (sel.wm * sel.lm).toFixed(2),
+      selPerim: (2 * (sel.wm + sel.lm)).toFixed(1),
+      selCeil: sel.ceil,
+      onCeil: e => this.patchRoom(selId, { ceil: e.target.value }),
+      selGia: sel.gia,
+      onGia: e => this.patchRoom(selId, { gia: e.target.checked }),
+      gia: gia.toFixed(1),
+      aiText: s.aiText,
+      aiIdle: !s.aiText,
+      genLabel: s.aiBusy ? 'Generating…' : 'Generate description',
+      suggestLabel: s.suggestBusy ? 'Analysing layout…' : 'Suggest names',
+      onSuggest: () => {
+        this.setState({ suggestBusy: true });
+        setTimeout(() => this.setState({ suggestBusy: false }), 1200);
+      },
+      onGenerate: () => {
+        this.setState({ aiBusy: true, aiText: null, tab: 'ai' });
+        setTimeout(() => this.setState({
+          aiBusy: false,
+          aiText: 'A well-proportioned three-bedroom home arranged over two floors, offering approximately 84 m² of gross internal area. The ground floor comprises a bright dual-aspect living room, a generous kitchen/diner opening to the rear garden, a welcoming hallway and a convenient WC.'
+        }), 1400);
+      },
+      copyLabel: s.copied ? 'Copied ✓' : 'Copy',
+      onCopy: () => {
+        try { navigator.clipboard.writeText(s.aiText || ''); } catch (e) {}
+        this.setState({ copied: true });
+        setTimeout(() => this.setState({ copied: false }), 1600);
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>

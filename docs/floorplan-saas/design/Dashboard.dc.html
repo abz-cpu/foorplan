@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <style>
+    body { margin: 0; background: #F4F7F6; font-family: 'Instrument Sans', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+    * { box-sizing: border-box; }
+    input::placeholder { color: #94A5A0; }
+  </style>
+</helmet>
+
+<div data-screen-label="My Properties Dashboard" style="min-height: 100vh; color: #10201C;">
+
+  <!-- ============ Top Navigation ============ -->
+  <nav style="height: 60px; background: #FFFFFF; border-bottom: 1px solid #E4EAE8; display: flex; align-items: center; padding: 0 24px; position: sticky; top: 0; z-index: 30;">
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <div style="width: 32px; height: 32px; border-radius: 9px; background: #0E3E36; display: flex; align-items: center; justify-content: center; flex: none;">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#8FD6C2" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"></path><path d="M12 4v8"></path><path d="M12 12h8"></path><path d="M4 15h5"></path></svg>
+      </div>
+      <div style="display: flex; flex-direction: column; line-height: 1.15;">
+        <span style="font-size: 14.5px; font-weight: 700; letter-spacing: -0.01em;">L&amp;D Energy</span>
+        <span style="font-size: 10.5px; font-weight: 500; color: #71827C; letter-spacing: 0.02em;">FLOOR PLAN STUDIO</span>
+      </div>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 4px; margin-left: 36px;">
+      <a href="Dashboard.dc.html" style="font-size: 13.5px; font-weight: 600; color: #0E3E36; background: #E9F2EF; padding: 7px 13px; border-radius: 8px; text-decoration: none;">Properties</a>
+      <a href="#" style="font-size: 13.5px; font-weight: 500; color: #5E6F6A; padding: 7px 13px; border-radius: 8px; text-decoration: none;" style-hover="background: #F0F4F3; color: #10201C;">Templates</a>
+      <a href="#" style="font-size: 13.5px; font-weight: 500; color: #5E6F6A; padding: 7px 13px; border-radius: 8px; text-decoration: none;" style-hover="background: #F0F4F3; color: #10201C;">Reports</a>
+    </div>
+
+    <div style="flex: 1;"></div>
+
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <button style="display: flex; align-items: center; gap: 7px; height: 37px; padding: 0 15px; background: #0B7A5E; color: #FFFFFF; border: none; border-radius: 9px; font-family: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; box-shadow: 0 1px 2px rgba(11,58,46,0.25);" style-hover="background: #086349;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 12h14"></path><path d="M12 5v14"></path></svg>
+        New Property
+      </button>
+
+      <div style="width: 1px; height: 24px; background: #E4EAE8;"></div>
+
+      <div style="position: relative;">
+        <button onClick="{{ toggleMenu }}" style="display: flex; align-items: center; gap: 7px; background: transparent; border: none; cursor: pointer; padding: 4px; border-radius: 9px; font-family: inherit;" style-hover="background: #F0F4F3;">
+          <span style="width: 30px; height: 30px; border-radius: 50%; background: #123F3A; color: #A7DCCB; font-size: 11.5px; font-weight: 700; display: flex; align-items: center; justify-content: center; letter-spacing: 0.02em;">LD</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#71827C" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>
+        </button>
+
+        <sc-if value="{{ menuOpen }}" hint-placeholder-val="{{ false }}">
+          <div onClick="{{ closeMenu }}" style="position: fixed; inset: 0; z-index: 40;"></div>
+          <div style="position: absolute; top: 44px; right: 0; width: 236px; background: #FFFFFF; border: 1px solid #E4EAE8; border-radius: 12px; box-shadow: 0 12px 32px rgba(16,32,28,0.14); z-index: 50; overflow: hidden;">
+            <div style="padding: 13px 15px; border-bottom: 1px solid #EEF2F1;">
+              <div style="font-size: 13.5px; font-weight: 600;">Liam Davies</div>
+              <div style="font-size: 12px; color: #71827C; margin-top: 2px;">liam@ldenergy.co.uk</div>
+            </div>
+            <div style="padding: 6px;">
+              <button style="display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; background: transparent; border: none; border-radius: 8px; font-family: inherit; font-size: 13px; font-weight: 500; color: #33433E; cursor: pointer; text-align: left;" style-hover="background: #F0F4F3;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#71827C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>Account settings</button>
+              <button style="display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; background: transparent; border: none; border-radius: 8px; font-family: inherit; font-size: 13px; font-weight: 500; color: #33433E; cursor: pointer; text-align: left;" style-hover="background: #F0F4F3;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#71827C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>Agency team</button>
+              <button style="display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; background: transparent; border: none; border-radius: 8px; font-family: inherit; font-size: 13px; font-weight: 500; color: #33433E; cursor: pointer; text-align: left;" style-hover="background: #F0F4F3;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#71827C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"></rect><path d="M2 10h20"></path></svg>Billing &amp; plan</button>
+            </div>
+            <div style="padding: 6px; border-top: 1px solid #EEF2F1;">
+              <button style="display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; background: transparent; border: none; border-radius: 8px; font-family: inherit; font-size: 13px; font-weight: 500; color: #B3372F; cursor: pointer; text-align: left;" style-hover="background: #FBF0EF;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><path d="M21 12H9"></path></svg>Sign out</button>
+            </div>
+          </div>
+        </sc-if>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ============ Page Content ============ -->
+  <main style="max-width: 1180px; margin: 0 auto; padding: 30px 24px 72px;">
+
+    <header style="display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap;">
+      <div>
+        <h1 style="margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -0.02em;">My Properties</h1>
+        <p style="margin: 5px 0 0; font-size: 13.5px; color: #5E6F6A;">{{ subtitle }}</p>
+      </div>
+    </header>
+
+    <!-- Toolbar: filter tabs · search · view toggle -->
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 22px; flex-wrap: wrap;">
+      <div style="display: flex; gap: 3px; background: #E8EEEC; padding: 3px; border-radius: 10px;">
+        <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="4">
+          <button onClick="{{ t.onClick }}" style="display: flex; align-items: center; gap: 6px; padding: 6px 12px; border: none; border-radius: 8px; font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer; background: {{ t.bg }}; color: {{ t.fg }}; box-shadow: {{ t.shadow }};">
+            {{ t.name }}
+            <span style="font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 20px; background: {{ t.badgeBg }}; color: {{ t.badgeFg }};">{{ t.count }}</span>
+          </button>
+        </sc-for>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <div style="position: relative;">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#71827C" stroke-width="2" stroke-linecap="round" style="position: absolute; left: 11px; top: 50%; transform: translateY(-50%);"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+          <input value="{{ q }}" onChange="{{ onQ }}" placeholder="Search address or postcode…" style="width: 250px; height: 37px; padding: 0 12px 0 34px; border: 1px solid #DCE4E1; border-radius: 10px; background: #FFFFFF; font-family: inherit; font-size: 13px; color: #10201C; outline: none;" style-focus="border-color: #0B7A5E; box-shadow: 0 0 0 3px rgba(11,122,94,0.13);">
+        </div>
+        <div style="display: flex; gap: 3px; background: #E8EEEC; padding: 3px; border-radius: 10px;">
+          <button onClick="{{ setGrid }}" title="Grid view" style="width: 33px; height: 31px; display: flex; align-items: center; justify-content: center; border: none; border-radius: 8px; cursor: pointer; background: {{ gridBtnBg }}; color: {{ gridBtnFg }}; box-shadow: {{ gridBtnShadow }};">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="14" width="7" height="7" rx="1"></rect><rect x="3" y="14" width="7" height="7" rx="1"></rect></svg>
+          </button>
+          <button onClick="{{ setList }}" title="List view" style="width: 33px; height: 31px; display: flex; align-items: center; justify-content: center; border: none; border-radius: 8px; cursor: pointer; background: {{ listBtnBg }}; color: {{ listBtnFg }}; box-shadow: {{ listBtnShadow }};">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13"></path><path d="M8 12h13"></path><path d="M8 18h13"></path><path d="M3 6h.01"></path><path d="M3 12h.01"></path><path d="M3 18h.01"></path></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ Grid view ============ -->
+    <sc-if value="{{ isGrid }}" hint-placeholder-val="{{ true }}">
+      <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 18px; margin-top: 20px;">
+        <sc-for list="{{ filtered }}" as="p" hint-placeholder-count="6">
+          <article style="background: #FFFFFF; border: 1px solid #E4EAE8; border-radius: 14px; overflow: hidden; display: flex; flex-direction: column; transition: box-shadow 0.15s, transform 0.15s, border-color 0.15s;" style-hover="box-shadow: 0 10px 28px rgba(16,32,28,0.10); transform: translateY(-2px); border-color: #CFDAD6;">
+            <sc-if value="{{ showThumbs }}" hint-placeholder-val="{{ true }}">
+              <a href="Editor.dc.html" style="position: relative; display: block; height: 148px; background: #F2F6F4; background-image: radial-gradient(#D9E3DF 1px, transparent 1px); background-size: 13px 13px; text-decoration: none;">
+                <svg viewBox="0 0 180 116" style="position: absolute; inset: 0; width: 100%; height: 100%; padding: 12px;" fill="none">
+                  <path d="{{ p.thumbOuter }}" fill="#FFFFFF" stroke="#2B463F" stroke-width="3.5" stroke-linejoin="miter"></path>
+                  <path d="{{ p.thumbInner }}" stroke="#2B463F" stroke-width="2" fill="none"></path>
+                </svg>
+                <span style="position: absolute; top: 10px; left: 10px; display: flex; align-items: center; gap: 6px; padding: 3px 9px 3px 7px; border-radius: 20px; font-size: 11.5px; font-weight: 600; background: {{ p.pillBg }}; color: {{ p.pillFg }};">
+                  <span style="width: 6px; height: 6px; border-radius: 50%; background: {{ p.pillDot }};"></span>
+                  {{ p.status }}
+                </span>
+                <sc-if value="{{ p.aiChip }}" hint-placeholder-val="{{ false }}">
+                  <span style="position: absolute; top: 10px; right: 10px; display: flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 600; background: #F1EBFD; color: #5B32B4;">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"></path></svg>
+                    AI draft
+                  </span>
+                </sc-if>
+              </a>
+            </sc-if>
+            <div style="padding: 14px 16px 12px; flex: 1;">
+              <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 8px;">
+                <div>
+                  <div style="font-size: 15px; font-weight: 650; letter-spacing: -0.01em;">{{ p.addr1 }}</div>
+                  <div style="font-size: 12.5px; color: #71827C; margin-top: 2px;">{{ p.addr2 }}</div>
+                </div>
+                <sc-if value="{{ p.hideThumbPill }}" hint-placeholder-val="{{ false }}">
+                  <span style="display: flex; align-items: center; gap: 6px; padding: 3px 9px 3px 7px; border-radius: 20px; font-size: 11.5px; font-weight: 600; flex: none; background: {{ p.pillBg }}; color: {{ p.pillFg }};"><span style="width: 6px; height: 6px; border-radius: 50%; background: {{ p.pillDot }};"></span>{{ p.status }}</span>
+                </sc-if>
+              </div>
+              <div style="display: flex; align-items: center; gap: 6px; margin-top: 10px; font-size: 12.5px; color: #5E6F6A;">
+                <span>{{ p.meta }}</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 5px; margin-top: 6px; font-size: 12px; color: #8A9A94;">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path></svg>
+                Edited {{ p.edited }}
+              </div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 6px; padding: 10px 12px; border-top: 1px solid #EEF2F1;">
+              <a href="Editor.dc.html" style="display: flex; align-items: center; gap: 7px; height: 32px; padding: 0 12px; border-radius: 8px; background: #E9F2EF; color: #0B6B52; font-size: 12.5px; font-weight: 600; text-decoration: none;" style-hover="background: #DBEBE4;">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h10v10"></path><path d="M7 17 17 7"></path></svg>
+                Open in Editor
+              </a>
+              <div style="flex: 1;"></div>
+              <button onClick="{{ p.onAi }}" title="AI: generate property description" style="width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border: 1px solid #E4EAE8; border-radius: 8px; background: #FFFFFF; color: #6B4FBB; cursor: pointer;" style-hover="background: #F5F1FD; border-color: #DCD0F5;">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"></path><path d="M20 3v4"></path><path d="M22 5h-4"></path></svg>
+              </button>
+              <a href="Export%20Modal.dc.html" title="Export plan" style="width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border: 1px solid #E4EAE8; border-radius: 8px; background: #FFFFFF; color: #465650; text-decoration: none;" style-hover="background: #F0F4F3;">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><path d="M12 15V3"></path></svg>
+              </a>
+              <button title="More" style="width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border: 1px solid #E4EAE8; border-radius: 8px; background: #FFFFFF; color: #465650; cursor: pointer;" style-hover="background: #F0F4F3;">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="1"></circle><circle cx="5" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle></svg>
+              </button>
+            </div>
+          </article>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <!-- ============ List view ============ -->
+    <sc-if value="{{ isList }}" hint-placeholder-val="{{ false }}">
+      <div style="margin-top: 20px; background: #FFFFFF; border: 1px solid #E4EAE8; border-radius: 14px; overflow: hidden;">
+        <div style="display: grid; grid-template-columns: 1fr 120px 130px 210px; gap: 12px; align-items: center; padding: 9px 18px; background: #F7FAF9; border-bottom: 1px solid #EEF2F1; font-size: 11px; font-weight: 650; letter-spacing: 0.06em; color: #71827C;">
+          <span>PROPERTY</span><span>STATUS</span><span>LAST EDITED</span><span style="text-align: right;">ACTIONS</span>
+        </div>
+        <sc-for list="{{ filtered }}" as="p" hint-placeholder-count="6">
+          <div style="display: grid; grid-template-columns: 1fr 120px 130px 210px; gap: 12px; align-items: center; padding: 11px 18px; border-bottom: 1px solid #EEF2F1;" style-hover="background: #F7FAF9;">
+            <div style="display: flex; align-items: center; gap: 12px; min-width: 0;">
+              <sc-if value="{{ showThumbs }}" hint-placeholder-val="{{ true }}">
+                <svg viewBox="0 0 180 116" style="width: 62px; height: 42px; flex: none; background: #F2F6F4; border: 1px solid #E4EAE8; border-radius: 7px; padding: 4px;" fill="none">
+                  <path d="{{ p.thumbOuter }}" fill="#FFFFFF" stroke="#2B463F" stroke-width="4"></path>
+                  <path d="{{ p.thumbInner }}" stroke="#2B463F" stroke-width="2.5" fill="none"></path>
+                </svg>
+              </sc-if>
+              <div style="min-width: 0;">
+                <div style="font-size: 13.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ p.addr1 }}</div>
+                <div style="font-size: 12px; color: #71827C; margin-top: 1px;">{{ p.addr2 }} · {{ p.meta }}</div>
+              </div>
+            </div>
+            <span style="display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px 3px 7px; border-radius: 20px; font-size: 11.5px; font-weight: 600; width: fit-content; background: {{ p.pillBg }}; color: {{ p.pillFg }};"><span style="width: 6px; height: 6px; border-radius: 50%; background: {{ p.pillDot }};"></span>{{ p.status }}</span>
+            <span style="font-size: 12.5px; color: #5E6F6A;">{{ p.edited }}</span>
+            <div style="display: flex; align-items: center; justify-content: flex-end; gap: 6px;">
+              <a href="Editor.dc.html" style="display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px; border-radius: 8px; background: #E9F2EF; color: #0B6B52; font-size: 12px; font-weight: 600; text-decoration: none;" style-hover="background: #DBEBE4;">Open</a>
+              <button onClick="{{ p.onAi }}" title="AI: generate property description" style="width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border: 1px solid #E4EAE8; border-radius: 8px; background: #FFFFFF; color: #6B4FBB; cursor: pointer;" style-hover="background: #F5F1FD;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"></path></svg>
+              </button>
+              <a href="Export%20Modal.dc.html" title="Export plan" style="width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border: 1px solid #E4EAE8; border-radius: 8px; background: #FFFFFF; color: #465650; text-decoration: none;" style-hover="background: #F0F4F3;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><path d="M12 15V3"></path></svg>
+              </a>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <!-- Empty state -->
+    <sc-if value="{{ showEmpty }}" hint-placeholder-val="{{ false }}">
+      <div style="margin-top: 20px; padding: 64px 24px; background: #FFFFFF; border: 1px dashed #CFDAD6; border-radius: 14px; text-align: center;">
+        <div style="font-size: 15px; font-weight: 600; color: #33433E;">No properties match</div>
+        <div style="font-size: 13px; color: #71827C; margin-top: 5px;">Try a different search term or filter.</div>
+      </div>
+    </sc-if>
+  </main>
+
+  <!-- Toast -->
+  <sc-if value="{{ toast }}" hint-placeholder-val="{{ false }}">
+    <div style="position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 9px; background: #10201C; color: #FFFFFF; padding: 10px 16px; border-radius: 11px; font-size: 13px; font-weight: 500; box-shadow: 0 10px 30px rgba(16,32,28,0.3); z-index: 60;">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#5FD3AE" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>
+      {{ toast }}
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{
+  &quot;defaultView&quot;: { &quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;grid&quot;, &quot;list&quot;], &quot;default&quot;: &quot;grid&quot;, &quot;tsType&quot;: &quot;'grid' | 'list'&quot;, &quot;section&quot;: &quot;Layout&quot; },
+  &quot;showThumbnails&quot;: { &quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Layout&quot; }
+}">
+class Component extends DCLogic {
+  state = { view: null, tab: 'All', q: '', menuOpen: false, toast: null, aiDone: {} };
+
+  data = [
+    { id: 1, addr1: '14 Wolseley Road', addr2: 'Plumstead, London SE18 3EY', status: 'Draft', edited: '2 hours ago', meta: '3 bed · 84 m² · 2 floors', thumb: 0 },
+    { id: 2, addr1: 'Flat 2, 88 Trafalgar Road', addr2: 'Greenwich, London SE10 9UW', status: 'Ready', edited: 'yesterday', meta: '2 bed · 61 m² · 1 floor', thumb: 1 },
+    { id: 3, addr1: '27 Birchwood Avenue', addr2: 'Sidcup DA14 4JU', status: 'Exported', edited: '3 days ago', meta: '4 bed · 118 m² · 2 floors', thumb: 2 },
+    { id: 4, addr1: 'The Old Bakery, 3 Mill Lane', addr2: 'Sevenoaks TN13 1AB', status: 'Ready', edited: 'Tuesday', meta: '3 bed · 97 m² · 2 floors', thumb: 1 },
+    { id: 5, addr1: '9 Harewood Drive', addr2: 'Bexleyheath DA7 5PQ', status: 'Draft', edited: '4 days ago', meta: '3 bed · 88 m² · 2 floors', thumb: 2 },
+    { id: 6, addr1: 'Flat 5, Riverdale House', addr2: 'Lewisham SE13 7EA', status: 'Exported', edited: '28 Jun', meta: '1 bed · 48 m² · 1 floor', thumb: 0 }
+  ];
+
+  thumbs = [
+    { outer: 'M14 14 H166 V102 H14 Z', inner: 'M88 14 V62 M14 62 H88 M88 62 H132 V102 M132 62 H166' },
+    { outer: 'M14 14 H128 V50 H166 V102 H14 Z', inner: 'M76 14 V102 M128 50 V102 M76 74 H14' },
+    { outer: 'M14 14 H166 V102 H14 Z', inner: 'M104 14 V58 M104 58 H166 M56 58 V102 M14 58 H104' }
+  ];
+
+  pills = {
+    Draft:    { bg: '#FFF3DE', fg: '#8A5A08', dot: '#E29A2B' },
+    Ready:    { bg: '#E1F4EC', fg: '#0A6B4F', dot: '#17A578' },
+    Exported: { bg: '#E5ECFA', fg: '#2F55A4', dot: '#4C77D9' }
+  };
+
+  showToast(msg) {
+    clearTimeout(this._tt);
+    this.setState({ toast: msg });
+    this._tt = setTimeout(() => this.setState({ toast: null }), 2600);
+  }
+
+  renderVals() {
+    const view = this.state.view ?? this.props.defaultView ?? 'grid';
+    const showThumbs = this.props.showThumbnails ?? true;
+    const q = this.state.q.trim().toLowerCase();
+
+    const filtered = this.data
+      .filter(p => this.state.tab === 'All' || p.status === this.state.tab)
+      .filter(p => !q || (p.addr1 + ' ' + p.addr2).toLowerCase().includes(q))
+      .map(p => ({
+        ...p,
+        thumbOuter: this.thumbs[p.thumb].outer,
+        thumbInner: this.thumbs[p.thumb].inner,
+        pillBg: this.pills[p.status].bg,
+        pillFg: this.pills[p.status].fg,
+        pillDot: this.pills[p.status].dot,
+        hideThumbPill: !showThumbs,
+        aiChip: !!this.state.aiDone[p.id],
+        onAi: () => {
+          this.showToast('Generating description for ' + p.addr1 + '…');
+          setTimeout(() => {
+            this.setState(s => ({ aiDone: { ...s.aiDone, [p.id]: true } }));
+            this.showToast('AI description ready — ' + p.addr1);
+          }, 1400);
+        }
+      }));
+
+    const counts = { All: this.data.length };
+    this.data.forEach(p => { counts[p.status] = (counts[p.status] || 0) + 1; });
+
+    const tabs = ['All', 'Draft', 'Ready', 'Exported'].map(name => {
+      const active = this.state.tab === name;
+      return {
+        name,
+        count: counts[name] || 0,
+        bg: active ? '#FFFFFF' : 'transparent',
+        fg: active ? '#10201C' : '#5E6F6A',
+        shadow: active ? '0 1px 3px rgba(16,32,28,0.12)' : 'none',
+        badgeBg: active ? '#E9F2EF' : '#DDE5E2',
+        badgeFg: active ? '#0B6B52' : '#5E6F6A',
+        onClick: () => this.setState({ tab: name })
+      };
+    });
+
+    const drafts = counts['Draft'] || 0;
+    const isGrid = view === 'grid';
+
+    return {
+      subtitle: this.data.length + ' properties · ' + drafts + (drafts === 1 ? ' draft' : ' drafts') + ' in progress',
+      tabs,
+      filtered,
+      showEmpty: filtered.length === 0,
+      isGrid: isGrid && filtered.length > 0,
+      isList: !isGrid && filtered.length > 0,
+      showThumbs,
+      q: this.state.q,
+      onQ: e => this.setState({ q: e.target.value }),
+      setGrid: () => this.setState({ view: 'grid' }),
+      setList: () => this.setState({ view: 'list' }),
+      gridBtnBg: isGrid ? '#FFFFFF' : 'transparent',
+      gridBtnFg: isGrid ? '#10201C' : '#5E6F6A',
+      gridBtnShadow: isGrid ? '0 1px 3px rgba(16,32,28,0.12)' : 'none',
+      listBtnBg: !isGrid ? '#FFFFFF' : 'transparent',
+      listBtnFg: !isGrid ? '#10201C' : '#5E6F6A',
+      listBtnShadow: !isGrid ? '0 1px 3px rgba(16,32,28,0.12)' : 'none',
+      menuOpen: this.state.menuOpen,
+      toggleMenu: () => this.setState(s => ({ menuOpen: !s.menuOpen })),
+      closeMenu: () => this.setState({ menuOpen: false }),
+      toast: this.state.toast
+    };
+  }
+}
+</script>
+</body>
+</html>

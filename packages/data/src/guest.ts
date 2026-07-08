@@ -1,5 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie';
-import { DEFAULT_CEILING_HEIGHT_M, emptyFloorDoc, newId, type FloorDoc } from '@floorplan/core';
+import { emptyFloorDoc, newId, type FloorDoc } from '@floorplan/core';
 import type {
   FloorRecord,
   FloorRepository,
@@ -84,7 +84,6 @@ class GuestFloorRepository implements FloorRepository {
       propertyId,
       name,
       sortOrder,
-      defaultCeilingHeightM: DEFAULT_CEILING_HEIGHT_M,
       doc: emptyFloorDoc(),
       updatedAt: now(),
     };

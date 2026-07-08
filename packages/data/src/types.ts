@@ -22,7 +22,6 @@ export interface FloorRecord {
   propertyId: string;
   name: string;
   sortOrder: number;
-  defaultCeilingHeightM: number;
   doc: FloorDoc;
   updatedAt: string;
 }

@@ -186,4 +186,6 @@ export interface SymbolInstance {
   h: number;
   /** rotation about the footprint centre, degrees (0/90/180/270 typical) */
   rotationDeg: number;
+  /** horizontal mirror in local (unrotated) space — read as `?? false` for docs saved before this field existed */
+  mirrored?: boolean;
 }

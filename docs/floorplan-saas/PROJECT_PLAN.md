@@ -2,7 +2,7 @@
 
 A cross-platform (web + iOS + Android), offline-first 2D/3D floor-plan drawing and property-data SaaS for UK estate agents, EPC (RdSAP) assessors, and interior designers — a modern, touch-first competitor to PlanUp and zPlan.
 
-**Status:** Approved architecture & roadmap — implementation underway. The application lives in [`/studio`](../../studio/) in this repository (the GitHub integration could not create the planned dedicated repo; `studio/` is fully self-contained and extractable later). Phase 0 (monorepo scaffold, design tokens, CI), Phase 1 (properties dashboard with guest-mode local-first storage), and the Phase 2 editor slice (walls, rooms, snapping, undo/redo, GIA) are built and verified — see `studio/README.md`.
+**Status:** Approved architecture & roadmap — MVP built and audited in this dedicated repository. Phases 0–5 (scaffold, guest-mode dashboard, canvas editor, architectural elements incl. doors/windows/stairs/furniture/photo-underlay/room auto-detection, EPC measurements, and multi-format exports) are complete, plus PWA offline support and an on-device Assistant (room naming + description drafts) ahead of the Claude API integration in Phase 7. See `README.md` for the up-to-date checklist. Remaining phases (Supabase + PowerSync sync, Stripe, Capacitor store builds) are blocked on the founder provisioning those accounts/credentials.
 
 **Founding constraints:** solo founder building with AI tooling · all platforms launch together from one codebase · 3D is a post-MVP fast-follow · Guest Mode (no-account local use) is mandatory for App Store approval.
 
@@ -163,6 +163,8 @@ Guest Mode: rows are created in local SQLite with no `org_id`; signing up runs a
 
 ## Next Steps
 
-1. Initialize the new dedicated product repository with the Phase 0 monorepo scaffold.
-2. Stand up the Supabase project + PowerSync instance (dev environment).
-3. Begin Phase 1 with the dashboard and offline spine, using the design files in `design/` as the UI reference.
+1. Stand up the Supabase project + PowerSync instance (dev environment) and wire the Phase 1 guest→account adoption migration through `packages/data`'s repository layer.
+2. Move the AI Assistant from its on-device heuristics to the Claude API behind a Supabase Edge Function (Phase 7), keeping the same offline-first UI contract.
+3. Add Stripe billing (web checkout) and share links once accounts exist.
+4. Package with Capacitor for iOS/Android (Phase 6): touch polish is already in place (gesture guards, tablet-verified layout); remaining work is native builds, TestFlight/Play internal tracks, and mid-range Android WebView perf testing.
+5. Post-MVP: 3D view, JSTS-based room detection for non-axis-aligned layouts (current detector handles the common orthogonal case), Templates/Reports sections, live collaboration.

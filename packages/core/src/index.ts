@@ -13,3 +13,4 @@ export * from './shapes';
 export * from './symbols';
 export * from './detect';
 export * from './assistant';
+export * from './length';

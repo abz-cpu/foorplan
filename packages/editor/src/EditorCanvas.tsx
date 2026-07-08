@@ -95,6 +95,8 @@ function SymbolNode({
   const def = SYMBOL_DEFS[sym.kind];
   const sx = sym.w / 100;
   const sy = sym.h / 100;
+  const mirrored = sym.mirrored ?? false;
+  const mx = (ux: number) => (mirrored ? 100 - ux : ux);
   const stroke = selected ? ACTION : WALL_LIGHT;
   return (
     <Group
@@ -116,7 +118,7 @@ function SymbolNode({
           return (
             <Line
               key={i}
-              points={[p.x1 * sx, p.y1 * sy, p.x2 * sx, p.y2 * sy]}
+              points={[mx(p.x1) * sx, p.y1 * sy, mx(p.x2) * sx, p.y2 * sy]}
               stroke={stroke}
               strokeWidth={22}
               listening={false}
@@ -124,10 +126,11 @@ function SymbolNode({
           );
         }
         if (p.t === 'rect') {
+          const rectX = mirrored ? 100 - (p.x + p.w) : p.x;
           return (
             <Rect
               key={i}
-              x={p.x * sx}
+              x={rectX * sx}
               y={p.y * sy}
               width={p.w * sx}
               height={p.h * sy}
@@ -140,7 +143,7 @@ function SymbolNode({
         return (
           <Circle
             key={i}
-            x={p.cx * sx}
+            x={mx(p.cx) * sx}
             y={p.cy * sy}
             radius={p.r * Math.min(sx, sy)}
             stroke={stroke}
@@ -345,6 +348,26 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
     ro.observe(el);
     return () => ro.disconnect();
   }, [setViewport]);
+
+  /**
+   * iOS Safari fires non-standard `gesture*` events for pinch/rotate that
+   * bypass `touch-action: none` and the viewport's `user-scalable=no` on
+   * some iOS versions — the canvas has its own pinch-zoom (onTouchMove
+   * above), so the page-level gesture must be suppressed or the two fight.
+   */
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const prevent = (e: Event) => e.preventDefault();
+    el.addEventListener('gesturestart', prevent);
+    el.addEventListener('gesturechange', prevent);
+    el.addEventListener('gestureend', prevent);
+    return () => {
+      el.removeEventListener('gesturestart', prevent);
+      el.removeEventListener('gesturechange', prevent);
+      el.removeEventListener('gestureend', prevent);
+    };
+  }, []);
 
   const clearDrafts = useCallback(() => {
     setWallStart(null);
@@ -747,6 +770,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
         overscrollBehavior: 'none',
         userSelect: 'none',
         WebkitUserSelect: 'none',
+        WebkitTouchCallout: 'none',
         background: '#FBFDFC',
         backgroundImage: 'radial-gradient(#DCE6E2 1px, transparent 1px)',
         backgroundSize: `${DISPLAY_GRID_MM * scale}px ${DISPLAY_GRID_MM * scale}px`,

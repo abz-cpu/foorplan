@@ -4,6 +4,7 @@ import {
   Download,
   FlipHorizontal2,
   ImagePlus,
+  ListChecks,
   Lock,
   LockOpen,
   PanelsTopLeft,
@@ -21,8 +22,10 @@ import {
   floorGiaM2,
   formatAreaM2,
   formatMmAsM,
+  formatMmForInput,
   generateDescription,
   normalizeDoc,
+  parseLengthToMm,
   roomAreaM2,
   roomPerimeterM,
   ROOM_TYPES,
@@ -41,6 +44,7 @@ import {
 } from '@floorplan/core';
 import { useEditorStore } from '@floorplan/editor';
 import { useToast } from '@floorplan/ui';
+import { RoomScheduleModal } from './RoomScheduleModal';
 
 export interface PanelFloor {
   id: string;
@@ -129,6 +133,7 @@ export function RoomPanel({
   const [tab, setTab] = useState<'props' | 'assistant'>(initialTab);
   const [aiText, setAiText] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const room = doc.rooms.find((r) => r.id === selectedId);
@@ -149,7 +154,7 @@ export function RoomPanel({
     setCeiling(room ? room.ceilingHeightM.toFixed(2) : '');
   }, [room?.id, room?.name, room?.ceilingHeightM, room]);
   useEffect(() => {
-    setWallLen(wall ? (wallLengthMm(wall) / 1000).toFixed(2) : '');
+    setWallLen(wall ? formatMmForInput(wallLengthMm(wall)) : '');
   }, [wall?.id, wall?.a, wall?.b, wall]);
   useEffect(() => {
     setOpeningWidth(opening ? String(Math.round(opening.widthMm)) : '');
@@ -172,15 +177,17 @@ export function RoomPanel({
   };
   const commitWallLength = () => {
     if (!wall) return;
-    const v = Number.parseFloat(wallLen);
-    const currentM = wallLengthMm(wall) / 1000;
-    if (Number.isFinite(v) && v >= 0.1 && v <= 50 && Math.abs(v - currentM) > 0.001) {
+    const currentMm = wallLengthMm(wall);
+    const targetMm = parseLengthToMm(wallLen);
+    if (targetMm !== null && targetMm >= 100 && targetMm <= 50_000 && Math.abs(targetMm - currentMm) > 1) {
       const d = wallDirection(wall);
       commit(
         'Set wall length',
-        updateWall(doc, wall.id, { b: { x: wall.a.x + d.x * v * 1000, y: wall.a.y + d.y * v * 1000 } }),
+        updateWall(doc, wall.id, { b: { x: wall.a.x + d.x * targetMm, y: wall.a.y + d.y * targetMm } }),
       );
-    } else setWallLen(currentM.toFixed(2));
+    } else {
+      setWallLen(formatMmForInput(currentMm));
+    }
   };
   const commitOpeningWidth = () => {
     if (!opening) return;
@@ -201,8 +208,23 @@ export function RoomPanel({
       toast('No new enclosed rooms found');
       return;
     }
-    commit('Detect rooms', { ...doc, rooms: [...doc.rooms, ...found] });
-    toast(`${found.length} room${found.length === 1 ? '' : 's'} detected`);
+    const floorIndex = Math.max(
+      floors.findIndex((f) => f.id === floorId),
+      0,
+    );
+    // Name the detected rooms immediately — closed wall loops should arrive
+    // as usable rooms, not generic "Room N" placeholders needing a second
+    // manual step in the Assistant tab.
+    const withNames = { ...doc, rooms: [...doc.rooms, ...found] };
+    const suggestions = suggestRoomNames(withNames, floorIndex);
+    let next = withNames;
+    for (const s of suggestions) {
+      if (found.some((f) => f.id === s.roomId)) {
+        next = updateRoom(next, s.roomId, { name: s.name, type: s.type });
+      }
+    }
+    commit('Detect rooms', next);
+    toast(`${found.length} room${found.length === 1 ? '' : 's'} detected and named`);
   };
 
   const handleUnderlayFile = (file: File) => {
@@ -225,6 +247,7 @@ export function RoomPanel({
   };
 
   const assistantFloors = floors.map((f) => ({
+    id: f.id,
     name: f.name,
     doc: f.id === floorId ? doc : normalizeDoc(f.doc),
   }));
@@ -474,7 +497,7 @@ export function RoomPanel({
                 <StatTile label="Width" value={formatMmAsM(symbol.w)} />
                 <StatTile label="Depth" value={formatMmAsM(symbol.h)} />
               </div>
-              <div className="mt-3.5">
+              <div className="mt-3.5 flex flex-col gap-2">
                 <PanelButton
                   icon={<RotateCw size={13} />}
                   label={`Rotate 90° (now ${symbol.rotationDeg}°)`}
@@ -483,6 +506,13 @@ export function RoomPanel({
                       'Rotate symbol',
                       updateSymbol(doc, symbol.id, { rotationDeg: (symbol.rotationDeg + 90) % 360 }),
                     )
+                  }
+                />
+                <PanelButton
+                  icon={<FlipHorizontal2 size={13} />}
+                  label={symbol.mirrored ? 'Mirrored — click to unmirror' : 'Mirror'}
+                  onClick={() =>
+                    commit('Mirror symbol', updateSymbol(doc, symbol.id, { mirrored: !symbol.mirrored }))
                   }
                 />
               </div>
@@ -517,19 +547,15 @@ export function RoomPanel({
             <div>
               <SectionLabel>SELECTED WALL</SectionLabel>
               <label className="mb-1.5 block text-xs font-semibold text-ink-mid">Exact length</label>
-              <div className="relative">
-                <input
-                  value={wallLen}
-                  onChange={(e) => setWallLen(e.target.value)}
-                  onBlur={commitWallLength}
-                  onKeyDown={blurOnEnter}
-                  inputMode="decimal"
-                  className={numberInputClass}
-                />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-ink-ghost">
-                  m
-                </span>
-              </div>
+              <input
+                value={wallLen}
+                onChange={(e) => setWallLen(e.target.value)}
+                onBlur={commitWallLength}
+                onKeyDown={blurOnEnter}
+                placeholder={`e.g. ${formatMmForInput(wallLengthMm(wall))}, 420cm, 13'9"`}
+                className={textInputClass}
+              />
+              <p className="mt-1 text-[11px] text-ink-ghost">Accepts m, cm, mm, or feet/inches (13'9")</p>
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <StatTile label="Length" value={formatMmAsM(wallLengthMm(wall))} />
                 <StatTile label="Thickness" value={`${wall.thickness} mm`} />
@@ -565,6 +591,11 @@ export function RoomPanel({
                     icon={<ScanSearch size={13} />}
                     label="Detect rooms from walls"
                     onClick={handleDetectRooms}
+                  />
+                  <PanelButton
+                    icon={<ListChecks size={13} />}
+                    label="View room schedule"
+                    onClick={() => setScheduleOpen(true)}
                   />
                   <PanelButton
                     icon={<Download size={13} />}
@@ -658,6 +689,15 @@ export function RoomPanel({
           {formatAreaM2(floorGiaM2(doc))}
         </span>
       </div>
+
+      {scheduleOpen && (
+        <RoomScheduleModal
+          address={address}
+          floors={assistantFloors}
+          onClose={() => setScheduleOpen(false)}
+          onDownloadCsv={onDownloadCsv}
+        />
+      )}
     </aside>
   );
 }

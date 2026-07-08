@@ -220,14 +220,16 @@ export function symbolToShapes(sym: SymbolInstance, stroke = WALL_LIGHT, width =
   const def = SYMBOL_DEFS[sym.kind];
   const sx = sym.w / 100;
   const sy = sym.h / 100;
+  const mirrored = sym.mirrored ?? false;
   const cx = sym.x + sym.w / 2;
   const cy = sym.y + sym.h / 2;
   const theta = (sym.rotationDeg * Math.PI) / 180;
   const cos = Math.cos(theta);
   const sin = Math.sin(theta);
   const tp = (ux: number, uy: number): Point => {
-    // scale into footprint, then rotate about centre
-    const px = sym.x + ux * sx;
+    // mirror in local space, then scale into footprint, then rotate about centre
+    const localX = mirrored ? 100 - ux : ux;
+    const px = sym.x + localX * sx;
     const py = sym.y + uy * sy;
     const dx = px - cx;
     const dy = py - cy;

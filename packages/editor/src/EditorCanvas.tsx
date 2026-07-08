@@ -34,6 +34,7 @@ import {
   nearestWall,
   newId,
   openingJambs,
+  parseLengthToMm,
   roomAreaM2,
   snapPointToGrid,
   snapValueToGrid,
@@ -332,6 +333,11 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
   const [underlayImg, setUnderlayImg] = useState<HTMLImageElement | null>(null);
   const [marqueeDraft, setMarqueeDraft] = useState<{ a: Point; b: Point } | null>(null);
   const [spacePressed, setSpacePressed] = useState(false);
+  /* "Laser measure" keyboard wall entry: an arrow key locks a direction
+     from the current chain point, digits type an exact length, Enter
+     shoots the wall out and continues the chain. */
+  const [keyedDirection, setKeyedDirection] = useState<Point | null>(null);
+  const [keyedLength, setKeyedLength] = useState('');
   const panDrag = useRef<{ pointer: Point; pan: Point } | null>(null);
   const pinch = useRef<{ dist: number; center: Point } | null>(null);
   const openingDrag = useRef<{ id: string; wallId: string } | null>(null);
@@ -359,6 +365,62 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
       window.removeEventListener('keyup', onKeyUp);
     };
   }, []);
+
+  /* Laser-measure keyboard wall entry — only listens while the Wall tool is
+     active and a chain is in progress (there's a fixed start point to
+     extend from). */
+  useEffect(() => {
+    if (tool !== 'wall' || !wallStart) return;
+    const DIRECTIONS: Record<string, Point> = {
+      ArrowUp: { x: 0, y: -1 },
+      ArrowDown: { x: 0, y: 1 },
+      ArrowLeft: { x: -1, y: 0 },
+      ArrowRight: { x: 1, y: 0 },
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
+
+      const dir = DIRECTIONS[e.key];
+      if (dir) {
+        e.preventDefault();
+        setKeyedDirection(dir);
+        setKeyedLength('');
+        return;
+      }
+      if (!keyedDirection) return; // no direction locked yet — plain mouse drawing
+
+      if (/^[0-9.]$/.test(e.key)) {
+        e.preventDefault();
+        setKeyedLength((s) => s + e.key);
+      } else if (e.key === 'Backspace') {
+        e.preventDefault();
+        setKeyedLength((s) => s.slice(0, -1));
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        const mm = parseLengthToMm(keyedLength);
+        if (mm !== null && mm >= 10) {
+          const endpoint = {
+            x: wallStart.x + keyedDirection.x * mm,
+            y: wallStart.y + keyedDirection.y * mm,
+          };
+          commit(
+            'Draw wall',
+            addWall(doc, { id: newId(), a: wallStart, b: endpoint, thickness: DEFAULT_WALL_THICKNESS_MM }),
+          );
+          setWallStart(endpoint);
+          setHoverPt(endpoint);
+        }
+        setKeyedDirection(null);
+        setKeyedLength('');
+      } else if (e.key === 'Escape') {
+        setKeyedDirection(null);
+        setKeyedLength('');
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [tool, wallStart, keyedDirection, keyedLength, doc, commit]);
 
   /* Load the underlay image whenever it changes */
   const underlayUrl = doc.underlay?.dataUrl ?? null;
@@ -424,6 +486,8 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
     setOpeningDraft(null);
     setMeasureA(null);
     setMarqueeDraft(null);
+    setKeyedDirection(null);
+    setKeyedLength('');
     openingDrag.current = null;
   }, []);
 
@@ -1242,7 +1306,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
           {tool === 'wall' && hoverPt && !wallStart && (
             <Circle x={hoverPt.x} y={hoverPt.y} radius={90} stroke={ACTION} strokeWidth={30} listening={false} />
           )}
-          {tool === 'wall' && wallStart && hoverPt && (
+          {tool === 'wall' && wallStart && hoverPt && !keyedDirection && (
             <>
               <Line
                 points={[wallStart.x, wallStart.y, hoverPt.x, hoverPt.y]}
@@ -1269,6 +1333,44 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
               </Label>
             </>
           )}
+
+          {/* Laser-measure keyboard entry preview: an arrow key locked a
+              direction, digits are being typed for the exact length. */}
+          {tool === 'wall' &&
+            wallStart &&
+            keyedDirection &&
+            (() => {
+              const typedMm = parseLengthToMm(keyedLength);
+              const previewMm = typedMm ?? 1000;
+              const endpoint = {
+                x: wallStart.x + keyedDirection.x * previewMm,
+                y: wallStart.y + keyedDirection.y * previewMm,
+              };
+              return (
+                <>
+                  <Line
+                    points={[wallStart.x, wallStart.y, endpoint.x, endpoint.y]}
+                    stroke={ACTION}
+                    strokeWidth={DEFAULT_WALL_THICKNESS_MM}
+                    opacity={typedMm ? 0.55 : 0.3}
+                    dash={typedMm ? undefined : [60, 60]}
+                    lineCap="square"
+                    listening={false}
+                  />
+                  <Circle x={wallStart.x} y={wallStart.y} radius={80} fill={ACTION} listening={false} />
+                  <Label x={endpoint.x} y={endpoint.y - 380} listening={false}>
+                    <Tag fill={ACTION} opacity={0.96} cornerRadius={90} />
+                    <Text
+                      text={keyedLength ? `${keyedLength} m ↵` : 'Type a length…'}
+                      fontSize={210}
+                      fontFamily={MONO}
+                      fill="#FFFFFF"
+                      padding={80}
+                    />
+                  </Label>
+                </>
+              );
+            })()}
 
           {/* Room/stairs draft preview */}
           {rectDraftRect && rectDraftRect.w > 0 && rectDraftRect.h > 0 && (

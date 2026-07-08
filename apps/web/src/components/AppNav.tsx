@@ -1,5 +1,36 @@
-import { Plus, CloudOff } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Cloud, CloudOff, Plus } from 'lucide-react';
 import { BrandMark, Button } from '@floorplan/ui';
+import { isCloudConfigured, useAuthSession } from '../lib/supabase';
+
+function AccountPill() {
+  const navigate = useNavigate();
+  const session = useAuthSession();
+
+  if (!isCloudConfigured()) {
+    return (
+      <span
+        className="flex items-center gap-2 rounded-full border border-line bg-shell px-3 py-1.5 text-xs font-semibold text-ink-soft"
+        title="Plans are stored on this device. Cloud sync arrives with accounts."
+      >
+        <CloudOff size={13} />
+        Working locally
+      </span>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => navigate('/account')}
+      className="flex cursor-pointer items-center gap-2 rounded-full border border-line bg-shell px-3 py-1.5 text-xs font-semibold text-ink-soft hover:bg-line-soft"
+      title={session ? `Synced as ${session.user.email}` : 'Sign in to sync across devices'}
+    >
+      {session ? <Cloud size={13} className="text-brand" /> : <CloudOff size={13} />}
+      {session ? 'Synced' : 'Sign in'}
+    </button>
+  );
+}
 
 export function AppNav({ onNewProperty }: { onNewProperty: () => void }) {
   return (
@@ -40,13 +71,7 @@ export function AppNav({ onNewProperty }: { onNewProperty: () => void }) {
           New Property
         </Button>
         <div className="h-6 w-px bg-line" />
-        <span
-          className="flex items-center gap-2 rounded-full border border-line bg-shell px-3 py-1.5 text-xs font-semibold text-ink-soft"
-          title="Plans are stored on this device. Cloud sync arrives with accounts."
-        >
-          <CloudOff size={13} />
-          Working locally
-        </span>
+        <AccountPill />
       </div>
     </nav>
   );

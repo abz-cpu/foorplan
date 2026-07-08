@@ -6,9 +6,11 @@ import type { DashboardProperty } from '../lib/useDashboardData';
 
 export function PropertyCard({
   property,
+  confirmingDelete,
   onDelete,
 }: {
   property: DashboardProperty;
+  confirmingDelete?: boolean;
   onDelete: () => void;
 }) {
   const { record, thumbnailSvg, meta } = property;
@@ -64,11 +66,16 @@ export function PropertyCard({
         </Link>
         <button
           type="button"
-          title="Delete property"
+          title={confirmingDelete ? "Confirm delete" : "Delete property"}
           onClick={onDelete}
-          className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg border border-line bg-white text-ink-mid hover:bg-[#FBF0EF] hover:text-danger"
+          className={`flex h-8 cursor-pointer items-center justify-center rounded-lg border transition-all ${
+            confirmingDelete
+              ? "bg-danger text-white border-danger px-2.5 gap-1"
+              : "w-8 border-line bg-white text-ink-mid hover:bg-[#FBF0EF] hover:text-danger"
+          }`}
         >
           <Trash2 size={15} />
+          {confirmingDelete && <span className="text-[10px] font-bold uppercase tracking-wider">Confirm</span>}
         </button>
       </div>
     </article>
@@ -77,9 +84,11 @@ export function PropertyCard({
 
 export function PropertyRow({
   property,
+  confirmingDelete,
   onDelete,
 }: {
   property: DashboardProperty;
+  confirmingDelete?: boolean;
   onDelete: () => void;
 }) {
   const { record, thumbnailSvg, meta } = property;
@@ -116,11 +125,16 @@ export function PropertyRow({
         </Link>
         <button
           type="button"
-          title="Delete property"
+          title={confirmingDelete ? "Confirm delete" : "Delete property"}
           onClick={onDelete}
-          className="flex h-[30px] w-[30px] cursor-pointer items-center justify-center rounded-lg border border-line bg-white text-ink-mid hover:bg-[#FBF0EF] hover:text-danger"
+          className={`flex h-[30px] cursor-pointer items-center justify-center rounded-lg border transition-all ${
+            confirmingDelete
+              ? "bg-danger text-white border-danger px-2 gap-1"
+              : "w-[30px] border-line bg-white text-ink-mid hover:bg-[#FBF0EF] hover:text-danger"
+          }`}
         >
           <Trash2 size={14} />
+          {confirmingDelete && <span className="text-[9px] font-bold uppercase tracking-wider">Confirm</span>}
         </button>
       </div>
     </div>

@@ -298,7 +298,7 @@ export function RoomPanel({
       </div>
 
       {tab === 'assistant' ? (
-        <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-4 pb-3 pt-4">
+        <div className="flex flex-1 flex-col gap-3 overflow-y-auto scroll-momentum px-4 pb-3 pt-4">
           <div className="rounded-xl border border-line px-3.5 py-3">
             <div className="flex items-center gap-2 text-[13px] font-semibold">
               <PanelsTopLeft size={14} className="text-ai" />
@@ -371,7 +371,7 @@ export function RoomPanel({
           </p>
         </div>
       ) : (
-        <div className="flex flex-1 flex-col gap-[18px] overflow-y-auto px-4 pb-3 pt-4">
+        <div className="flex flex-1 flex-col gap-[18px] overflow-y-auto scroll-momentum px-4 pb-3 pt-4">
           {room ? (
             <>
               <div>

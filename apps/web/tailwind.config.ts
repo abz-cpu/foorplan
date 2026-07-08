@@ -47,7 +47,7 @@ export default {
         card: '0 10px 28px rgba(16,32,28,0.10)',
         float: '0 8px 24px rgba(16,32,28,0.10)',
         toast: '0 10px 30px rgba(16,32,28,0.3)',
-        cta: '0 1px 2px rgba(11,58,46,0.25)',
+        cta: '0 1px 2px rgba(11,58,46,0.25), 0 4px 12px rgba(11,122,94,0.22)',
       },
     },
   },

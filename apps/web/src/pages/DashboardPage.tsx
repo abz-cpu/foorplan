@@ -24,6 +24,10 @@ export default function DashboardPage() {
   const [q, setQ] = useState('');
   const [view, setView] = useState<'grid' | 'list'>('grid');
   const [dialogOpen, setDialogOpen] = useState(false);
+  // 2-step confirm delete — avoids window.confirm which is blocked in
+  // Capacitor Android WebViews. First click arms the confirm; second click
+  // executes. Auto-disarms after 3 seconds.
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const navigate = useNavigate();
   const toast = useToast();
 
@@ -55,8 +59,21 @@ export default function DashboardPage() {
     navigate(`/editor/${property.id}`);
   };
 
-  const handleDelete = async (id: string, addr: string) => {
-    if (!window.confirm(`Delete ${addr}? The plan is removed from this device.`)) return;
+  const handleDeleteRequest = (id: string) => {
+    if (confirmDeleteId === id) {
+      // Second tap — execute
+      void handleDeleteConfirmed(id);
+    } else {
+      // First tap — arm
+      setConfirmDeleteId(id);
+      setTimeout(() => setConfirmDeleteId((prev) => (prev === id ? null : prev)), 3000);
+    }
+  };
+
+  const handleDeleteConfirmed = async (id: string) => {
+    const prop = properties.find((p) => p.record.id === id);
+    const addr = prop?.record.addressLine1 ?? 'property';
+    setConfirmDeleteId(null);
     await repos.properties.remove(id);
     await refresh();
     toast(`${addr} deleted`);
@@ -159,7 +176,8 @@ export default function DashboardPage() {
               <PropertyCard
                 key={p.record.id}
                 property={p}
-                onDelete={() => handleDelete(p.record.id, p.record.addressLine1)}
+                confirmingDelete={confirmDeleteId === p.record.id}
+                onDelete={() => handleDeleteRequest(p.record.id)}
               />
             ))}
           </div>
@@ -175,7 +193,8 @@ export default function DashboardPage() {
               <PropertyRow
                 key={p.record.id}
                 property={p}
-                onDelete={() => handleDelete(p.record.id, p.record.addressLine1)}
+                confirmingDelete={confirmDeleteId === p.record.id}
+                onDelete={() => handleDeleteRequest(p.record.id)}
               />
             ))}
           </div>
@@ -184,6 +203,11 @@ export default function DashboardPage() {
 
       {dialogOpen && (
         <NewPropertyDialog onCreate={handleCreate} onClose={() => setDialogOpen(false)} />
+      )}
+
+      {/* Dismiss armed confirm when the user clicks anywhere else */}
+      {confirmDeleteId && (
+        <div className="fixed inset-0 z-0" onClick={() => setConfirmDeleteId(null)} />
       )}
     </div>
   );

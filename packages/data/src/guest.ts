@@ -15,6 +15,14 @@ class StudioDb extends Dexie {
 
   constructor() {
     super('floorplan-studio');
+    // Schema version 1.
+    // NOTE FOR FUTURE UPGRADES: Never edit version(1) once in production.
+    // To migrate to version 2, declare a new version block:
+    // this.version(2).stores({
+    //   properties: 'id, updatedAt, status, buildYear', // example new index
+    // }).upgrade(tx => {
+    //   // Perform data transformation/default value migration
+    // });
     this.version(1).stores({
       properties: 'id, updatedAt, status',
       floors: 'id, propertyId, [propertyId+sortOrder]',

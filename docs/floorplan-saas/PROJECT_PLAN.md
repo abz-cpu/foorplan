@@ -2,7 +2,14 @@
 
 A cross-platform (web + iOS + Android), offline-first 2D/3D floor-plan drawing and property-data SaaS for UK estate agents, EPC (RdSAP) assessors, and interior designers — a modern, touch-first competitor to PlanUp and zPlan.
 
-**Status:** Approved architecture & roadmap — MVP built and audited in this dedicated repository. Phases 0–5 (scaffold, guest-mode dashboard, canvas editor, architectural elements incl. doors/windows/stairs/furniture/photo-underlay/room auto-detection, EPC measurements, and multi-format exports) are complete, plus PWA offline support and an on-device Assistant (room naming + description drafts) ahead of the Claude API integration in Phase 7. See `README.md` for the up-to-date checklist. Remaining phases (Supabase + PowerSync sync, Stripe, Capacitor store builds) are blocked on the founder provisioning those accounts/credentials.
+**Status:** Approved architecture & roadmap — MVP built and audited in this dedicated repository. Phases 0–5 (scaffold, guest-mode dashboard, canvas editor, architectural elements incl. doors/windows/stairs/furniture/photo-underlay/room auto-detection, EPC measurements, and multi-format exports) are complete, plus PWA offline support and an on-device Assistant (room naming + description drafts). Phases 6–7 are now **code-complete but credential-blocked** — see `README.md` for the up-to-date checklist and exactly what each one still needs to go live:
+
+- **Cloud sync (Phase 1/7)**: built as a **direct Supabase-client repository adapter** (`packages/data/src/supabase.ts` + `supabase/migrations/0002_app_functions.sql`), not the PowerSync offline-first engine described in §1 below — PowerSync needs a live project (schema, sync rules, connector auth) to build and verify against, which doesn't exist yet, so building it blind would have been unverifiable. What's shipped is real cloud sync when online, auth (email + Google + Apple), and guest→account data import; true offline-first background sync via PowerSync remains a follow-up once that infrastructure is provisioned.
+- **AI Assistant (Phase 7)**: `supabase/functions/assistant` proxies to the Claude API, matching the on-device heuristic's exact input/output shape; the client calls it when cloud is configured and signed in, and silently falls back to the on-device draft otherwise.
+- **Billing (Phase 7)**: `supabase/functions/stripe-checkout` / `stripe-portal` / `stripe-webhook` implement Checkout, the Billing Portal, and subscription-status sync per Stripe's documented API.
+- **Mobile packaging (Phase 6)**: Capacitor wired up for both platforms (`apps/web/capacitor.config.ts`, `ios/`, `android/`), native gesture guards in place (iOS swipe-back disabled, Android back button routed through the app), brand icons/splash generated for both. The Android debug build was verified for real — `gradle assembleDebug` succeeds and installs. The iOS project only builds on macOS/Xcode, which wasn't available to verify here.
+
+None of this needed real credentials to build correctly, but all of it needs them to run: a provisioned Supabase project with the migrations applied, `ANTHROPIC_API_KEY`, a Stripe test-mode account + webhook secret, and (for Xcode) a macOS build machine.
 
 **Founding constraints:** solo founder building with AI tooling · all platforms launch together from one codebase · 3D is a post-MVP fast-follow · Guest Mode (no-account local use) is mandatory for App Store approval.
 
@@ -163,8 +170,11 @@ Guest Mode: rows are created in local SQLite with no `org_id`; signing up runs a
 
 ## Next Steps
 
-1. Stand up the Supabase project + PowerSync instance (dev environment) and wire the Phase 1 guest→account adoption migration through `packages/data`'s repository layer.
-2. Move the AI Assistant from its on-device heuristics to the Claude API behind a Supabase Edge Function (Phase 7), keeping the same offline-first UI contract.
-3. Add Stripe billing (web checkout) and share links once accounts exist.
-4. Package with Capacitor for iOS/Android (Phase 6): touch polish is already in place (gesture guards, tablet-verified layout); remaining work is native builds, TestFlight/Play internal tracks, and mid-range Android WebView perf testing.
+Everything below is code-complete and waiting on credentials/infra, not on further engineering:
+
+1. **Provision a Supabase project**: apply `supabase/migrations/*.sql` in order, set `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` in the web app's environment. Cloud sync, auth, and guest→account import activate immediately — guest mode is unaffected either way.
+2. **Set `ANTHROPIC_API_KEY`** (and optionally `ANTHROPIC_MODEL`) as a secret on that Supabase project, then deploy `supabase/functions/assistant`. The Assistant tab upgrades from on-device drafts to Claude automatically for signed-in users.
+3. **Set up Stripe**: create a product/price, set `STRIPE_SECRET_KEY` / `STRIPE_PRICE_ID` / `STRIPE_WEBHOOK_SECRET`, deploy `supabase/functions/stripe-checkout` / `stripe-portal` / `stripe-webhook`, and point a Stripe webhook endpoint at the deployed `stripe-webhook` URL.
+4. **True offline-first sync**: once the above is live and stable, evaluate migrating from the direct-Supabase adapter to PowerSync for background sync + conflict resolution — the repository-layer split (`packages/data`) makes this swappable without touching UI code.
+5. **Finish mobile packaging**: build `ios/` in Xcode on a Mac (App icons/splash/gesture guards are already wired — this is verification, not new work), then TestFlight + Play internal track for both stores. Guest Mode already satisfies Apple's no-hard-login-wall requirement.
 5. Post-MVP: 3D view, JSTS-based room detection for non-axis-aligned layouts (current detector handles the common orthogonal case), Templates/Reports sections, live collaboration.

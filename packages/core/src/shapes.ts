@@ -142,7 +142,7 @@ function roomShapes(room: RoomRect, showLabels: boolean): Shape[] {
       kind: 'text',
       x: cx,
       y: cy + 240,
-      text: formatAreaM2(roomAreaM2(room)),
+      text: `${formatAreaM2(roomAreaM2(room))} · ${room.ceilingHeightM.toFixed(2)}m`,
       size: 185,
       color: FAINT,
       font: 'mono',

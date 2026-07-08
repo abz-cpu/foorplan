@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LayoutGrid, List, Search } from 'lucide-react';
+import { Image, ImageOff, LayoutGrid, List, Search } from 'lucide-react';
 import type { PropertyStatus } from '@floorplan/core';
 import { createPropertyWithGroundFloor } from '@floorplan/data';
 import { SegmentedControl, useToast } from '@floorplan/ui';
@@ -18,6 +18,8 @@ const TABS: { value: Tab; label: string }[] = [
   { value: 'exported', label: 'Exported' },
 ];
 
+const SHOW_THUMBNAILS_KEY = 'floorplan:showThumbnails';
+
 export default function DashboardPage() {
   const { properties, loading, refresh } = useDashboardData();
   const [tab, setTab] = useState<Tab>('all');
@@ -28,8 +30,15 @@ export default function DashboardPage() {
   // Capacitor Android WebViews. First click arms the confirm; second click
   // executes. Auto-disarms after 3 seconds.
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [showThumbnails, setShowThumbnails] = useState(
+    () => localStorage.getItem(SHOW_THUMBNAILS_KEY) !== 'off',
+  );
   const navigate = useNavigate();
   const toast = useToast();
+
+  useEffect(() => {
+    localStorage.setItem(SHOW_THUMBNAILS_KEY, showThumbnails ? 'on' : 'off');
+  }, [showThumbnails]);
 
   const counts = useMemo(() => {
     const c: Record<Tab, number> = { all: properties.length, draft: 0, ready: 0, exported: 0 };
@@ -128,6 +137,18 @@ export default function DashboardPage() {
                 className="h-[37px] w-[250px] rounded-[10px] border border-input bg-white pl-[34px] pr-3 text-[13px] text-ink outline-none placeholder:text-ink-ghost focus:border-action focus:ring-[3px] focus:ring-action/[0.13]"
               />
             </div>
+            <button
+              type="button"
+              title={showThumbnails ? 'Hide thumbnails' : 'Show thumbnails'}
+              onClick={() => setShowThumbnails((v) => !v)}
+              className={`flex h-[37px] w-[37px] cursor-pointer items-center justify-center rounded-[10px] border transition-colors ${
+                showThumbnails
+                  ? 'border-line bg-white text-ink-mid hover:bg-shell'
+                  : 'border-line bg-shell text-ink-ghost hover:bg-[#EBEFEC]'
+              }`}
+            >
+              {showThumbnails ? <Image size={15} /> : <ImageOff size={15} />}
+            </button>
             <SegmentedControl
               options={[
                 { value: 'grid', label: <LayoutGrid size={15} />, title: 'Grid view' },
@@ -176,6 +197,7 @@ export default function DashboardPage() {
               <PropertyCard
                 key={p.record.id}
                 property={p}
+                showThumbnail={showThumbnails}
                 confirmingDelete={confirmDeleteId === p.record.id}
                 onDelete={() => handleDeleteRequest(p.record.id)}
               />
@@ -193,6 +215,7 @@ export default function DashboardPage() {
               <PropertyRow
                 key={p.record.id}
                 property={p}
+                showThumbnail={showThumbnails}
                 confirmingDelete={confirmDeleteId === p.record.id}
                 onDelete={() => handleDeleteRequest(p.record.id)}
               />

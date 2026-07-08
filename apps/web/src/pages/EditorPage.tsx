@@ -10,6 +10,7 @@ import {
   Minus,
   Plus,
   Redo2,
+  Trash2,
   Undo2,
 } from 'lucide-react';
 import {
@@ -64,6 +65,9 @@ export default function EditorPage() {
   const [notFound, setNotFound] = useState(false);
   const [statusMenuOpen, setStatusMenuOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(searchParams.get('export') === '1');
+  // 2-step confirm, same pattern as property delete on the dashboard —
+  // first click arms, second click within 3s executes.
+  const [confirmDeleteFloorId, setConfirmDeleteFloorId] = useState<string | null>(null);
   const toast = useToast();
 
   const tool = useEditorStore((s) => s.tool);
@@ -158,6 +162,33 @@ export default function EditorPage() {
     setFloors((f) => [...f, created]);
     lastSavedRef.current = created.doc;
     loadFloor(created.id, created.doc);
+  };
+
+  const requestDeleteFloor = (id: string) => {
+    if (floors.length <= 1) return;
+    if (confirmDeleteFloorId === id) {
+      void deleteFloorConfirmed(id);
+    } else {
+      setConfirmDeleteFloorId(id);
+      setTimeout(() => setConfirmDeleteFloorId((prev) => (prev === id ? null : prev)), 3000);
+    }
+  };
+
+  const deleteFloorConfirmed = async (id: string) => {
+    setConfirmDeleteFloorId(null);
+    await repos.floors.remove(id);
+    const remaining = floors.filter((f) => f.id !== id);
+    setFloors(remaining);
+    if (id === floorId) {
+      const next = remaining[0];
+      if (next) {
+        const fresh = (await repos.floors.get(next.id)) ?? next;
+        const nextDoc = normalizeDoc(fresh.doc);
+        lastSavedRef.current = nextDoc;
+        loadFloor(fresh.id, nextDoc);
+      }
+    }
+    toast('Floor deleted');
   };
 
   /* Keyboard shortcuts */
@@ -373,16 +404,33 @@ export default function EditorPage() {
 
           <div className="absolute bottom-3.5 left-3.5 z-10 flex gap-[3px] rounded-[11px] border border-line bg-white p-1 shadow-float">
             {floors.map((f) => (
-              <button
-                key={f.id}
-                type="button"
-                onClick={() => void switchFloor(f)}
-                className={`h-8 cursor-pointer rounded-lg px-3 text-[12.5px] font-semibold ${
-                  floorId === f.id ? 'bg-brand text-[#D7EFE6]' : 'text-ink-soft hover:bg-shell'
-                }`}
-              >
-                {f.name}
-              </button>
+              <div key={f.id} className="group relative">
+                <button
+                  type="button"
+                  onClick={() => void switchFloor(f)}
+                  className={`h-8 cursor-pointer rounded-lg px-3 text-[12.5px] font-semibold ${
+                    floorId === f.id ? 'bg-brand text-[#D7EFE6]' : 'text-ink-soft hover:bg-shell'
+                  } ${floors.length > 1 ? 'pr-6' : ''}`}
+                >
+                  {f.name}
+                </button>
+                {floors.length > 1 && (
+                  <button
+                    type="button"
+                    title={confirmDeleteFloorId === f.id ? 'Confirm delete floor' : 'Delete floor'}
+                    onClick={() => requestDeleteFloor(f.id)}
+                    className={`absolute right-1 top-1/2 flex h-5 w-5 -translate-y-1/2 cursor-pointer items-center justify-center rounded transition-opacity ${
+                      confirmDeleteFloorId === f.id
+                        ? 'bg-danger text-white opacity-100'
+                        : `opacity-0 group-hover:opacity-100 hover:bg-[#FBF0EF] hover:text-danger ${
+                            floorId === f.id ? 'text-[#D7EFE6]' : 'text-ink-ghost'
+                          }`
+                    }`}
+                  >
+                    <Trash2 size={11} />
+                  </button>
+                )}
+              </div>
             ))}
             <button
               type="button"

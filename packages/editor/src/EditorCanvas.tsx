@@ -439,6 +439,32 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
 
   const wallHitToleranceMm = 24 / scale;
 
+  // Rooms and stairs are both plain RoomRects sharing doc.rooms, so a click
+  // inside a room can also land inside a smaller stairs (or other room)
+  // rect nested within it. Konva's paint-order hit-testing would always
+  // resolve that to whichever is later in the array — instead, pick the
+  // smallest-area room/stairs whose bounding box actually contains the
+  // click, so a nested/smaller shape is always reachable regardless of
+  // draw order.
+  const pickRoomAt = useCallback(
+    (p: Point): RoomRect | undefined => {
+      let best: RoomRect | undefined;
+      let bestArea = Infinity;
+      for (const room of doc.rooms) {
+        const r = resizeDraft?.id === room.id ? resizeDraft : room;
+        if (p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h) {
+          const area = r.w * r.h;
+          if (area < bestArea) {
+            bestArea = area;
+            best = room;
+          }
+        }
+      }
+      return best;
+    },
+    [doc.rooms, resizeDraft],
+  );
+
   /* ---- shared pointer logic (mouse + single touch) ---- */
 
   const pointerDown = (isStageTarget: boolean, screen: Point) => {
@@ -843,8 +869,16 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
                 x={r.x}
                 y={r.y}
                 draggable={tool === 'select' && !resizeDraft}
-                onClick={() => tool === 'select' && select(room.id)}
-                onTap={() => tool === 'select' && select(room.id)}
+                onClick={() => {
+                  if (tool !== 'select') return;
+                  const p = pointerWorld();
+                  select((p ? pickRoomAt(p) : undefined)?.id ?? room.id);
+                }}
+                onTap={() => {
+                  if (tool !== 'select') return;
+                  const p = pointerWorld();
+                  select((p ? pickRoomAt(p) : undefined)?.id ?? room.id);
+                }}
                 onDragStart={() => select(room.id)}
                 onDragEnd={(e) => {
                   const snapped = snapFree({ x: e.target.x(), y: e.target.y() });

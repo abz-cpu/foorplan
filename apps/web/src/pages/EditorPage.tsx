@@ -9,11 +9,15 @@ import {
   HardDrive,
   Maximize,
   Minus,
+  MousePointerClick,
   Plus,
   Redo2,
+  Ruler,
+  ScanSearch,
   SlidersHorizontal,
   Trash2,
   Undo2,
+  X,
 } from 'lucide-react';
 import {
   buildRoomScheduleCsv,
@@ -33,6 +37,7 @@ import { ToolPalette, TOOL_HINTS } from '../components/editor/ToolPalette';
 import { repos } from '../lib/repos';
 
 const FLOOR_NAMES = ['Ground Floor', 'First Floor', 'Second Floor', 'Third Floor'];
+const EDITOR_WELCOME_SEEN_KEY = 'floorplan:seenEditorWelcome';
 
 function TopBarButton({
   title,
@@ -72,7 +77,15 @@ export default function EditorPage() {
   // 2-step confirm, same pattern as property delete on the dashboard —
   // first click arms, second click within 3s executes.
   const [confirmDeleteFloorId, setConfirmDeleteFloorId] = useState<string | null>(null);
+  const [showWelcome, setShowWelcome] = useState(
+    () => localStorage.getItem(EDITOR_WELCOME_SEEN_KEY) !== '1',
+  );
   const toast = useToast();
+
+  const dismissWelcome = () => {
+    localStorage.setItem(EDITOR_WELCOME_SEEN_KEY, '1');
+    setShowWelcome(false);
+  };
 
   const tool = useEditorStore((s) => s.tool);
   const setTool = useEditorStore((s) => s.setTool);
@@ -427,6 +440,49 @@ export default function EditorPage() {
             onPickSymbol={setSymbolKind}
             className="absolute left-3.5 top-1/2 z-10 -translate-y-1/2"
           />
+
+          {showWelcome && (
+            <div className="absolute right-3.5 top-3.5 z-10 w-[300px] rounded-[13px] border border-line bg-white p-4 shadow-float">
+              <div className="flex items-start justify-between gap-2">
+                <div className="text-[13.5px] font-semibold tracking-tight">Welcome to the editor</div>
+                <button
+                  type="button"
+                  onClick={dismissWelcome}
+                  title="Dismiss"
+                  className="flex h-5 w-5 flex-none cursor-pointer items-center justify-center rounded-md text-ink-ghost hover:bg-shell hover:text-ink-mid"
+                >
+                  <X size={13} />
+                </button>
+              </div>
+              <ul className="mt-2.5 flex flex-col gap-2.5">
+                <li className="flex items-start gap-2 text-[12.5px] text-ink-soft">
+                  <Ruler size={14} className="mt-0.5 flex-none text-action" />
+                  <span>
+                    Draw walls by clicking points, or after the first click press an arrow key and
+                    type an exact length + Enter.
+                  </span>
+                </li>
+                <li className="flex items-start gap-2 text-[12.5px] text-ink-soft">
+                  <MousePointerClick size={14} className="mt-0.5 flex-none text-action" />
+                  <span>Right-click any wall, room, door, or piece of furniture for quick actions.</span>
+                </li>
+                <li className="flex items-start gap-2 text-[12.5px] text-ink-soft">
+                  <ScanSearch size={14} className="mt-0.5 flex-none text-action" />
+                  <span>
+                    "Detect rooms from walls" in the panel on the right finds enclosed rooms
+                    automatically.
+                  </span>
+                </li>
+              </ul>
+              <button
+                type="button"
+                onClick={dismissWelcome}
+                className="mt-3.5 h-[32px] w-full cursor-pointer rounded-[8px] bg-action text-[12.5px] font-semibold text-white hover:bg-action-hover"
+              >
+                Got it
+              </button>
+            </div>
+          )}
 
           <div className="absolute left-1/2 top-3.5 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full bg-ink px-3.5 py-[7px] text-xs font-medium text-[#E7F0ED] shadow-toast">
             <span className="h-1.5 w-1.5 rounded-full bg-[#5FD3AE]" />

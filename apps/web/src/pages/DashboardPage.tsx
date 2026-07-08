@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Image, ImageOff, LayoutGrid, List, Search } from 'lucide-react';
-import type { PropertyStatus } from '@floorplan/core';
+import { Image, ImageOff, LayoutGrid, List, Search, Sparkles } from 'lucide-react';
+import { buildDemoFloorDoc, type PropertyStatus } from '@floorplan/core';
 import { createPropertyWithGroundFloor } from '@floorplan/data';
 import { SegmentedControl, useToast } from '@floorplan/ui';
 import { AppNav } from '../components/AppNav';
@@ -65,6 +65,17 @@ export default function DashboardPage() {
     const { property } = await createPropertyWithGroundFloor(repos, values);
     setDialogOpen(false);
     toast(`${property.addressLine1} created`);
+    navigate(`/editor/${property.id}`);
+  };
+
+  const handleCreateDemo = async () => {
+    const { property, floor } = await createPropertyWithGroundFloor(repos, {
+      addressLine1: '42 Sample Street',
+      addressLine2: 'Demo flat — safe to edit or delete',
+      postcode: 'SW1A 1AA',
+    });
+    await repos.floors.saveDoc(floor.id, buildDemoFloorDoc());
+    toast('Demo plan created — explore it, or delete it any time');
     navigate(`/editor/${property.id}`);
   };
 
@@ -174,13 +185,24 @@ export default function DashboardPage() {
                 <div className="mt-1.5 text-[13px] text-ink-faint">
                   Create a property to open the editor — everything is saved on this device.
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setDialogOpen(true)}
-                  className="mt-4 inline-flex h-[37px] cursor-pointer items-center gap-2 rounded-[9px] bg-action px-4 text-[13.5px] font-semibold text-white shadow-cta hover:bg-action-hover"
-                >
-                  New Property
-                </button>
+                <div className="mt-4 flex items-center justify-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setDialogOpen(true)}
+                    className="inline-flex h-[37px] cursor-pointer items-center gap-2 rounded-[9px] bg-action px-4 text-[13.5px] font-semibold text-white shadow-cta hover:bg-action-hover"
+                  >
+                    New Property
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleCreateDemo()}
+                    title="Creates a small sample flat you can explore, edit, or delete"
+                    className="inline-flex h-[37px] cursor-pointer items-center gap-2 rounded-[9px] border border-line bg-white px-4 text-[13.5px] font-semibold text-ink-mid shadow-segment hover:bg-shell"
+                  >
+                    <Sparkles size={14} />
+                    Try a demo plan
+                  </button>
+                </div>
               </>
             ) : (
               <>

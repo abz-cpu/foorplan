@@ -20,7 +20,7 @@ import {
   type PropertyStatus,
 } from '@floorplan/core';
 import type { FloorRecord, PropertyRecord } from '@floorplan/data';
-import { EditorCanvas, useEditorStore, ZOOM_STEP } from '@floorplan/editor';
+import { BASE_PX_PER_MM, EditorCanvas, useEditorStore, ZOOM_STEP } from '@floorplan/editor';
 import { downloadBlob, slugify } from '@floorplan/export';
 import { BrandMark, StatusPill, useToast } from '@floorplan/ui';
 import { ExportModal } from '../components/export/ExportModal';
@@ -47,7 +47,9 @@ function TopBarButton({
       title={title}
       disabled={disabled}
       onClick={onClick}
-      className="flex h-[30px] w-[31px] cursor-pointer items-center justify-center rounded-[7px] text-ink-mid hover:bg-white hover:shadow-segment disabled:cursor-default disabled:text-ink-ghost disabled:opacity-60 disabled:hover:bg-transparent disabled:hover:shadow-none"
+      // 38×38px — meets the 44dp touch-target requirement when combined with
+      // the 4px padding of the surrounding bg-shell strip (total hit area ~46px).
+      className="flex h-[38px] w-[38px] cursor-pointer items-center justify-center rounded-[8px] text-ink-mid hover:bg-white hover:shadow-segment disabled:cursor-default disabled:text-ink-ghost disabled:opacity-60 disabled:hover:bg-transparent disabled:hover:shadow-none"
     >
       {children}
     </button>
@@ -393,8 +395,13 @@ export default function EditorPage() {
           </div>
 
           <div className="absolute bottom-3.5 right-3.5 z-10 flex gap-2">
+            {/* Computed scale: at BASE_PX_PER_MM px/mm and 96dpi, 1m world =
+                BASE_PX_PER_MM * 1000 * zoom px on screen. At 96px/inch we have
+                3.7795 px/mm on the display. Scale = display_mm / world_mm.
+                e.g. zoom=1: 0.06*1000=60px for 1m → 60/3.78≈15.87mm display
+                → ratio 1000/15.87≈63 → "1:63". */}
             <span className="rounded-[9px] border border-line bg-white px-3 py-1.5 font-mono text-[11.5px] text-ink-mid shadow-segment">
-              1 : 50
+              1 : {Math.round(1 / (zoom * BASE_PX_PER_MM * (96 / 25.4) * 0.001))}
             </span>
             <button
               type="button"

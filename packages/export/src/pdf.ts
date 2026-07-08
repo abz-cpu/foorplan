@@ -1,4 +1,5 @@
-import { degrees, LineCapStyle, PDFDocument, rgb, StandardFonts, type PDFFont } from 'pdf-lib';
+import { degrees, LineCapStyle, PDFDocument, rgb, type PDFFont } from 'pdf-lib';
+import fontkit from '@pdf-lib/fontkit';
 import type { Shape } from '@floorplan/core';
 
 const PT_PER_MM = 72 / 25.4;
@@ -27,16 +28,33 @@ export async function shapesToPdfBytes(
   heightMm: number,
 ): Promise<Uint8Array> {
   const pdf = await PDFDocument.create();
+  pdf.registerFontkit(fontkit);
+
+  // Fetch and embed the custom fonts so they match the brand exactly and work offline.
+  // The service worker caches these routes, so they resolve instantly offline.
+  const [regularBytes, boldBytes, monoBytes, monoMediumBytes] = await Promise.all([
+    fetch('/fonts/InstrumentSans-Regular.ttf').then((res) => res.arrayBuffer()),
+    fetch('/fonts/InstrumentSans-SemiBold.ttf').then((res) => res.arrayBuffer()),
+    fetch('/fonts/IBMPlexMono-Regular.ttf').then((res) => res.arrayBuffer()),
+    fetch('/fonts/IBMPlexMono-Medium.ttf').then((res) => res.arrayBuffer()),
+  ]);
+
+  const sansRegular = await pdf.embedFont(regularBytes);
+  const sansBold = await pdf.embedFont(boldBytes);
+  const ibmMono = await pdf.embedFont(monoBytes);
+  const ibmMonoMedium = await pdf.embedFont(monoMediumBytes);
+
   const page = pdf.addPage([widthMm * PT_PER_MM, heightMm * PT_PER_MM]);
   const H = heightMm * PT_PER_MM;
   const X = (mm: number) => mm * PT_PER_MM;
   const Y = (mm: number) => H - mm * PT_PER_MM; // PDF y-axis points up
 
-  const sans = await pdf.embedFont(StandardFonts.Helvetica);
-  const sansBold = await pdf.embedFont(StandardFonts.HelveticaBold);
-  const mono = await pdf.embedFont(StandardFonts.Courier);
-  const pickFont = (s: Extract<Shape, { kind: 'text' }>): PDFFont =>
-    s.font === 'mono' ? mono : (s.weight ?? 400) >= 600 ? sansBold : sans;
+  const pickFont = (s: Extract<Shape, { kind: 'text' }>): PDFFont => {
+    if (s.font === 'mono') {
+      return (s.weight ?? 400) >= 500 ? ibmMonoMedium : ibmMono;
+    }
+    return (s.weight ?? 400) >= 600 ? sansBold : sansRegular;
+  };
 
   for (const s of shapes) {
     switch (s.kind) {

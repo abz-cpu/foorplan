@@ -14,3 +14,10 @@ body {
   overscroll-behavior: none;
   -webkit-tap-highlight-color: transparent;
 }
+
+/* Smooth momentum scroll for panel scrollers inside iOS/Capacitor WebViews.
+   Combine with Tailwind's overflow-y-auto. */
+.scroll-momentum {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}

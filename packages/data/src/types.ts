@@ -15,6 +15,10 @@ export interface PropertyRecord {
   status: PropertyStatus;
   createdAt: string;
   updatedAt: string;
+  /** EPC Phase 2: property-level metadata for SAP/RDSAP input */
+  buildYear?: number;
+  constructionType?: 'masonry' | 'timber-frame' | 'steel-frame' | 'unknown';
+  heatingSystem?: string;
 }
 
 export interface FloorRecord {

@@ -335,11 +335,23 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
     img.src = underlayUrl;
   }, [underlayUrl]);
 
-  /* Track container size */
+  /* Track container size — also triggers the initial fit-to-view once the
+     ResizeObserver delivers the first real measurement. Using a ref flag so
+     we only auto-fit on mount, not on every subsequent resize (e.g. panel
+     open/close), which would jar the user mid-draw. */
+  const didInitialFit = useRef(false);
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    const update = () => setViewport({ width: el.clientWidth, height: el.clientHeight });
+    const update = () => {
+      setViewport({ width: el.clientWidth, height: el.clientHeight });
+      if (!didInitialFit.current) {
+        didInitialFit.current = true;
+        // Defer one micro-task so the store's viewport state has settled
+        // before fitToView reads it.
+        setTimeout(() => useEditorStore.getState().fitToView(), 0);
+      }
+    };
     update();
     const ro = new ResizeObserver(update);
     ro.observe(el);

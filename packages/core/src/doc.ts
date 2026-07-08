@@ -101,13 +101,22 @@ export function setUnderlay(doc: FloorDoc, underlay: Underlay | null): FloorDoc 
 
 /** Remove any entity by id. Deleting a wall also removes its openings. */
 export function deleteEntity(doc: FloorDoc, id: string): FloorDoc {
+  return deleteEntities(doc, [id]);
+}
+
+/** Remove any number of entities (rooms, walls, openings, symbols, labels)
+ *  by id in one step — one undo entry instead of one per item. Deleting a
+ *  wall also removes its openings. */
+export function deleteEntities(doc: FloorDoc, ids: string[]): FloorDoc {
+  const idSet = new Set(ids);
+  if (idSet.size === 0) return doc;
   return {
     ...doc,
-    walls: doc.walls.filter((w) => w.id !== id),
-    rooms: doc.rooms.filter((r) => r.id !== id),
-    labels: doc.labels.filter((l) => l.id !== id),
-    openings: doc.openings.filter((o) => o.id !== id && o.wallId !== id),
-    symbols: doc.symbols.filter((s) => s.id !== id),
+    walls: doc.walls.filter((w) => !idSet.has(w.id)),
+    rooms: doc.rooms.filter((r) => !idSet.has(r.id)),
+    labels: doc.labels.filter((l) => !idSet.has(l.id)),
+    openings: doc.openings.filter((o) => !idSet.has(o.id) && !idSet.has(o.wallId)),
+    symbols: doc.symbols.filter((s) => !idSet.has(s.id)),
   };
 }
 

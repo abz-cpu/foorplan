@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import {
   buildRoomScheduleCsv,
-  deleteEntity,
+  deleteEntities,
   normalizeDoc,
   type FloorDoc,
   type PropertyStatus,
@@ -240,9 +240,13 @@ export default function EditorPage() {
           break;
         case 'backspace':
         case 'delete':
-          if (store.selectedId) {
+          if (store.selectedIds.length > 0) {
             e.preventDefault();
-            store.commit('Delete', deleteEntity(store.doc, store.selectedId));
+            const count = store.selectedIds.length;
+            store.commit(
+              count > 1 ? `Delete ${count} items` : 'Delete',
+              deleteEntities(store.doc, store.selectedIds),
+            );
             store.select(null);
           }
           break;

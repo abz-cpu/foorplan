@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   addRoom,
   addWall,
+  deleteEntities,
   deleteEntity,
   emptyFloorDoc,
   parseDoc,
@@ -44,6 +45,19 @@ describe('doc mutations are immutable', () => {
     const d2 = updateRoom(d, 'r2', { name: 'Office', includeInGia: false });
     expect(d2.rooms[0].name).toBe('Bedroom');
     expect(d2.rooms[1]).toMatchObject({ name: 'Office', includeInGia: false });
+  });
+
+  it('deleteEntities removes multiple ids across different entity types in one step', () => {
+    const d = addRoom(addRoom(addWall(emptyFloorDoc(), wall), room), { ...room, id: 'r2' });
+    const d2 = deleteEntities(d, ['w1', 'r2']);
+    expect(d2.walls).toHaveLength(0);
+    expect(d2.rooms).toEqual([room]);
+    expect(d.walls).toHaveLength(1); // original untouched
+  });
+
+  it('deleteEntities with an empty list is a no-op (same reference)', () => {
+    const d = addRoom(emptyFloorDoc(), room);
+    expect(deleteEntities(d, [])).toBe(d);
   });
 });
 

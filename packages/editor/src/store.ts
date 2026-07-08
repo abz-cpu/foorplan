@@ -30,7 +30,13 @@ interface EditorState {
   floorId: string | null;
   doc: FloorDoc;
   tool: Tool;
+  /** The single selected id, or the "primary" one when selectedIds.length === 1.
+   *  Null whenever zero or more-than-one items are selected — most of the UI
+   *  (the Properties panel) only knows how to show a single item's detail. */
   selectedId: string | null;
+  /** Every currently selected id — length 0, 1, or many. selectedId is kept
+   *  in sync (mirrors the sole entry when there's exactly one). */
+  selectedIds: string[];
   zoom: number;
   pan: Point;
   snapEnabled: boolean;
@@ -45,6 +51,10 @@ interface EditorState {
   setTool(tool: Tool): void;
   setSymbolKind(kind: SymbolKind): void;
   select(id: string | null): void;
+  /** Add/remove `id` from the current selection (shift/ctrl-click). */
+  toggleSelect(id: string, additive: boolean): void;
+  /** Replace the whole selection at once (marquee/rubber-band select). */
+  selectMany(ids: string[]): void;
   /** Record a completed document change (single undo step). */
   commit(label: string, next: FloorDoc): void;
   undo(): void;
@@ -71,6 +81,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
     doc: emptyFloorDoc(),
     tool: 'select',
     selectedId: null,
+    selectedIds: [],
     zoom: 1,
     pan: { x: 80, y: 60 },
     snapEnabled: true,
@@ -92,6 +103,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
         floorId,
         doc,
         selectedId: null,
+        selectedIds: [],
         canUndo: false,
         canRedo: false,
         saveState: 'saved',
@@ -107,7 +119,23 @@ export const useEditorStore = create<EditorState>((set, get) => {
     },
 
     select(id) {
-      set({ selectedId: id });
+      set({ selectedId: id, selectedIds: id ? [id] : [] });
+    },
+
+    toggleSelect(id, additive) {
+      if (!additive) {
+        set({ selectedId: id, selectedIds: [id] });
+        return;
+      }
+      const { selectedIds } = get();
+      const next = selectedIds.includes(id)
+        ? selectedIds.filter((i) => i !== id)
+        : [...selectedIds, id];
+      set({ selectedIds: next, selectedId: next.length === 1 ? next[0] : null });
+    },
+
+    selectMany(ids) {
+      set({ selectedIds: ids, selectedId: ids.length === 1 ? ids[0] : null });
     },
 
     commit(label, next) {
@@ -126,6 +154,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
         canRedo: history.canRedo,
         saveState: 'unsaved',
         selectedId: null,
+        selectedIds: [],
       });
     },
 
@@ -138,6 +167,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
         canRedo: history.canRedo,
         saveState: 'unsaved',
         selectedId: null,
+        selectedIds: [],
       });
     },
 

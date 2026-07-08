@@ -89,7 +89,7 @@ function SymbolNode({
   sym: SymbolInstance;
   selected: boolean;
   draggable: boolean;
-  onSelect: () => void;
+  onSelect: (additive: boolean) => void;
   onMove: (x: number, y: number) => void;
 }) {
   const def = SYMBOL_DEFS[sym.kind];
@@ -106,9 +106,9 @@ function SymbolNode({
       offsetY={sym.h / 2}
       rotation={sym.rotationDeg}
       draggable={draggable}
-      onClick={onSelect}
-      onTap={onSelect}
-      onDragStart={onSelect}
+      onClick={(e) => onSelect(e.evt.shiftKey || e.evt.metaKey || e.evt.ctrlKey)}
+      onTap={() => onSelect(false)}
+      onDragStart={() => onSelect(false)}
       onDragEnd={(e) => onMove(e.target.x() - sym.w / 2, e.target.y() - sym.h / 2)}
     >
       {/* hit region */}
@@ -211,7 +211,7 @@ function OpeningShape({
   wall: Wall;
   opening: Opening;
   selected: boolean;
-  onSelect: () => void;
+  onSelect: (additive: boolean) => void;
   onGrab: () => void;
 }) {
   const { start, end } = openingJambs(wall, opening);
@@ -284,8 +284,8 @@ function OpeningShape({
         points={[start.x, start.y, end.x, end.y]}
         stroke="rgba(0,0,0,0.001)"
         strokeWidth={Math.max(t * 3, 360)}
-        onClick={onSelect}
-        onTap={onSelect}
+        onClick={(e) => onSelect(e.evt.shiftKey || e.evt.metaKey || e.evt.ctrlKey)}
+        onTap={() => onSelect(false)}
         onMouseDown={onGrab}
         onTouchStart={onGrab}
       />
@@ -301,11 +301,14 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
   const tool = useEditorStore((s) => s.tool);
   const symbolKind = useEditorStore((s) => s.symbolKind);
   const selectedId = useEditorStore((s) => s.selectedId);
+  const selectedIds = useEditorStore((s) => s.selectedIds);
   const zoom = useEditorStore((s) => s.zoom);
   const pan = useEditorStore((s) => s.pan);
   const snapEnabled = useEditorStore((s) => s.snapEnabled);
   const viewport = useEditorStore((s) => s.viewport);
   const select = useEditorStore((s) => s.select);
+  const toggleSelect = useEditorStore((s) => s.toggleSelect);
+  const selectMany = useEditorStore((s) => s.selectMany);
   const commit = useEditorStore((s) => s.commit);
   const setView = useEditorStore((s) => s.setView);
   const setPan = useEditorStore((s) => s.setPan);
@@ -322,9 +325,35 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
   const [openingDraft, setOpeningDraft] = useState<{ id: string; offsetMm: number } | null>(null);
   const [measureA, setMeasureA] = useState<Point | null>(null);
   const [underlayImg, setUnderlayImg] = useState<HTMLImageElement | null>(null);
+  const [marqueeDraft, setMarqueeDraft] = useState<{ a: Point; b: Point } | null>(null);
+  const [spacePressed, setSpacePressed] = useState(false);
   const panDrag = useRef<{ pointer: Point; pan: Point } | null>(null);
   const pinch = useRef<{ dist: number; center: Point } | null>(null);
   const openingDrag = useRef<{ id: string; wallId: string } | null>(null);
+
+  /* Hold Space to pan (matches most design-tool conventions) — otherwise a
+     drag on empty canvas with the Select tool draws a marquee-select box. */
+  useEffect(() => {
+    const isTyping = () => {
+      const tag = document.activeElement?.tagName;
+      return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'Space' && !isTyping()) {
+        e.preventDefault();
+        setSpacePressed(true);
+      }
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space') setSpacePressed(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+    };
+  }, []);
 
   /* Load the underlay image whenever it changes */
   const underlayUrl = doc.underlay?.dataUrl ?? null;
@@ -389,6 +418,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
     setOpeningHover(null);
     setOpeningDraft(null);
     setMeasureA(null);
+    setMarqueeDraft(null);
     openingDrag.current = null;
   }, []);
 
@@ -465,11 +495,71 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
     [doc.rooms, resizeDraft],
   );
 
+  // Marquee (rubber-band) select: returns every entity whose bounding box
+  // overlaps the drag rectangle, across all five entity types. A simple AABB
+  // overlap test — good enough for "select everything roughly in this area"
+  // without needing exact shape intersection.
+  const entitiesInRect = useCallback(
+    (a: Point, b: Point): string[] => {
+      const rMinX = Math.min(a.x, b.x);
+      const rMaxX = Math.max(a.x, b.x);
+      const rMinY = Math.min(a.y, b.y);
+      const rMaxY = Math.max(a.y, b.y);
+      const overlaps = (minX: number, minY: number, maxX: number, maxY: number) =>
+        minX <= rMaxX && maxX >= rMinX && minY <= rMaxY && maxY >= rMinY;
+
+      const ids: string[] = [];
+      for (const room of doc.rooms) {
+        if (overlaps(room.x, room.y, room.x + room.w, room.y + room.h)) ids.push(room.id);
+      }
+      for (const w of doc.walls) {
+        if (
+          overlaps(
+            Math.min(w.a.x, w.b.x),
+            Math.min(w.a.y, w.b.y),
+            Math.max(w.a.x, w.b.x),
+            Math.max(w.a.y, w.b.y),
+          )
+        )
+          ids.push(w.id);
+      }
+      for (const o of doc.openings) {
+        const wall = findWall(doc, o.wallId);
+        if (!wall) continue;
+        const { start, end } = openingJambs(wall, o);
+        if (
+          overlaps(
+            Math.min(start.x, end.x),
+            Math.min(start.y, end.y),
+            Math.max(start.x, end.x),
+            Math.max(start.y, end.y),
+          )
+        )
+          ids.push(o.id);
+      }
+      for (const s of doc.symbols) {
+        if (overlaps(s.x, s.y, s.x + s.w, s.y + s.h)) ids.push(s.id);
+      }
+      for (const l of doc.labels) {
+        // Labels have no stored width — a small margin around the anchor
+        // point is close enough for "is this label roughly in the box".
+        if (overlaps(l.x - 300, l.y - 150, l.x + 300, l.y + 150)) ids.push(l.id);
+      }
+      return ids;
+    },
+    [doc],
+  );
+
   /* ---- shared pointer logic (mouse + single touch) ---- */
 
   const pointerDown = (isStageTarget: boolean, screen: Point) => {
     if (tool === 'select' && isStageTarget) {
-      panDrag.current = { pointer: screen, pan };
+      if (spacePressed) {
+        panDrag.current = { pointer: screen, pan };
+        return;
+      }
+      const raw = pointerWorld();
+      if (raw) setMarqueeDraft({ a: raw, b: raw });
       select(null);
       return;
     }
@@ -558,6 +648,11 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
       });
       return;
     }
+    if (marqueeDraft) {
+      const raw = pointerWorld();
+      if (raw) setMarqueeDraft({ a: marqueeDraft.a, b: raw });
+      return;
+    }
     if (openingDrag.current) {
       const raw = pointerWorld();
       const wall = findWall(doc, openingDrag.current.wallId);
@@ -591,6 +686,18 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
 
   const pointerUp = () => {
     panDrag.current = null;
+
+    if (marqueeDraft) {
+      // Distinguish an intentional drag from a plain click (which should
+      // just deselect, already done in pointerDown) using a small screen-
+      // space threshold converted to world units.
+      const movedMm = distance(marqueeDraft.a, marqueeDraft.b);
+      if (movedMm >= 6 / scale) {
+        selectMany(entitiesInRect(marqueeDraft.a, marqueeDraft.b));
+      }
+      setMarqueeDraft(null);
+      return;
+    }
 
     if (openingDrag.current && openingDraft) {
       const wall = findWall(doc, openingDrag.current.wallId);
@@ -813,7 +920,14 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
         backgroundImage: 'radial-gradient(#DCE6E2 1px, transparent 1px)',
         backgroundSize: `${DISPLAY_GRID_MM * scale}px ${DISPLAY_GRID_MM * scale}px`,
         backgroundPosition: `${pan.x}px ${pan.y}px`,
-        cursor: tool === 'select' ? 'default' : 'crosshair',
+        cursor:
+          tool === 'select'
+            ? spacePressed
+              ? panDrag.current
+                ? 'grabbing'
+                : 'grab'
+              : 'default'
+            : 'crosshair',
       }}
     >
       <Stage
@@ -861,7 +975,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
           {/* Rooms (incl. stairs) */}
           {doc.rooms.map((room) => {
             const r = resizeDraft?.id === room.id ? resizeDraft : room;
-            const isSel = selectedId === room.id;
+            const isSel = selectedIds.includes(room.id);
             const stairs = room.type === 'Stairs';
             return (
               <Group
@@ -869,10 +983,13 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
                 x={r.x}
                 y={r.y}
                 draggable={tool === 'select' && !resizeDraft}
-                onClick={() => {
+                onClick={(e) => {
                   if (tool !== 'select') return;
                   const p = pointerWorld();
-                  select((p ? pickRoomAt(p) : undefined)?.id ?? room.id);
+                  const id = (p ? pickRoomAt(p) : undefined)?.id ?? room.id;
+                  const additive = e.evt.shiftKey || e.evt.metaKey || e.evt.ctrlKey;
+                  if (additive) toggleSelect(id, true);
+                  else select(id);
                 }}
                 onTap={() => {
                   if (tool !== 'select') return;
@@ -927,7 +1044,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
 
           {/* Walls (cut around openings) */}
           {doc.walls.map((w) => {
-            const isSel = selectedId === w.id;
+            const isSel = selectedIds.includes(w.id);
             const openings = doc.openings.map((o) =>
               openingDraft && o.id === openingDraft.id ? { ...o, offsetMm: openingDraft.offsetMm } : o,
             );
@@ -939,7 +1056,12 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
                 strokeWidth={w.thickness}
                 lineCap="square"
                 hitStrokeWidth={Math.max(w.thickness, 320)}
-                onClick={() => tool === 'select' && select(w.id)}
+                onClick={(e) => {
+                  if (tool !== 'select') return;
+                  const additive = e.evt.shiftKey || e.evt.metaKey || e.evt.ctrlKey;
+                  if (additive) toggleSelect(w.id, true);
+                  else select(w.id);
+                }}
                 onTap={() => tool === 'select' && select(w.id)}
               />
             ));
@@ -955,8 +1077,12 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
                 key={o.id}
                 wall={wall}
                 opening={effective}
-                selected={selectedId === o.id}
-                onSelect={() => tool === 'select' && select(o.id)}
+                selected={selectedIds.includes(o.id)}
+                onSelect={(additive) => {
+                  if (tool !== 'select') return;
+                  if (additive) toggleSelect(o.id, true);
+                  else select(o.id);
+                }}
                 onGrab={() => {
                   if (tool !== 'select') return;
                   select(o.id);
@@ -971,9 +1097,13 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
             <SymbolNode
               key={sym.id}
               sym={sym}
-              selected={selectedId === sym.id}
+              selected={selectedIds.includes(sym.id)}
               draggable={tool === 'select'}
-              onSelect={() => tool === 'select' && select(sym.id)}
+              onSelect={(additive) => {
+                if (tool !== 'select') return;
+                if (additive) toggleSelect(sym.id, true);
+                else select(sym.id);
+              }}
               onMove={(x, y) => {
                 const snapped = snapFree({ x, y });
                 commit('Move symbol', updateSymbol(doc, sym.id, { x: snapped.x, y: snapped.y }));
@@ -991,11 +1121,16 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
               fontSize={220}
               fontFamily={SANS}
               fontStyle="600"
-              fill={selectedId === label.id ? ACTION : INK}
+              fill={selectedIds.includes(label.id) ? ACTION : INK}
               align="center"
               offsetX={label.text.length * 55}
               draggable={tool === 'select'}
-              onClick={() => tool === 'select' && select(label.id)}
+              onClick={(e) => {
+                if (tool !== 'select') return;
+                const additive = e.evt.shiftKey || e.evt.metaKey || e.evt.ctrlKey;
+                if (additive) toggleSelect(label.id, true);
+                else select(label.id);
+              }}
               onTap={() => tool === 'select' && select(label.id)}
               onDragStart={() => select(label.id)}
               onDragEnd={(e) =>
@@ -1031,6 +1166,22 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
                 />
               </Label>
             </>
+          )}
+
+          {/* Marquee (rubber-band) select */}
+          {marqueeDraft && (
+            <Rect
+              x={Math.min(marqueeDraft.a.x, marqueeDraft.b.x)}
+              y={Math.min(marqueeDraft.a.y, marqueeDraft.b.y)}
+              width={Math.abs(marqueeDraft.b.x - marqueeDraft.a.x)}
+              height={Math.abs(marqueeDraft.b.y - marqueeDraft.a.y)}
+              fill={ACTION}
+              opacity={0.08}
+              stroke={ACTION}
+              strokeWidth={6}
+              dash={[40, 30]}
+              listening={false}
+            />
           )}
 
           {/* Door/window placement ghost */}

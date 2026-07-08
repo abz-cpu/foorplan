@@ -15,6 +15,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import {
+  deleteEntities,
   deleteEntity,
   detectRooms,
   findWall,
@@ -125,6 +126,7 @@ export function RoomPanel({
   const doc = useEditorStore((s) => s.doc);
   const floorId = useEditorStore((s) => s.floorId);
   const selectedId = useEditorStore((s) => s.selectedId);
+  const selectedIds = useEditorStore((s) => s.selectedIds);
   const commit = useEditorStore((s) => s.commit);
   const select = useEditorStore((s) => s.select);
   const toast = useToast();
@@ -387,7 +389,22 @@ export function RoomPanel({
         </div>
       ) : (
         <div className="flex flex-1 flex-col gap-[18px] overflow-y-auto scroll-momentum px-4 pb-3 pt-4">
-          {room ? (
+          {selectedIds.length > 1 ? (
+            <div>
+              <SectionLabel>{`${selectedIds.length} ITEMS SELECTED`}</SectionLabel>
+              <p className="text-[12.5px] leading-relaxed text-ink-faint">
+                Shift-click (or drag a selection box on empty canvas) to add more, or to remove one from
+                the selection.
+              </p>
+              <DeleteButton
+                label={`Delete ${selectedIds.length} items`}
+                onClick={() => {
+                  commit(`Delete ${selectedIds.length} items`, deleteEntities(doc, selectedIds));
+                  select(null);
+                }}
+              />
+            </div>
+          ) : room ? (
             <>
               <div>
                 <SectionLabel>{room.type === 'Stairs' ? 'SELECTED STAIRS' : 'SELECTED ROOM'}</SectionLabel>

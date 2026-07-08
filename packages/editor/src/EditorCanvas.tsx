@@ -1,10 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Arc, Circle, Group, Label, Layer, Line, Rect, Stage, Tag, Text } from 'react-konva';
+import {
+  Arc,
+  Circle,
+  Group,
+  Image as KonvaImage,
+  Label,
+  Layer,
+  Line,
+  Rect,
+  Stage,
+  Tag,
+  Text,
+} from 'react-konva';
 import type Konva from 'konva';
 import type { KonvaEventObject } from 'konva/lib/Node';
 import {
+  addLabel,
   addOpening,
   addRoom,
+  addSymbol,
   addWall,
   clampOpeningOffset,
   DEFAULT_CEILING_HEIGHT_M,
@@ -24,13 +38,17 @@ import {
   snapPointToGrid,
   snapValueToGrid,
   snapWallEnd,
+  SYMBOL_DEFS,
+  updateLabel,
   updateOpening,
   updateRoom,
+  updateSymbol,
   wallNormal,
   wallSegments,
   type Opening,
   type Point,
   type RoomRect,
+  type SymbolInstance,
   type Wall,
 } from '@floorplan/core';
 import {
@@ -59,6 +77,81 @@ const MONO = "'IBM Plex Mono', monospace";
 const clampZoom = (z: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
 
 const isDraftingTool = (t: Tool) => t === 'room' || t === 'stairs';
+
+/** Furniture symbol rendered from its unit-box primitives inside a rotatable group. */
+function SymbolNode({
+  sym,
+  selected,
+  draggable,
+  onSelect,
+  onMove,
+}: {
+  sym: SymbolInstance;
+  selected: boolean;
+  draggable: boolean;
+  onSelect: () => void;
+  onMove: (x: number, y: number) => void;
+}) {
+  const def = SYMBOL_DEFS[sym.kind];
+  const sx = sym.w / 100;
+  const sy = sym.h / 100;
+  const stroke = selected ? ACTION : WALL_LIGHT;
+  return (
+    <Group
+      x={sym.x + sym.w / 2}
+      y={sym.y + sym.h / 2}
+      offsetX={sym.w / 2}
+      offsetY={sym.h / 2}
+      rotation={sym.rotationDeg}
+      draggable={draggable}
+      onClick={onSelect}
+      onTap={onSelect}
+      onDragStart={onSelect}
+      onDragEnd={(e) => onMove(e.target.x() - sym.w / 2, e.target.y() - sym.h / 2)}
+    >
+      {/* hit region */}
+      <Rect width={sym.w} height={sym.h} fill="rgba(0,0,0,0.001)" />
+      {def.prims.map((p, i) => {
+        if (p.t === 'line') {
+          return (
+            <Line
+              key={i}
+              points={[p.x1 * sx, p.y1 * sy, p.x2 * sx, p.y2 * sy]}
+              stroke={stroke}
+              strokeWidth={22}
+              listening={false}
+            />
+          );
+        }
+        if (p.t === 'rect') {
+          return (
+            <Rect
+              key={i}
+              x={p.x * sx}
+              y={p.y * sy}
+              width={p.w * sx}
+              height={p.h * sy}
+              stroke={stroke}
+              strokeWidth={22}
+              listening={false}
+            />
+          );
+        }
+        return (
+          <Circle
+            key={i}
+            x={p.cx * sx}
+            y={p.cy * sy}
+            radius={p.r * Math.min(sx, sy)}
+            stroke={stroke}
+            strokeWidth={22}
+            listening={false}
+          />
+        );
+      })}
+    </Group>
+  );
+}
 
 function StairsTreads({ room }: { room: RoomRect }) {
   const horizontal = room.w >= room.h;
@@ -203,6 +296,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
 
   const doc = useEditorStore((s) => s.doc);
   const tool = useEditorStore((s) => s.tool);
+  const symbolKind = useEditorStore((s) => s.symbolKind);
   const selectedId = useEditorStore((s) => s.selectedId);
   const zoom = useEditorStore((s) => s.zoom);
   const pan = useEditorStore((s) => s.pan);
@@ -223,9 +317,23 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
   const [resizeDraft, setResizeDraft] = useState<RoomRect | null>(null);
   const [openingHover, setOpeningHover] = useState<{ wall: Wall; offsetMm: number } | null>(null);
   const [openingDraft, setOpeningDraft] = useState<{ id: string; offsetMm: number } | null>(null);
+  const [measureA, setMeasureA] = useState<Point | null>(null);
+  const [underlayImg, setUnderlayImg] = useState<HTMLImageElement | null>(null);
   const panDrag = useRef<{ pointer: Point; pan: Point } | null>(null);
   const pinch = useRef<{ dist: number; center: Point } | null>(null);
   const openingDrag = useRef<{ id: string; wallId: string } | null>(null);
+
+  /* Load the underlay image whenever it changes */
+  const underlayUrl = doc.underlay?.dataUrl ?? null;
+  useEffect(() => {
+    if (!underlayUrl) {
+      setUnderlayImg(null);
+      return;
+    }
+    const img = new window.Image();
+    img.onload = () => setUnderlayImg(img);
+    img.src = underlayUrl;
+  }, [underlayUrl]);
 
   /* Track container size */
   useEffect(() => {
@@ -245,6 +353,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
     setResizeDraft(null);
     setOpeningHover(null);
     setOpeningDraft(null);
+    setMeasureA(null);
     openingDrag.current = null;
   }, []);
 
@@ -349,6 +458,34 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
       commit(tool === 'door' ? 'Place door' : 'Place window', addOpening(doc, opening));
       select(opening.id);
       setOpeningHover(null);
+    } else if (tool === 'symbol') {
+      const def = SYMBOL_DEFS[symbolKind];
+      const centre = snapFree(raw);
+      const sym: SymbolInstance = {
+        id: newId(),
+        kind: symbolKind,
+        x: centre.x - def.w / 2,
+        y: centre.y - def.h / 2,
+        w: def.w,
+        h: def.h,
+        rotationDeg: 0,
+      };
+      commit(`Place ${def.name.toLowerCase()}`, addSymbol(doc, sym));
+      select(sym.id);
+    } else if (tool === 'measure') {
+      const pt = snapFree(raw);
+      if (!measureA) {
+        setMeasureA(pt);
+        setHoverPt(pt);
+      } else {
+        setMeasureA(null);
+        setHoverPt(null);
+      }
+    } else if (tool === 'text') {
+      const pt = snapFree(raw);
+      const label = { id: newId(), x: pt.x, y: pt.y, text: 'Label' };
+      commit('Add label', addLabel(doc, label));
+      select(label.id);
     }
   };
 
@@ -376,6 +513,9 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
     if (tool === 'wall') {
       const raw = pointerWorld();
       if (raw) setHoverPt(snapEnd(raw, wallStart));
+    } else if (tool === 'measure' && measureA) {
+      const raw = pointerWorld();
+      if (raw) setHoverPt(snapFree(raw));
     } else if (isDraftingTool(tool) && rectDraft) {
       const raw = pointerWorld();
       if (raw) setRectDraft({ ...rectDraft, b: snapFree(raw) });
@@ -635,6 +775,27 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
         onTouchEnd={onTouchEnd}
       >
         <Layer>
+          {/* Photo underlay for tracing (below everything) */}
+          {underlayImg && doc.underlay && (
+            <KonvaImage
+              image={underlayImg}
+              x={doc.underlay.xMm}
+              y={doc.underlay.yMm}
+              width={doc.underlay.widthMm}
+              height={doc.underlay.widthMm * (underlayImg.naturalHeight / underlayImg.naturalWidth)}
+              opacity={doc.underlay.opacity}
+              draggable={tool === 'select' && !doc.underlay.locked}
+              listening={tool === 'select' && !doc.underlay.locked}
+              onDragEnd={(e) => {
+                if (!doc.underlay) return;
+                commit('Move underlay', {
+                  ...doc,
+                  underlay: { ...doc.underlay, xMm: e.target.x(), yMm: e.target.y() },
+                });
+              }}
+            />
+          )}
+
           {/* Rooms (incl. stairs) */}
           {doc.rooms.map((room) => {
             const r = resizeDraft?.id === room.id ? resizeDraft : room;
@@ -734,6 +895,73 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
               />
             );
           })}
+
+          {/* Furniture symbols */}
+          {doc.symbols.map((sym) => (
+            <SymbolNode
+              key={sym.id}
+              sym={sym}
+              selected={selectedId === sym.id}
+              draggable={tool === 'select'}
+              onSelect={() => tool === 'select' && select(sym.id)}
+              onMove={(x, y) => {
+                const snapped = snapFree({ x, y });
+                commit('Move symbol', updateSymbol(doc, sym.id, { x: snapped.x, y: snapped.y }));
+              }}
+            />
+          ))}
+
+          {/* Text labels */}
+          {doc.labels.map((label) => (
+            <Text
+              key={label.id}
+              x={label.x}
+              y={label.y}
+              text={label.text}
+              fontSize={220}
+              fontFamily={SANS}
+              fontStyle="600"
+              fill={selectedId === label.id ? ACTION : INK}
+              align="center"
+              offsetX={label.text.length * 55}
+              draggable={tool === 'select'}
+              onClick={() => tool === 'select' && select(label.id)}
+              onTap={() => tool === 'select' && select(label.id)}
+              onDragStart={() => select(label.id)}
+              onDragEnd={(e) =>
+                commit('Move label', updateLabel(doc, label.id, { x: e.target.x(), y: e.target.y() }))
+              }
+            />
+          ))}
+
+          {/* Measure overlay */}
+          {tool === 'measure' && measureA && hoverPt && (
+            <>
+              <Line
+                points={[measureA.x, measureA.y, hoverPt.x, hoverPt.y]}
+                stroke={ACTION}
+                strokeWidth={25}
+                dash={[140, 90]}
+                listening={false}
+              />
+              <Circle x={measureA.x} y={measureA.y} radius={70} fill={ACTION} listening={false} />
+              <Circle x={hoverPt.x} y={hoverPt.y} radius={70} fill={ACTION} listening={false} />
+              <Label
+                x={(measureA.x + hoverPt.x) / 2}
+                y={(measureA.y + hoverPt.y) / 2 - 380}
+                listening={false}
+              >
+                <Tag fill="#FFFFFF" opacity={0.94} cornerRadius={90} />
+                <Text
+                  text={formatMmAsM(distance(measureA, hoverPt))}
+                  fontSize={210}
+                  fontFamily={MONO}
+                  fill={ACTION}
+                  padding={80}
+                />
+              </Label>
+            </>
+          )}
 
           {/* Door/window placement ghost */}
           {openingGhost && (

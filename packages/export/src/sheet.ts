@@ -143,6 +143,49 @@ export function buildFloorSheet(doc: FloorDoc, opts: SheetOptions): Sheet {
     const dy = cy0 + (ch - spanY * scale) / 2 - minY * scale;
     const planShapes = docToShapes(doc, { showDims: opts.showMeasurements, showLabels: true });
     shapes.push(...transformShapes(planShapes, scale, dx, dy));
+
+    /* Scale bar (bottom-left of content box) */
+    if (opts.showMeasurements) {
+      const niceWorldMm = [1000, 2000, 5000].reverse().find((l) => l * scale <= cw / 3) ?? 1000;
+      const barLen = niceWorldMm * scale;
+      const bx = cx0 + 2;
+      const by = cy0 + ch - 4;
+      shapes.push(
+        { kind: 'line', x1: bx, y1: by, x2: bx + barLen, y2: by, stroke: '#4A5D57', width: 0.5 },
+        { kind: 'line', x1: bx, y1: by - 1.4, x2: bx, y2: by + 1.4, stroke: '#4A5D57', width: 0.5 },
+        { kind: 'line', x1: bx + barLen, y1: by - 1.4, x2: bx + barLen, y2: by + 1.4, stroke: '#4A5D57', width: 0.5 },
+        {
+          kind: 'text',
+          x: bx + barLen / 2,
+          y: by - 2.2,
+          text: `${niceWorldMm / 1000} m`,
+          size: 2.6,
+          color: '#4A5D57',
+          font: 'mono',
+          align: 'center',
+        },
+      );
+    }
+
+    /* North arrow (top-right of content box) */
+    const nx = cx0 + cw - 6;
+    const ny = cy0 + 8;
+    shapes.push(
+      { kind: 'arc', cx: nx, cy: ny, r: 4.4, startDeg: 0, endDeg: 359.99, anticlockwise: false, stroke: '#7C9A90', width: 0.4 },
+      {
+        kind: 'polyline',
+        points: [
+          { x: nx - 1.6, y: ny + 2.2 },
+          { x: nx, y: ny - 2.6 },
+          { x: nx + 1.6, y: ny + 2.2 },
+          { x: nx, y: ny + 1 },
+          { x: nx - 1.6, y: ny + 2.2 },
+        ],
+        stroke: '#4A5D57',
+        width: 0.5,
+      },
+      { kind: 'text', x: nx, y: ny + 7.6, text: 'N', size: 2.8, color: '#4A5D57', font: 'sans', weight: 700, align: 'center' },
+    );
   }
 
   return { widthMm: W, heightMm: H, shapes };

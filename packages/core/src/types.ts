@@ -63,12 +63,26 @@ export interface Opening {
   hinge: 'left' | 'right';
 }
 
+/** Reference photo (sketch/old plan) rendered under the grid for tracing. */
+export interface Underlay {
+  dataUrl: string;
+  xMm: number;
+  yMm: number;
+  /** rendered width in world mm (height follows the image aspect) */
+  widthMm: number;
+  /** 0..1 */
+  opacity: number;
+  locked: boolean;
+}
+
 export interface FloorDoc {
   schemaVersion: 1;
   walls: Wall[];
   rooms: RoomRect[];
   labels: TextLabel[];
   openings: Opening[];
+  symbols: import('./symbols').SymbolInstance[];
+  underlay?: Underlay | null;
 }
 
 export type PropertyStatus = 'draft' | 'ready' | 'exported';

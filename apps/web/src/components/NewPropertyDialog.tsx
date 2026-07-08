@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button, TextInput } from '@floorplan/ui';
 
 export interface NewPropertyValues {
@@ -18,6 +18,12 @@ export function NewPropertyDialog({
   const [addressLine2, setAddressLine2] = useState('');
   const [postcode, setPostcode] = useState('');
   const valid = addressLine1.trim().length > 0;
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
 
   const submit = () => {
     if (!valid) return;

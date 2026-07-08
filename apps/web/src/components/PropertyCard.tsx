@@ -48,14 +48,13 @@ export function PropertyCard({
           Open in Editor
         </Link>
         <div className="flex-1" />
-        <button
-          type="button"
-          title="AI: generate property description — coming soon"
-          disabled
-          className="flex h-8 w-8 cursor-not-allowed items-center justify-center rounded-lg border border-line bg-white text-ai opacity-45"
+        <Link
+          to={`/editor/${record.id}?assistant=1`}
+          title="Assistant: name rooms & draft a property description"
+          className="flex h-8 w-8 items-center justify-center rounded-lg border border-line bg-white text-ai hover:border-[#DCD0F5] hover:bg-ai-soft"
         >
           <Sparkles size={15} strokeWidth={1.8} />
-        </button>
+        </Link>
         <Link
           to={`/editor/${record.id}?export=1`}
           title="Export plan"

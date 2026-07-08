@@ -1,3 +1,6 @@
+import { useState } from 'react';
+import { Armchair } from 'lucide-react';
+import { SYMBOL_DEFS, SYMBOL_KINDS, type SymbolKind } from '@floorplan/core';
 import type { Tool } from '@floorplan/editor';
 
 /** Tool icons — exact SVG paths from the approved design (Editor.dc.html). */
@@ -15,32 +18,34 @@ const ICONS: Record<string, string> = {
 };
 
 export const TOOL_HINTS: Record<Tool, string> = {
-  select: 'Select — tap a room to edit it, drag empty space to pan',
+  select: 'Select — tap anything to edit it, drag empty space to pan',
   wall: 'Wall — click to place points, click the last point again or Esc to finish',
   room: 'Room — drag a rectangle to add a room',
   door: 'Door — click a wall to place, drag with Select to slide',
   window: 'Window — click a wall to place, drag with Select to slide',
   stairs: 'Stairs — drag a rectangle to place a flight',
+  symbol: 'Furniture — click to place, drag with Select to move',
+  measure: 'Measure — click two points, Esc to clear',
+  text: 'Text — click to place a label, edit it in the panel',
 };
 
 interface PaletteEntry {
-  id: string;
+  id: Tool;
   tip: string;
-  enabled: boolean;
 }
 
 const ENTRIES: PaletteEntry[] = [
-  { id: 'select', tip: 'Select (V)', enabled: true },
-  { id: 'wall', tip: 'Wall (W)', enabled: true },
-  { id: 'room', tip: 'Room (R)', enabled: true },
-  { id: 'door', tip: 'Door (D)', enabled: true },
-  { id: 'window', tip: 'Window (N)', enabled: true },
-  { id: 'stairs', tip: 'Stairs (S)', enabled: true },
+  { id: 'select', tip: 'Select (V)' },
+  { id: 'wall', tip: 'Wall (W)' },
+  { id: 'room', tip: 'Room (R)' },
+  { id: 'door', tip: 'Door (D)' },
+  { id: 'window', tip: 'Window (N)' },
+  { id: 'stairs', tip: 'Stairs (S)' },
 ];
 
 const EXTRA: PaletteEntry[] = [
-  { id: 'measure', tip: 'Measure — coming soon', enabled: false },
-  { id: 'text', tip: 'Text label — coming soon', enabled: false },
+  { id: 'measure', tip: 'Measure (M)' },
+  { id: 'text', tip: 'Text label (T)' },
 ];
 
 function DesignIcon({ d, size = 18 }: { d: string; size?: number }) {
@@ -60,59 +65,116 @@ function DesignIcon({ d, size = 18 }: { d: string; size?: number }) {
   );
 }
 
-function PaletteButton({
-  entry,
-  active,
-  onPick,
-}: {
-  entry: PaletteEntry;
-  active: boolean;
-  onPick: () => void;
-}) {
+/** Mini preview of a symbol's primitives for the picker grid. */
+function SymbolPreview({ kind }: { kind: SymbolKind }) {
+  const def = SYMBOL_DEFS[kind];
+  const landscape = def.w >= def.h;
+  const vw = landscape ? 100 : (def.w / def.h) * 100;
+  const vh = landscape ? (def.h / def.w) * 100 : 100;
   return (
-    <button
-      type="button"
-      title={entry.tip}
-      disabled={!entry.enabled}
-      onClick={onPick}
-      className={`flex h-10 w-10 items-center justify-center rounded-[9px] transition-colors ${
-        active
-          ? 'bg-brand text-brand-ink'
-          : entry.enabled
-            ? 'cursor-pointer text-ink-mid hover:bg-shell'
-            : 'cursor-not-allowed text-ink-ghost opacity-50'
-      }`}
-    >
-      <DesignIcon d={ICONS[entry.id]} />
-    </button>
+    <svg viewBox={`-6 -6 112 112`} className="h-8 w-8" fill="none" stroke="currentColor" strokeWidth={5}>
+      <g transform={`translate(${(100 - vw) / 2} ${(100 - vh) / 2}) scale(${vw / 100} ${vh / 100})`}>
+        {def.prims.map((p, i) => {
+          if (p.t === 'line') return <line key={i} x1={p.x1} y1={p.y1} x2={p.x2} y2={p.y2} />;
+          if (p.t === 'rect') return <rect key={i} x={p.x} y={p.y} width={p.w} height={p.h} />;
+          return <circle key={i} cx={p.cx} cy={p.cy} r={p.r} />;
+        })}
+      </g>
+    </svg>
   );
+}
+
+function paletteButtonClass(active: boolean): string {
+  return `flex h-10 w-10 cursor-pointer items-center justify-center rounded-[9px] transition-colors ${
+    active ? 'bg-brand text-brand-ink' : 'text-ink-mid hover:bg-shell'
+  }`;
 }
 
 export function ToolPalette({
   tool,
+  symbolKind,
   onPick,
+  onPickSymbol,
   className = '',
 }: {
   tool: Tool;
+  symbolKind: SymbolKind;
   onPick: (tool: Tool) => void;
+  onPickSymbol: (kind: SymbolKind) => void;
   className?: string;
 }) {
+  const [symbolsOpen, setSymbolsOpen] = useState(false);
+
   return (
-    <div
-      className={`flex flex-col gap-0.5 rounded-[13px] border border-line bg-white p-[5px] shadow-float ${className}`}
-    >
-      {ENTRIES.map((entry) => (
-        <PaletteButton
-          key={entry.id}
-          entry={entry}
-          active={tool === entry.id}
-          onPick={() => entry.enabled && onPick(entry.id as Tool)}
-        />
-      ))}
-      <div className="mx-[5px] my-[3px] h-px bg-line" />
-      {EXTRA.map((entry) => (
-        <PaletteButton key={entry.id} entry={entry} active={false} onPick={() => {}} />
-      ))}
+    <div className={`relative ${className}`}>
+      <div className="flex flex-col gap-0.5 rounded-[13px] border border-line bg-white p-[5px] shadow-float">
+        {ENTRIES.map((entry) => (
+          <button
+            key={entry.id}
+            type="button"
+            title={entry.tip}
+            onClick={() => {
+              onPick(entry.id);
+              setSymbolsOpen(false);
+            }}
+            className={paletteButtonClass(tool === entry.id)}
+          >
+            <DesignIcon d={ICONS[entry.id]} />
+          </button>
+        ))}
+        <button
+          type="button"
+          title={`Furniture (F) — ${SYMBOL_DEFS[symbolKind].name}`}
+          onClick={() => setSymbolsOpen((o) => !o)}
+          className={paletteButtonClass(tool === 'symbol')}
+        >
+          <Armchair size={18} strokeWidth={1.9} />
+        </button>
+        <div className="mx-[5px] my-[3px] h-px bg-line" />
+        {EXTRA.map((entry) => (
+          <button
+            key={entry.id}
+            type="button"
+            title={entry.tip}
+            onClick={() => {
+              onPick(entry.id);
+              setSymbolsOpen(false);
+            }}
+            className={paletteButtonClass(tool === entry.id)}
+          >
+            <DesignIcon d={ICONS[entry.id]} />
+          </button>
+        ))}
+      </div>
+
+      {symbolsOpen && (
+        <div className="absolute left-[56px] top-0 z-20 w-[228px] rounded-[13px] border border-line bg-white p-2.5 shadow-float">
+          <div className="mb-1.5 px-1 text-[11px] font-semibold tracking-[0.07em] text-ink-ghost">
+            FURNITURE & FIXTURES
+          </div>
+          <div className="grid grid-cols-3 gap-1">
+            {SYMBOL_KINDS.map((kind) => (
+              <button
+                key={kind}
+                type="button"
+                title={SYMBOL_DEFS[kind].name}
+                onClick={() => {
+                  onPickSymbol(kind);
+                  setSymbolsOpen(false);
+                }}
+                className={`flex cursor-pointer flex-col items-center gap-0.5 rounded-lg p-1.5 text-[9.5px] font-medium ${
+                  tool === 'symbol' && symbolKind === kind
+                    ? 'bg-action-soft text-action-soft-ink'
+                    : 'text-ink-soft hover:bg-shell'
+                }`}
+              >
+                <SymbolPreview kind={kind} />
+                <span className="w-full truncate text-center">{SYMBOL_DEFS[kind].name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

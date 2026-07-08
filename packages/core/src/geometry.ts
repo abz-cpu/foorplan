@@ -73,6 +73,10 @@ export function docBounds(doc: FloorDoc): Bounds | null {
     eat(r.x, r.y);
     eat(r.x + r.w, r.y + r.h);
   }
+  for (const s of doc.symbols) {
+    eat(s.x, s.y);
+    eat(s.x + s.w, s.y + s.h);
+  }
   for (const l of doc.labels) eat(l.x, l.y);
   if (minX === Infinity) return null;
   return { minX, minY, maxX, maxY };

@@ -1,7 +1,8 @@
-import type { FloorDoc, Opening, RoomRect, TextLabel, Wall } from './types';
+import type { SymbolInstance } from './symbols';
+import type { FloorDoc, Opening, RoomRect, TextLabel, Underlay, Wall } from './types';
 
 export function emptyFloorDoc(): FloorDoc {
-  return { schemaVersion: 1, walls: [], rooms: [], labels: [], openings: [] };
+  return { schemaVersion: 1, walls: [], rooms: [], labels: [], openings: [], symbols: [] };
 }
 
 export function serializeDoc(doc: FloorDoc): string {
@@ -18,14 +19,17 @@ export function parseDoc(json: string): FloorDoc {
     walls: raw.walls ?? [],
     rooms: raw.rooms ?? [],
     labels: raw.labels ?? [],
-    // additive field — docs saved before openings existed parse fine
+    // additive fields — docs saved before they existed parse fine
     openings: raw.openings ?? [],
+    symbols: raw.symbols ?? [],
+    ...(raw.underlay ? { underlay: raw.underlay } : {}),
   };
 }
 
 /** Normalise docs loaded from storage that predate newer additive fields. */
 export function normalizeDoc(doc: FloorDoc): FloorDoc {
-  return doc.openings ? doc : { ...doc, openings: [] };
+  if (doc.openings && doc.symbols) return doc;
+  return { ...doc, openings: doc.openings ?? [], symbols: doc.symbols ?? [] };
 }
 
 /* Immutable update helpers — every mutation returns a new doc. */
@@ -71,6 +75,30 @@ export function updateOpening(
   };
 }
 
+export function addSymbol(doc: FloorDoc, symbol: SymbolInstance): FloorDoc {
+  return { ...doc, symbols: [...doc.symbols, symbol] };
+}
+
+export function updateSymbol(
+  doc: FloorDoc,
+  id: string,
+  patch: Partial<Omit<SymbolInstance, 'id' | 'kind'>>,
+): FloorDoc {
+  return { ...doc, symbols: doc.symbols.map((s) => (s.id === id ? { ...s, ...patch } : s)) };
+}
+
+export function updateLabel(
+  doc: FloorDoc,
+  id: string,
+  patch: Partial<Omit<TextLabel, 'id'>>,
+): FloorDoc {
+  return { ...doc, labels: doc.labels.map((l) => (l.id === id ? { ...l, ...patch } : l)) };
+}
+
+export function setUnderlay(doc: FloorDoc, underlay: Underlay | null): FloorDoc {
+  return { ...doc, underlay };
+}
+
 /** Remove any entity by id. Deleting a wall also removes its openings. */
 export function deleteEntity(doc: FloorDoc, id: string): FloorDoc {
   return {
@@ -79,6 +107,7 @@ export function deleteEntity(doc: FloorDoc, id: string): FloorDoc {
     rooms: doc.rooms.filter((r) => r.id !== id),
     labels: doc.labels.filter((l) => l.id !== id),
     openings: doc.openings.filter((o) => o.id !== id && o.wallId !== id),
+    symbols: doc.symbols.filter((s) => s.id !== id),
   };
 }
 

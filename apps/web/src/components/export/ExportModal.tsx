@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Check, Download, FileText, Image, X } from 'lucide-react';
 import type { FloorDoc } from '@floorplan/core';
 import {
@@ -66,6 +66,12 @@ export function ExportModal({
   const [measurements, setMeasurements] = useState(true);
   const [disclaimer, setDisclaimer] = useState(true);
   const [phase, setPhase] = useState<'idle' | 'working' | 'done'>('idle');
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
 
   const sheet = useMemo(
     () =>

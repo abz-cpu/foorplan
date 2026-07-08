@@ -1,7 +1,8 @@
 import { docBounds, roomAreaM2 } from './geometry';
 import { openingJambs, wallNormal, wallSegments } from './openings';
 import { formatAreaM2, formatMmAsM } from './format';
-import type { FloorDoc, Opening, Point, RoomRect, Wall } from './types';
+import { SYMBOL_DEFS, type SymbolInstance } from './symbols';
+import type { FloorDoc, Opening, Point, RoomRect, TextLabel, Wall } from './types';
 
 /**
  * Renderer-agnostic display list. All coordinates in world millimetres.
@@ -210,6 +211,79 @@ function openingShapes(wall: Wall, opening: Opening): Shape[] {
   ];
 }
 
+/**
+ * Flatten a symbol instance's unit-box primitives into world-space shapes,
+ * applying scale then rotation about the footprint centre. Emitting plain
+ * lines/arcs/polylines keeps every backend (SVG/canvas/PDF/Konva) trivial.
+ */
+export function symbolToShapes(sym: SymbolInstance, stroke = WALL_LIGHT, width = 20): Shape[] {
+  const def = SYMBOL_DEFS[sym.kind];
+  const sx = sym.w / 100;
+  const sy = sym.h / 100;
+  const cx = sym.x + sym.w / 2;
+  const cy = sym.y + sym.h / 2;
+  const theta = (sym.rotationDeg * Math.PI) / 180;
+  const cos = Math.cos(theta);
+  const sin = Math.sin(theta);
+  const tp = (ux: number, uy: number): Point => {
+    // scale into footprint, then rotate about centre
+    const px = sym.x + ux * sx;
+    const py = sym.y + uy * sy;
+    const dx = px - cx;
+    const dy = py - cy;
+    return { x: cx + dx * cos - dy * sin, y: cy + dx * sin + dy * cos };
+  };
+
+  const shapes: Shape[] = [];
+  for (const p of def.prims) {
+    if (p.t === 'line') {
+      const a = tp(p.x1, p.y1);
+      const b = tp(p.x2, p.y2);
+      shapes.push({ kind: 'line', x1: a.x, y1: a.y, x2: b.x, y2: b.y, stroke, width });
+    } else if (p.t === 'rect') {
+      const pts = [
+        tp(p.x, p.y),
+        tp(p.x + p.w, p.y),
+        tp(p.x + p.w, p.y + p.h),
+        tp(p.x, p.y + p.h),
+        tp(p.x, p.y),
+      ];
+      shapes.push({ kind: 'polyline', points: pts, stroke, width });
+    } else {
+      const c = tp(p.cx, p.cy);
+      const r = p.r * Math.min(sx, sy);
+      shapes.push({
+        kind: 'arc',
+        cx: c.x,
+        cy: c.y,
+        r,
+        startDeg: 0,
+        endDeg: 359.99,
+        anticlockwise: false,
+        stroke,
+        width,
+      });
+    }
+  }
+  return shapes;
+}
+
+function labelShapes(label: TextLabel): Shape[] {
+  return [
+    {
+      kind: 'text',
+      x: label.x,
+      y: label.y,
+      text: label.text,
+      size: 220,
+      color: INK,
+      font: 'sans',
+      weight: 600,
+      align: 'center',
+    },
+  ];
+}
+
 function dimensionShapes(doc: FloorDoc): Shape[] {
   const bounds = docBounds(doc);
   if (!bounds) return [];
@@ -283,6 +357,9 @@ export function docToShapes(doc: FloorDoc, options: DocShapesOptions = {}): Shap
     const wall = doc.walls.find((w) => w.id === opening.wallId);
     if (wall) shapes.push(...openingShapes(wall, opening));
   }
+
+  for (const sym of doc.symbols) shapes.push(...symbolToShapes(sym));
+  if (showLabels) for (const label of doc.labels) shapes.push(...labelShapes(label));
 
   if (showDims) shapes.push(...dimensionShapes(doc));
   return shapes;

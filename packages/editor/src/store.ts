@@ -5,10 +5,20 @@ import {
   History,
   type FloorDoc,
   type Point,
+  type SymbolKind,
 } from '@floorplan/core';
 import { BASE_PX_PER_MM, ZOOM_MAX, ZOOM_MIN } from './constants';
 
-export type Tool = 'select' | 'wall' | 'room' | 'door' | 'window' | 'stairs';
+export type Tool =
+  | 'select'
+  | 'wall'
+  | 'room'
+  | 'door'
+  | 'window'
+  | 'stairs'
+  | 'symbol'
+  | 'measure'
+  | 'text';
 export type SaveState = 'saved' | 'saving' | 'unsaved';
 
 export interface Viewport {
@@ -28,9 +38,12 @@ interface EditorState {
   canRedo: boolean;
   saveState: SaveState;
   viewport: Viewport;
+  /** which symbol the symbol tool places */
+  symbolKind: SymbolKind;
 
   loadFloor(floorId: string, doc: FloorDoc): void;
   setTool(tool: Tool): void;
+  setSymbolKind(kind: SymbolKind): void;
   select(id: string | null): void;
   /** Record a completed document change (single undo step). */
   commit(label: string, next: FloorDoc): void;
@@ -62,6 +75,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   canRedo: false,
   saveState: 'saved',
   viewport: { width: 800, height: 600 },
+  symbolKind: 'sofa',
+
+  setSymbolKind(kind) {
+    set({ symbolKind: kind, tool: 'symbol' });
+  },
 
   loadFloor(floorId, doc) {
     history = new History<FloorDoc>();

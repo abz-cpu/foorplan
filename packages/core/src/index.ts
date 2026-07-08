@@ -10,3 +10,6 @@ export * from './openings';
 export * from './measure';
 export * from './csv';
 export * from './shapes';
+export * from './symbols';
+export * from './detect';
+export * from './assistant';

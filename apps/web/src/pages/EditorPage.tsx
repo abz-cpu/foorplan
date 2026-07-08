@@ -66,6 +66,8 @@ export default function EditorPage() {
 
   const tool = useEditorStore((s) => s.tool);
   const setTool = useEditorStore((s) => s.setTool);
+  const symbolKind = useEditorStore((s) => s.symbolKind);
+  const setSymbolKind = useEditorStore((s) => s.setSymbolKind);
   const zoom = useEditorStore((s) => s.zoom);
   const zoomBy = useEditorStore((s) => s.zoomBy);
   const fitToView = useEditorStore((s) => s.fitToView);
@@ -186,6 +188,15 @@ export default function EditorPage() {
           break;
         case 's':
           store.setTool('stairs');
+          break;
+        case 'm':
+          store.setTool('measure');
+          break;
+        case 't':
+          store.setTool('text');
+          break;
+        case 'f':
+          store.setTool('symbol');
           break;
         case '+':
         case '=':
@@ -347,7 +358,9 @@ export default function EditorPage() {
 
           <ToolPalette
             tool={tool}
+            symbolKind={symbolKind}
             onPick={setTool}
+            onPickSymbol={setSymbolKind}
             className="absolute left-3.5 top-1/2 z-10 -translate-y-1/2"
           />
 
@@ -397,7 +410,12 @@ export default function EditorPage() {
           </div>
         </div>
 
-        <RoomPanel onDownloadCsv={() => void downloadCsv()} />
+        <RoomPanel
+          onDownloadCsv={() => void downloadCsv()}
+          address={property ? `${property.addressLine1}${property.postcode ? `, ${property.postcode}` : ''}` : ''}
+          floors={floors.map((f) => ({ id: f.id, name: f.name, doc: f.doc }))}
+          initialTab={searchParams.get('assistant') === '1' ? 'assistant' : 'props'}
+        />
       </div>
 
       {exportOpen && property && (

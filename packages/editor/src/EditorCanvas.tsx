@@ -48,6 +48,7 @@ import {
   updateOpening,
   updateRoom,
   updateSymbol,
+  updateWall,
   wallLengthMm,
   wallNormal,
   wallSegments,
@@ -349,6 +350,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
   const [hoverPt, setHoverPt] = useState<Point | null>(null);
   const [rectDraft, setRectDraft] = useState<{ a: Point; b: Point; stairs: boolean } | null>(null);
   const [resizeDraft, setResizeDraft] = useState<RoomRect | null>(null);
+  const [wallEndDraft, setWallEndDraft] = useState<{ id: string; a: Point; b: Point } | null>(null);
   const [openingHover, setOpeningHover] = useState<{ wall: Wall; offsetMm: number } | null>(null);
   const [openingDraft, setOpeningDraft] = useState<{ id: string; offsetMm: number } | null>(null);
   const [measureA, setMeasureA] = useState<Point | null>(null);
@@ -1020,6 +1022,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
   /* ---- render helpers ---- */
 
   const selectedRoom = doc.rooms.find((r) => r.id === selectedId) ?? null;
+  const selectedWall = doc.walls.find((w) => w.id === selectedId) ?? null;
   const handleHalf = 5 / scale; // 10px squares on screen
 
   const renderResizeHandles = (room: RoomRect) => {
@@ -1066,6 +1069,44 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
               'Resize room',
               updateRoom(doc, room.id, { x: draft.x, y: draft.y, w: draft.w, h: draft.h }),
             );
+          }
+        }}
+      />
+    ));
+  };
+
+  const renderWallEndHandles = (wall: Wall) => {
+    const w = wallEndDraft?.id === wall.id ? wallEndDraft : wall;
+    const ends: { key: 'a' | 'b'; point: Point; other: Point }[] = [
+      { key: 'a', point: w.a, other: w.b },
+      { key: 'b', point: w.b, other: w.a },
+    ];
+    return ends.map(({ key, point, other }) => (
+      <Circle
+        key={`wall-handle-${key}`}
+        x={point.x}
+        y={point.y}
+        radius={handleHalf}
+        fill="#FFFFFF"
+        stroke={ACTION}
+        strokeWidth={2 / scale}
+        draggable
+        onDragMove={(e) => {
+          const raw = { x: e.target.x(), y: e.target.y() };
+          const snapped = snapEnd(raw, other);
+          if (distance(snapped, other) < 100) return; // refuse to collapse the wall to near-zero length
+          e.target.position(snapped);
+          setWallEndDraft({
+            id: wall.id,
+            a: key === 'a' ? snapped : wall.a,
+            b: key === 'b' ? snapped : wall.b,
+          });
+        }}
+        onDragEnd={() => {
+          const draft = wallEndDraft;
+          setWallEndDraft(null);
+          if (draft && draft.id === wall.id) {
+            commit('Reshape wall', updateWall(doc, wall.id, key === 'a' ? { a: draft.a } : { b: draft.b }));
           }
         }}
       />
@@ -1375,7 +1416,8 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
           })}
 
           {/* Walls (cut around openings) */}
-          {doc.walls.map((w) => {
+          {doc.walls.map((wOriginal) => {
+            const w = wallEndDraft?.id === wOriginal.id ? { ...wOriginal, a: wallEndDraft.a, b: wallEndDraft.b } : wOriginal;
             const isSel = selectedIds.includes(w.id);
             const openings = doc.openings.map((o) =>
               openingDraft && o.id === openingDraft.id ? { ...o, offsetMm: openingDraft.offsetMm } : o,
@@ -1668,6 +1710,9 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
 
           {/* Resize handles for the selected room */}
           {selectedRoom && tool === 'select' && renderResizeHandles(selectedRoom)}
+
+          {/* Endpoint drag handles for the selected wall */}
+          {selectedWall && tool === 'select' && renderWallEndHandles(selectedWall)}
         </Layer>
       </Stage>
 

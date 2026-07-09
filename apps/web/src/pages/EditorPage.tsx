@@ -259,6 +259,9 @@ export default function EditorPage() {
         case 'v':
           store.setTool('select');
           break;
+        case 'h':
+          store.setTool('pan');
+          break;
         case 'w':
           store.setTool('wall');
           break;

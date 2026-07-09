@@ -737,7 +737,10 @@ export function RoomPanel({
                     value={`${footprint.exposedPerimeterM.toFixed(2)} m`}
                     accent
                   />
-                  <StatTile label="Rooms" value={String(doc.rooms.length)} />
+                  <StatTile
+                    label="Rooms"
+                    value={String(doc.rooms.filter((r) => r.type !== 'Stairs').length)}
+                  />
                 </div>
                 <div className="mt-3 flex flex-col gap-2">
                   <PanelButton

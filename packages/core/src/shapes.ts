@@ -163,28 +163,15 @@ function roomShapes(room: RoomRect, showLabels: boolean, planMode: 'technical' |
         width: 22,
       });
     }
-    // Stairs skip the name/area label (the treads already read as "stairs"),
-    // but ceiling height is still load-bearing info (headroom clearance) —
-    // a small corner label in the same style as other rooms' area/height
-    // line, tucked in a corner so it doesn't sit under the direction arrow.
-    if (showLabels) {
-      shapes.push({
-        kind: 'text',
-        x: room.x + 130,
-        y: room.y + 260,
-        text: `${room.ceilingHeightM.toFixed(2)}m`,
-        size: 150,
-        color: FAINT,
-        font: 'mono',
-        align: 'left',
-      });
-    }
+    // Stairs are a pure visual asset — no name/area/height label (the
+    // treads already read as "stairs"; height lives on the room labels).
     return shapes;
   }
 
   if (showLabels) {
-    const cx = room.x + room.w / 2;
-    const cy = room.y + room.h / 2;
+    // Honour a dragged label position so the export matches the canvas.
+    const cx = room.x + room.w / 2 + (room.labelOffset?.x ?? 0);
+    const cy = room.y + room.h / 2 + (room.labelOffset?.y ?? 0);
     shapes.push({
       kind: 'text',
       x: cx,

@@ -11,6 +11,7 @@ import { BASE_PX_PER_MM, ZOOM_MAX, ZOOM_MIN } from './constants';
 
 export type Tool =
   | 'select'
+  | 'pan'
   | 'wall'
   | 'room'
   | 'door'

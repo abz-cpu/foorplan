@@ -83,6 +83,7 @@ const INK = '#22332F';
 const FAINT = '#71827C';
 const SANS = "'Instrument Sans', system-ui, sans-serif";
 const MONO = "'IBM Plex Mono', monospace";
+const DIM_LINE = '#7C9A90';
 
 const PAN_TIP_SEEN_KEY = 'floorplan:seenPanTip';
 
@@ -189,7 +190,7 @@ function SymbolNode({
   );
 }
 
-function StairsTreads({ room, showLabel }: { room: RoomRect; showLabel: boolean }) {
+function StairsTreads({ room }: { room: RoomRect }) {
   const horizontal = room.w >= room.h;
   const reversed = room.stairDirection === 'reversed';
   const spacing = 280;
@@ -238,17 +239,6 @@ function StairsTreads({ room, showLabel }: { room: RoomRect; showLabel: boolean 
             listening={false}
           />
         </>
-      )}
-      {showLabel && (
-        <Text
-          text={`${room.ceilingHeightM.toFixed(2)}m`}
-          x={100}
-          y={90}
-          fontSize={150}
-          fontFamily={MONO}
-          fill={FAINT}
-          listening={false}
-        />
       )}
     </>
   );
@@ -778,6 +768,12 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
   /* ---- shared pointer logic (mouse + single touch) ---- */
 
   const pointerDown = (isStageTarget: boolean, screen: Point) => {
+    // Dedicated hand tool: any drag pans, no matter what's under the
+    // pointer — the discoverable, on-screen equivalent of Space+drag.
+    if (tool === 'pan') {
+      panDrag.current = { pointer: screen, pan };
+      return;
+    }
     if (tool === 'select' && isStageTarget) {
       if (spacePressed) {
         panDrag.current = { pointer: screen, pan };
@@ -1377,13 +1373,17 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
         backgroundSize: `${DISPLAY_GRID_MM * scale}px ${DISPLAY_GRID_MM * scale}px`,
         backgroundPosition: `${pan.x}px ${pan.y}px`,
         cursor:
-          tool === 'select'
-            ? spacePressed
-              ? panDrag.current
-                ? 'grabbing'
-                : 'grab'
-              : 'default'
-            : 'crosshair',
+          tool === 'pan'
+            ? panDrag.current
+              ? 'grabbing'
+              : 'grab'
+            : tool === 'select'
+              ? spacePressed
+                ? panDrag.current
+                  ? 'grabbing'
+                  : 'grab'
+                : 'default'
+              : 'crosshair',
       }}
     >
       <Stage
@@ -1494,7 +1494,47 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
                     commitGroupMove(dx, dy);
                     return;
                   }
-                  commit('Move room', updateRoom(doc, room.id, { x: snapped.x, y: snapped.y }));
+                  // Dragging a room takes its fabric with it — bounding
+                  // walls and anything sitting inside (stairs, furniture,
+                  // text) — so "move the room" moves the whole room, not
+                  // just the floor rect sliding out from under its walls.
+                  // Walls shared with a neighbouring room ride along too
+                  // (they ARE this room's wall); undo reverses the lot.
+                  const dx = snapped.x - room.x;
+                  const dy = snapped.y - room.y;
+                  if (dx === 0 && dy === 0) return;
+                  const margin = 200;
+                  const x0 = room.x - margin;
+                  const y0 = room.y - margin;
+                  const x1 = room.x + room.w + margin;
+                  const y1 = room.y + room.h + margin;
+                  const inside = (p: Point) => p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1;
+                  let next = updateRoom(doc, room.id, { x: snapped.x, y: snapped.y });
+                  for (const w of doc.walls) {
+                    if (inside(w.a) && inside(w.b)) {
+                      next = updateWall(next, w.id, {
+                        a: { x: w.a.x + dx, y: w.a.y + dy },
+                        b: { x: w.b.x + dx, y: w.b.y + dy },
+                      });
+                    }
+                  }
+                  for (const r2 of doc.rooms) {
+                    if (r2.id === room.id) continue;
+                    if (r2.x >= x0 && r2.y >= y0 && r2.x + r2.w <= x1 && r2.y + r2.h <= y1) {
+                      next = updateRoom(next, r2.id, { x: r2.x + dx, y: r2.y + dy });
+                    }
+                  }
+                  for (const s of doc.symbols) {
+                    if (inside({ x: s.x + s.w / 2, y: s.y + s.h / 2 })) {
+                      next = updateSymbol(next, s.id, { x: s.x + dx, y: s.y + dy });
+                    }
+                  }
+                  for (const l of doc.labels) {
+                    if (inside({ x: l.x, y: l.y })) {
+                      next = updateLabel(next, l.id, { x: l.x + dx, y: l.y + dy });
+                    }
+                  }
+                  commit('Move room', next);
                 }}
               >
                 <Rect
@@ -1506,9 +1546,29 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
                   dash={isSel ? [110, 75] : undefined}
                 />
                 {stairs ? (
-                  <StairsTreads room={r} showLabel={showRoomLabels} />
+                  <StairsTreads room={r} />
                 ) : (
-                  <>
+                  /* Name + area/height as one draggable group: drag the text
+                     off to a corner when furniture sits mid-room. The halo
+                     stroke keeps it readable over anything it lands on.
+                     Clicks still bubble up and select the room. */
+                  <Group
+                    x={r.labelOffset?.x ?? 0}
+                    y={r.labelOffset?.y ?? 0}
+                    draggable={tool === 'select'}
+                    onDragStart={(e) => {
+                      e.cancelBubble = true;
+                    }}
+                    onDragEnd={(e) => {
+                      e.cancelBubble = true;
+                      commit(
+                        'Move room label',
+                        updateRoom(doc, room.id, {
+                          labelOffset: { x: e.target.x(), y: e.target.y() },
+                        }),
+                      );
+                    }}
+                  >
                     <Text
                       text={r.name}
                       width={r.w}
@@ -1518,21 +1578,25 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
                       fontFamily={SANS}
                       fontStyle="600"
                       fill={INK}
-                      listening={false}
+                      stroke="#FFFFFF"
+                      strokeWidth={30}
+                      fillAfterStrokeEnabled
                     />
                     {showRoomLabels && (
                       <Text
-                        text={formatAreaM2(roomAreaM2(r))}
+                        text={`${formatAreaM2(roomAreaM2(r))} · ${r.ceilingHeightM.toFixed(2)}m`}
                         width={r.w}
                         y={r.h / 2 + 60}
                         align="center"
                         fontSize={185}
                         fontFamily={MONO}
                         fill={FAINT}
-                        listening={false}
+                        stroke="#FFFFFF"
+                        strokeWidth={26}
+                        fillAfterStrokeEnabled
                       />
                     )}
-                  </>
+                  </Group>
                 )}
               </Group>
             );
@@ -1586,33 +1650,97 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
             ));
           })}
 
-          {/* Persistent wall-length dimensions ("Tweaks" > Show dimensions) —
-              labelled at the true endpoint-to-endpoint length, offset just
-              outside the wall so it doesn't sit under the stroke. */}
+          {/* Persistent wall-length dimensions ("Tweaks" > Show dimensions),
+              CAD-style: centred on the wall's midpoint, offset perpendicular
+              so it hovers beside the stroke, rotated parallel to the wall
+              (flipped whenever it would read upside-down), and legible via a
+              canvas-coloured halo stroke instead of a white background box
+              that used to sit over the wall joints. */}
           {showDimensions &&
             doc.walls.map((w) => {
               const mid = { x: (w.a.x + w.b.x) / 2, y: (w.a.y + w.b.y) / 2 };
               const n = wallNormal(w);
-              const offset = w.thickness / 2 + 220;
+              const offset = w.thickness / 2 + 320;
+              let angle = (Math.atan2(w.b.y - w.a.y, w.b.x - w.a.x) * 180) / Math.PI;
+              if (angle > 90) angle -= 180;
+              else if (angle <= -90) angle += 180;
               return (
-                <Label
+                <Text
                   key={`dim-${w.id}`}
                   x={mid.x + n.x * offset}
                   y={mid.y + n.y * offset}
-                  offsetX={0}
+                  rotation={angle}
+                  text={formatMmAsM(wallLengthMm(w))}
+                  width={1600}
+                  align="center"
+                  offsetX={800}
+                  offsetY={80}
+                  fontSize={155}
+                  fontFamily={MONO}
+                  fill={INK}
+                  stroke="#FBFDFC"
+                  strokeWidth={34}
+                  fillAfterStrokeEnabled
                   listening={false}
-                >
-                  <Tag fill="#FFFFFF" opacity={0.85} cornerRadius={40} />
-                  <Text
-                    text={formatMmAsM(wallLengthMm(w))}
-                    fontSize={155}
-                    fontFamily={MONO}
-                    fill={WALL_LIGHT}
-                    padding={40}
-                  />
-                </Label>
+                />
               );
             })}
+
+          {/* Overall plan-extent dimensions — the same total width/height
+              lines the exported sheet shows, kept live on the canvas so the
+              edit view is WYSIWYG with the export. Dashed + lighter so they
+              read as secondary to the per-wall labels. */}
+          {showDimensions && doc.walls.length > 0 && (() => {
+            const minX = Math.min(...doc.walls.flatMap((w) => [w.a.x, w.b.x]));
+            const maxX = Math.max(...doc.walls.flatMap((w) => [w.a.x, w.b.x]));
+            const minY = Math.min(...doc.walls.flatMap((w) => [w.a.y, w.b.y]));
+            const maxY = Math.max(...doc.walls.flatMap((w) => [w.a.y, w.b.y]));
+            if (maxX - minX < 1 || maxY - minY < 1) return null;
+            const gap = 700;
+            const topY = minY - gap;
+            const leftX = minX - gap;
+            return (
+              <Group listening={false}>
+                <Line points={[minX, topY, maxX, topY]} stroke={DIM_LINE} strokeWidth={16} dash={[160, 110]} />
+                <Line points={[minX, topY - 110, minX, topY + 110]} stroke={DIM_LINE} strokeWidth={16} />
+                <Line points={[maxX, topY - 110, maxX, topY + 110]} stroke={DIM_LINE} strokeWidth={16} />
+                <Text
+                  x={(minX + maxX) / 2}
+                  y={topY - 130}
+                  text={formatMmAsM(maxX - minX)}
+                  width={1600}
+                  align="center"
+                  offsetX={800}
+                  offsetY={155}
+                  fontSize={165}
+                  fontFamily={MONO}
+                  fill={DIM_LINE}
+                  stroke="#FBFDFC"
+                  strokeWidth={34}
+                  fillAfterStrokeEnabled
+                />
+                <Line points={[leftX, minY, leftX, maxY]} stroke={DIM_LINE} strokeWidth={16} dash={[160, 110]} />
+                <Line points={[leftX - 110, minY, leftX + 110, minY]} stroke={DIM_LINE} strokeWidth={16} />
+                <Line points={[leftX - 110, maxY, leftX + 110, maxY]} stroke={DIM_LINE} strokeWidth={16} />
+                <Text
+                  x={leftX - 130}
+                  y={(minY + maxY) / 2}
+                  rotation={-90}
+                  text={formatMmAsM(maxY - minY)}
+                  width={1600}
+                  align="center"
+                  offsetX={800}
+                  offsetY={155}
+                  fontSize={165}
+                  fontFamily={MONO}
+                  fill={DIM_LINE}
+                  stroke="#FBFDFC"
+                  strokeWidth={34}
+                  fillAfterStrokeEnabled
+                />
+              </Group>
+            );
+          })()}
 
           {/* Openings */}
           {doc.openings.map((o) => {

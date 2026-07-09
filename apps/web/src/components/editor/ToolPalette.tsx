@@ -7,6 +7,8 @@ import type { Tool } from '@floorplan/editor';
 const ICONS: Record<string, string> = {
   select:
     'M4.04 4.69a.5.5 0 0 1 .65-.65l16 6.5a.5.5 0 0 1-.06.95l-6.13 1.58a2 2 0 0 0-1.44 1.43l-1.58 6.13a.5.5 0 0 1-.95.06z',
+  // Lucide "hand" outline — pan/grab the canvas.
+  pan: 'M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2 M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2 M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8 M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15',
   wall: 'M3 5h18v14H3z M3 9.7h18 M3 14.3h18 M12 5v4.7 M7.5 9.7v4.6 M16.5 9.7v4.6 M12 14.3V19',
   room: 'M3 3h18v18H3z M12 3v9 M12 12h9',
   door: 'M4 20h16 M7 20V8 M7 8a12 12 0 0 1 12 12',
@@ -19,6 +21,7 @@ const ICONS: Record<string, string> = {
 
 export const TOOL_HINTS: Record<Tool, string> = {
   select: 'Select — tap anything to edit it, drag empty space to box-select, hold Space to pan',
+  pan: 'Pan — drag anywhere to move around the canvas',
   wall: 'Wall — click to place points, or after the first point press an arrow key + type a length + Enter',
   room: 'Room — drag a rectangle to add a room',
   door: 'Door — click a wall to place, drag with Select to slide',
@@ -36,6 +39,7 @@ interface PaletteEntry {
 
 const ENTRIES: PaletteEntry[] = [
   { id: 'select', tip: 'Select (V)' },
+  { id: 'pan', tip: 'Pan (H) — drag to move the view' },
   { id: 'wall', tip: 'Wall (W)' },
   { id: 'room', tip: 'Room (R)' },
   { id: 'door', tip: 'Door (D)' },

@@ -217,7 +217,12 @@ export function detectRooms(doc: FloorDoc): RoomRect[] {
       if (w < 600 || h < 600) continue; // implausibly small
 
       // Skip when an existing room's centre already lies inside this rect.
+      // Stairs don't count — they're a visual asset sitting INSIDE a room,
+      // not a room themselves; treating them as one blocked the enclosing
+      // area from ever being detected, which read as "my stairs became the
+      // room".
       const taken = doc.rooms.some((room) => {
+        if (room.type === 'Stairs') return false;
         const rcx = room.x + room.w / 2;
         const rcy = room.y + room.h / 2;
         return rcx > x && rcx < x + w && rcy > y && rcy < y + h;

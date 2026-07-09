@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Clock, Download, MoveUpRight, PanelsTopLeft, Sparkles, Trash2 } from 'lucide-react';
+import { Clock, Download, MoveUpRight, Sparkles, Trash2 } from 'lucide-react';
 import { formatRelativeTime } from '@floorplan/core';
 import { StatusPill } from '@floorplan/ui';
 import type { DashboardProperty } from '../lib/useDashboardData';
@@ -18,26 +18,27 @@ export function PropertyCard({
   const { record, thumbnailSvg, meta } = property;
   return (
     <article className="relative z-[1] flex flex-col overflow-hidden rounded-[14px] border border-line bg-white transition-all hover:-translate-y-0.5 hover:border-[#CFDAD6] hover:shadow-card">
-      <Link
-        to={`/editor/${record.id}`}
-        className="relative block h-[148px] bg-[#F2F6F4] [background-image:radial-gradient(#D9E3DF_1px,transparent_1px)] [background-size:13px_13px]"
-      >
-        {showThumbnail ? (
+      {showThumbnail && (
+        <Link
+          to={`/editor/${record.id}`}
+          className="relative block h-[148px] bg-[#F2F6F4] [background-image:radial-gradient(#D9E3DF_1px,transparent_1px)] [background-size:13px_13px]"
+        >
           <div
             className="absolute inset-0 p-3 [&>svg]:h-full [&>svg]:w-full"
             dangerouslySetInnerHTML={{ __html: thumbnailSvg }}
           />
-        ) : (
-          <div className="absolute inset-0 flex items-center justify-center text-ink-ghost">
-            <PanelsTopLeft size={28} strokeWidth={1.5} />
-          </div>
-        )}
-        <span className="absolute left-2.5 top-2.5">
-          <StatusPill status={record.status} />
-        </span>
-      </Link>
+          <span className="absolute left-2.5 top-2.5">
+            <StatusPill status={record.status} />
+          </span>
+        </Link>
+      )}
 
       <div className="flex-1 px-4 pb-3 pt-3.5">
+        {!showThumbnail && (
+          <div className="mb-1.5">
+            <StatusPill status={record.status} />
+          </div>
+        )}
         <div className="text-[15px] font-semibold tracking-tight">{record.addressLine1}</div>
         <div className="mt-0.5 text-[12.5px] text-ink-faint">
           {[record.addressLine2, record.postcode].filter(Boolean).join(' ') || '—'}
@@ -105,15 +106,11 @@ export function PropertyRow({
   return (
     <div className="relative z-[1] grid grid-cols-[1fr_120px_130px_150px] items-center gap-3 border-b border-line-soft px-4 py-2.5 last:border-b-0 hover:bg-[#F7FAF9]">
       <div className="flex min-w-0 items-center gap-3">
-        {showThumbnail ? (
+        {showThumbnail && (
           <div
             className="h-[42px] w-[62px] flex-none overflow-hidden rounded-[7px] border border-line bg-[#F2F6F4] p-1 [&>svg]:h-full [&>svg]:w-full"
             dangerouslySetInnerHTML={{ __html: thumbnailSvg }}
           />
-        ) : (
-          <div className="flex h-[42px] w-[62px] flex-none items-center justify-center rounded-[7px] border border-line bg-[#F2F6F4] text-ink-ghost">
-            <PanelsTopLeft size={16} strokeWidth={1.5} />
-          </div>
         )}
         <div className="min-w-0">
           <div className="truncate text-[13.5px] font-semibold">{record.addressLine1}</div>

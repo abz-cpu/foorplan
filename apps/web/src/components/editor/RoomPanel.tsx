@@ -19,9 +19,11 @@ import {
 } from 'lucide-react';
 import {
   applyAutoWallThickness,
+  DEFAULT_WALL_THICKNESS_MM,
   deleteEntities,
   deleteEntity,
   detectRooms,
+  EXTERNAL_WALL_THICKNESS_MM,
   findWall,
   floorFootprint,
   floorGiaM2,
@@ -502,6 +504,28 @@ export function RoomPanel({
                   </span>
                 </label>
               </div>
+
+              {room.type === 'Stairs' && (
+                <PanelButton
+                  icon={<FlipHorizontal2 size={13} />}
+                  label="Flip direction"
+                  onClick={() =>
+                    commit(
+                      'Flip stairs direction',
+                      updateRoom(doc, room.id, {
+                        stairDirection: room.stairDirection === 'reversed' ? 'forward' : 'reversed',
+                      }),
+                    )
+                  }
+                />
+              )}
+              <DeleteButton
+                label={room.type === 'Stairs' ? 'Delete stairs' : 'Delete room'}
+                onClick={() => {
+                  commit('Delete room', deleteEntity(doc, room.id));
+                  select(null);
+                }}
+              />
             </>
           ) : opening ? (
             <div>
@@ -609,7 +633,18 @@ export function RoomPanel({
             </div>
           ) : wall ? (
             <div>
-              <SectionLabel>SELECTED WALL</SectionLabel>
+              <div className="mb-2 flex items-center justify-between">
+                <SectionLabel>SELECTED WALL</SectionLabel>
+                <span
+                  className={`rounded-full px-2 py-0.5 text-[10.5px] font-semibold ${
+                    wall.thickness >= 150
+                      ? 'bg-[#E4EEE8] text-[#3D7457]'
+                      : 'bg-[#EEECE6] text-[#7A6F5C]'
+                  }`}
+                >
+                  {wall.thickness >= 150 ? 'External wall' : 'Internal wall'}
+                </span>
+              </div>
               <label className="mb-1.5 block text-xs font-semibold text-ink-mid">Exact length</label>
               <input
                 value={wallLen}
@@ -633,6 +668,28 @@ export function RoomPanel({
                     className={numberInputClass}
                   />
                 </div>
+              </div>
+              <div className="mt-2 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setWallThickness(String(EXTERNAL_WALL_THICKNESS_MM));
+                    commit('Set wall thickness', updateWall(doc, wall.id, { thickness: EXTERNAL_WALL_THICKNESS_MM }));
+                  }}
+                  className="h-7 flex-1 cursor-pointer rounded-md border border-input bg-white text-[11px] font-semibold text-ink-mid hover:bg-shell"
+                >
+                  Set External ({EXTERNAL_WALL_THICKNESS_MM}mm)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setWallThickness(String(DEFAULT_WALL_THICKNESS_MM));
+                    commit('Set wall thickness', updateWall(doc, wall.id, { thickness: DEFAULT_WALL_THICKNESS_MM }));
+                  }}
+                  className="h-7 flex-1 cursor-pointer rounded-md border border-input bg-white text-[11px] font-semibold text-ink-mid hover:bg-shell"
+                >
+                  Set Internal ({DEFAULT_WALL_THICKNESS_MM}mm)
+                </button>
               </div>
               <DeleteButton
                 label="Delete wall"

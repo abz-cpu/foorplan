@@ -178,6 +178,7 @@ function SymbolNode({
 
 function StairsTreads({ room }: { room: RoomRect }) {
   const horizontal = room.w >= room.h;
+  const reversed = room.stairDirection === 'reversed';
   const spacing = 280;
   const treads: number[] = [];
   if (horizontal) {
@@ -185,6 +186,14 @@ function StairsTreads({ room }: { room: RoomRect }) {
   } else {
     for (let y = spacing; y < room.h - 40; y += spacing) treads.push(y);
   }
+  // The arrow shaft runs from `shaftFrom` to `shaftTo` along the long axis;
+  // the chevron sits at `shaftTo` (the "up"/travel-direction end) with its
+  // wings trailing back toward `wingBack`. Flipping `reversed` swaps which
+  // end is which, so the whole arrow points the other way.
+  const dim = horizontal ? room.w : room.h;
+  const shaftFrom = reversed ? dim - 120 : 120;
+  const shaftTo = reversed ? 200 : dim - 200;
+  const wingBack = reversed ? shaftTo + 120 : shaftTo - 120;
   return (
     <>
       {treads.map((t) => (
@@ -198,9 +207,9 @@ function StairsTreads({ room }: { room: RoomRect }) {
       ))}
       {horizontal ? (
         <>
-          <Line points={[120, room.h / 2, room.w - 200, room.h / 2]} stroke={INK} strokeWidth={22} listening={false} />
+          <Line points={[shaftFrom, room.h / 2, shaftTo, room.h / 2]} stroke={INK} strokeWidth={22} listening={false} />
           <Line
-            points={[room.w - 320, room.h / 2 - 110, room.w - 200, room.h / 2, room.w - 320, room.h / 2 + 110]}
+            points={[wingBack, room.h / 2 - 110, shaftTo, room.h / 2, wingBack, room.h / 2 + 110]}
             stroke={INK}
             strokeWidth={22}
             listening={false}
@@ -208,9 +217,9 @@ function StairsTreads({ room }: { room: RoomRect }) {
         </>
       ) : (
         <>
-          <Line points={[room.w / 2, 120, room.w / 2, room.h - 200]} stroke={INK} strokeWidth={22} listening={false} />
+          <Line points={[room.w / 2, shaftFrom, room.w / 2, shaftTo]} stroke={INK} strokeWidth={22} listening={false} />
           <Line
-            points={[room.w / 2 - 110, room.h - 320, room.w / 2, room.h - 200, room.w / 2 + 110, room.h - 320]}
+            points={[room.w / 2 - 110, wingBack, room.w / 2, shaftTo, room.w / 2 + 110, wingBack]}
             stroke={INK}
             strokeWidth={22}
             listening={false}
@@ -1099,7 +1108,18 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
       const room = doc.rooms.find((r) => r.id === id);
       if (!room) return [deleteItem];
       const items: MenuItem[] = [];
-      if (room.type !== 'Stairs') {
+      if (room.type === 'Stairs') {
+        items.push({
+          label: 'Flip direction',
+          onClick: () =>
+            commit(
+              'Flip stairs direction',
+              updateRoom(doc, room.id, {
+                stairDirection: room.stairDirection === 'reversed' ? 'forward' : 'reversed',
+              }),
+            ),
+        });
+      } else {
         items.push({
           label: 'Duplicate room',
           onClick: () => {

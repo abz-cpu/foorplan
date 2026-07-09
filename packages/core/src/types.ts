@@ -42,6 +42,8 @@ export interface RoomRect {
   type: RoomType;
   ceilingHeightM: number;
   includeInGia: boolean;
+  /** Stairs only: which way the up/down arrow points. Undefined = 'forward'. */
+  stairDirection?: 'forward' | 'reversed';
 }
 
 export interface TextLabel {

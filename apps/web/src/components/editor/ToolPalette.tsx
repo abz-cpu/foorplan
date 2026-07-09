@@ -18,7 +18,7 @@ const ICONS: Record<string, string> = {
 };
 
 export const TOOL_HINTS: Record<Tool, string> = {
-  select: 'Select — tap anything to edit it, drag empty space to pan',
+  select: 'Select — tap anything to edit it, drag empty space to box-select, hold Space to pan',
   wall: 'Wall — click to place points, or after the first point press an arrow key + type a length + Enter',
   room: 'Room — drag a rectangle to add a room',
   door: 'Door — click a wall to place, drag with Select to slide',

@@ -551,15 +551,27 @@ export function RoomPanel({
                 </div>
               )}
               {opening.kind === 'door' && (
-                <div className="mt-3.5">
+                <div className="mt-3.5 flex flex-col gap-2">
                   <PanelButton
                     icon={<FlipHorizontal2 size={13} />}
                     label="Flip hinge side"
                     onClick={() =>
                       commit(
-                        'Flip door swing',
+                        'Flip door hinge',
                         updateOpening(doc, opening.id, {
                           hinge: opening.hinge === 'left' ? 'right' : 'left',
+                        }),
+                      )
+                    }
+                  />
+                  <PanelButton
+                    icon={<RotateCw size={13} />}
+                    label="Flip swing side (into/out of room)"
+                    onClick={() =>
+                      commit(
+                        'Flip door swing side',
+                        updateOpening(doc, opening.id, {
+                          swingSide: opening.swingSide === 'b' ? 'a' : 'b',
                         }),
                       )
                     }

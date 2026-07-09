@@ -80,6 +80,35 @@ export function wallSegments(wall: Wall, openings: Opening[]): { a: Point; b: Po
   return segments;
 }
 
+/**
+ * Geometry for a door's leaf + swing arc — the hinge/jamb/tip points and the
+ * arc's start/end angles. Shared by every renderer (editor canvas, SVG/PNG/
+ * PDF export) so which side of the wall the door swings toward never drifts
+ * out of sync between them.
+ *
+ * `hinge` picks which jamb carries the hinge; `opening.swingSide` (default
+ * 'a') picks which of the wall's two normal directions the door opens
+ * toward — 'a' is `wallNormal(wall)` as-is, 'b' is the opposite side.
+ */
+export function doorSwingGeometry(
+  wall: Wall,
+  opening: Opening,
+): { hinge: Point; jamb: Point; tip: Point; startDeg: number; endDeg: number; delta: number } {
+  const { start, end } = openingJambs(wall, opening);
+  const n = wallNormal(wall);
+  const side = opening.swingSide === 'b' ? { x: -n.x, y: -n.y } : n;
+  const hinge = opening.hinge === 'left' ? start : end;
+  const jamb = opening.hinge === 'left' ? end : start;
+  const tip = { x: hinge.x + side.x * opening.widthMm, y: hinge.y + side.y * opening.widthMm };
+  const angle = (from: Point, to: Point) => (Math.atan2(to.y - from.y, to.x - from.x) * 180) / Math.PI;
+  const startDeg = angle(hinge, jamb);
+  const endDeg = angle(hinge, tip);
+  let delta = endDeg - startDeg;
+  while (delta > 180) delta -= 360;
+  while (delta < -180) delta += 360;
+  return { hinge, jamb, tip, startDeg, endDeg, delta };
+}
+
 /** Find the nearest wall within `toleranceMm` of a point, or null. */
 export function nearestWall(
   doc: FloorDoc,

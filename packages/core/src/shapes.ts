@@ -1,5 +1,5 @@
 import { docBounds, roomAreaM2 } from './geometry';
-import { openingJambs, wallNormal, wallSegments } from './openings';
+import { doorSwingGeometry, openingJambs, wallNormal, wallSegments } from './openings';
 import { formatAreaM2, formatMmAsM } from './format';
 import { SYMBOL_DEFS, type SymbolInstance } from './symbols';
 import type { FloorDoc, Opening, Point, RoomRect, TextLabel, Wall } from './types';
@@ -68,8 +68,6 @@ const FAINT = '#71827C';
 const DIM = '#4A5D57';
 const DIM_LINE = '#7C9A90';
 
-const deg = (from: Point, to: Point) => (Math.atan2(to.y - from.y, to.x - from.x) * 180) / Math.PI;
-
 function roomShapes(room: RoomRect, showLabels: boolean): Shape[] {
   const shapes: Shape[] = [
     {
@@ -86,20 +84,36 @@ function roomShapes(room: RoomRect, showLabels: boolean): Shape[] {
 
   if (room.type === 'Stairs') {
     // Treads across the short axis, direction arrow along the long axis.
+    // Mirrors EditorCanvas.tsx's StairsTreads exactly so the exported plan
+    // always matches what was drawn in the editor, including a flipped
+    // stairDirection.
     const horizontal = room.w >= room.h;
+    const reversed = room.stairDirection === 'reversed';
     const spacing = 280;
+    const dim = horizontal ? room.w : room.h;
+    const shaftFrom = reversed ? dim - 120 : 120;
+    const shaftTo = reversed ? 200 : dim - 200;
+    const wingBack = reversed ? shaftTo + 120 : shaftTo - 120;
     if (horizontal) {
       for (let x = room.x + spacing; x < room.x + room.w - 40; x += spacing) {
         shapes.push({ kind: 'line', x1: x, y1: room.y, x2: x, y2: room.y + room.h, stroke: WALL_LIGHT, width: 16 });
       }
       const midY = room.y + room.h / 2;
-      shapes.push({ kind: 'line', x1: room.x + 120, y1: midY, x2: room.x + room.w - 200, y2: midY, stroke: INK, width: 22 });
+      shapes.push({
+        kind: 'line',
+        x1: room.x + shaftFrom,
+        y1: midY,
+        x2: room.x + shaftTo,
+        y2: midY,
+        stroke: INK,
+        width: 22,
+      });
       shapes.push({
         kind: 'polyline',
         points: [
-          { x: room.x + room.w - 320, y: midY - 110 },
-          { x: room.x + room.w - 200, y: midY },
-          { x: room.x + room.w - 320, y: midY + 110 },
+          { x: room.x + wingBack, y: midY - 110 },
+          { x: room.x + shaftTo, y: midY },
+          { x: room.x + wingBack, y: midY + 110 },
         ],
         stroke: INK,
         width: 22,
@@ -109,13 +123,21 @@ function roomShapes(room: RoomRect, showLabels: boolean): Shape[] {
         shapes.push({ kind: 'line', x1: room.x, y1: y, x2: room.x + room.w, y2: y, stroke: WALL_LIGHT, width: 16 });
       }
       const midX = room.x + room.w / 2;
-      shapes.push({ kind: 'line', x1: midX, y1: room.y + 120, x2: midX, y2: room.y + room.h - 200, stroke: INK, width: 22 });
+      shapes.push({
+        kind: 'line',
+        x1: midX,
+        y1: room.y + shaftFrom,
+        x2: midX,
+        y2: room.y + shaftTo,
+        stroke: INK,
+        width: 22,
+      });
       shapes.push({
         kind: 'polyline',
         points: [
-          { x: midX - 110, y: room.y + room.h - 320 },
-          { x: midX, y: room.y + room.h - 200 },
-          { x: midX + 110, y: room.y + room.h - 320 },
+          { x: midX - 110, y: room.y + wingBack },
+          { x: midX, y: room.y + shaftTo },
+          { x: midX + 110, y: room.y + wingBack },
         ],
         stroke: INK,
         width: 22,
@@ -187,14 +209,7 @@ function openingShapes(wall: Wall, opening: Opening): Shape[] {
   }
 
   // Door: leaf at the hinge jamb + quarter swing arc to the other jamb.
-  const hinge = opening.hinge === 'left' ? start : end;
-  const jamb = opening.hinge === 'left' ? end : start;
-  const tip = { x: hinge.x + n.x * opening.widthMm, y: hinge.y + n.y * opening.widthMm };
-  const startDeg = deg(hinge, jamb);
-  const endDeg = deg(hinge, tip);
-  let delta = endDeg - startDeg;
-  while (delta > 180) delta -= 360;
-  while (delta < -180) delta += 360;
+  const { hinge, tip, startDeg, endDeg, delta } = doorSwingGeometry(wall, opening);
   return [
     { kind: 'line', x1: hinge.x, y1: hinge.y, x2: tip.x, y2: tip.y, stroke: WALL_LIGHT, width: 25 },
     {

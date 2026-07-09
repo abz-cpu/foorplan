@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   clampOpeningOffset,
   distanceToWall,
+  doorSwingGeometry,
   nearestOffsetOnWall,
   nearestWall,
   openingJambs,
@@ -46,6 +47,26 @@ describe('opening placement', () => {
     const { start, end } = openingJambs(wall, door);
     expect(start).toEqual({ x: 600, y: 0 });
     expect(end).toEqual({ x: 1400, y: 0 });
+  });
+});
+
+describe('doorSwingGeometry', () => {
+  it('swings toward wallNormal by default (swingSide unset / "a")', () => {
+    const g = doorSwingGeometry(wall, door);
+    expect(g.hinge).toEqual({ x: 600, y: 0 });
+    expect(g.tip).toEqual({ x: 600, y: 800 });
+  });
+
+  it('swings to the opposite side when swingSide is "b"', () => {
+    const g = doorSwingGeometry(wall, { ...door, swingSide: 'b' });
+    expect(g.hinge).toEqual({ x: 600, y: 0 });
+    expect(g.tip).toEqual({ x: 600, y: -800 });
+  });
+
+  it('flipping hinge keeps the same swing side but moves the hinge point', () => {
+    const g = doorSwingGeometry(wall, { ...door, hinge: 'right' });
+    expect(g.hinge).toEqual({ x: 1400, y: 0 });
+    expect(g.tip).toEqual({ x: 1400, y: 800 });
   });
 });
 

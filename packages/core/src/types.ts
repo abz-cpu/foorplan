@@ -63,6 +63,9 @@ export interface Opening {
   widthMm: number;
   /** door only: which jamb carries the hinge (relative to a→b direction) */
   hinge: 'left' | 'right';
+  /** door only: which side of the wall the door swings toward — 'a' is
+   *  wallNormal(wall) as-is, 'b' is the opposite side. Undefined = 'a'. */
+  swingSide?: 'a' | 'b';
 }
 
 /** Reference photo (sketch/old plan) rendered under the grid for tracing. */

@@ -27,6 +27,7 @@ import {
   DEFAULT_WINDOW_WIDTH_MM,
   deleteEntities,
   distance,
+  doorSwingGeometry,
   findWall,
   formatAreaM2,
   formatDims,
@@ -274,14 +275,7 @@ function OpeningShape({
       );
     }
   } else {
-    const hinge = opening.hinge === 'left' ? start : end;
-    const jamb = opening.hinge === 'left' ? end : start;
-    const tip = { x: hinge.x + n.x * opening.widthMm, y: hinge.y + n.y * opening.widthMm };
-    const startDeg = (Math.atan2(jamb.y - hinge.y, jamb.x - hinge.x) * 180) / Math.PI;
-    const endDeg = (Math.atan2(tip.y - hinge.y, tip.x - hinge.x) * 180) / Math.PI;
-    let delta = endDeg - startDeg;
-    while (delta > 180) delta -= 360;
-    while (delta < -180) delta += 360;
+    const { hinge, tip, startDeg, endDeg, delta } = doorSwingGeometry(wall, opening);
     parts.push(
       <Line
         key="leaf"
@@ -588,7 +582,10 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
     [snapEnabled],
   );
 
-  const wallHitToleranceMm = 24 / scale;
+  // Floored at 150mm so a thin (100mm) internal wall stays reliably
+  // clickable even at max zoom, where 24/scale alone would shrink below
+  // the wall's own thickness.
+  const wallHitToleranceMm = Math.max(24 / scale, 150);
 
   // Rooms and stairs are both plain RoomRects sharing doc.rooms, so a click
   // inside a room can also land inside a smaller stairs (or other room)
@@ -777,6 +774,20 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
         snapEnabled ? snapValueToGrid(hit.offsetMm, GRID_MM) : hit.offsetMm,
         width,
       );
+      // Default a new door to swing into whichever side actually has a
+      // room, so it opens like a real door rather than always toward
+      // wallNormal's fixed direction. Ambiguous cases (rooms on both
+      // sides, or neither — nothing detected yet) keep the 'a' default;
+      // "Flip swing side" is always available to override by hand.
+      let swingSide: 'a' | 'b' = 'a';
+      if (tool === 'door') {
+        const n = wallNormal(hit.wall);
+        const wallPt = pointAlongWall(hit.wall, hit.offsetMm);
+        const margin = hit.wall.thickness / 2 + 150;
+        const aHasRoom = !!pickRoomAt({ x: wallPt.x + n.x * margin, y: wallPt.y + n.y * margin });
+        const bHasRoom = !!pickRoomAt({ x: wallPt.x - n.x * margin, y: wallPt.y - n.y * margin });
+        if (!aHasRoom && bHasRoom) swingSide = 'b';
+      }
       const opening: Opening = {
         id: newId(),
         wallId: hit.wall.id,
@@ -784,6 +795,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
         offsetMm: offset,
         widthMm: width,
         hinge: 'left',
+        swingSide,
       };
       commit(tool === 'door' ? 'Place door' : 'Place window', addOpening(doc, opening));
       select(opening.id);
@@ -1164,6 +1176,14 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
           label: 'Flip hinge side',
           onClick: () =>
             commit('Flip hinge', updateOpening(doc, id, { hinge: opening.hinge === 'left' ? 'right' : 'left' })),
+        });
+        items.push({
+          label: 'Flip swing side',
+          onClick: () =>
+            commit(
+              'Flip door swing side',
+              updateOpening(doc, id, { swingSide: opening.swingSide === 'b' ? 'a' : 'b' }),
+            ),
         });
       }
       items.push(deleteItem);

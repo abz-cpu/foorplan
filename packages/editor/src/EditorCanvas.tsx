@@ -1821,42 +1821,80 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
         </Layer>
       </Stage>
 
-      {planMode === 'presentation' && zonesPresent.length > 0 && (
+      <div
+        style={{
+          position: 'absolute',
+          left: 16,
+          top: 16,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'flex-start',
+          gap: 10,
+          pointerEvents: 'none',
+        }}
+      >
+        {/* Live North indicator — the "PLAN ORIENTATION" panel only shows a
+            static icon off to the side; this keeps orientation visible right
+            on the plan itself while drawing, not just after export. */}
         <div
+          title={`North is ${doc.northAngleDeg ?? 0}°`}
           style={{
-            position: 'absolute',
-            left: 16,
-            top: 16,
             display: 'flex',
-            flexWrap: 'wrap',
-            gap: '6px 14px',
-            maxWidth: 320,
-            padding: '10px 14px',
-            borderRadius: 12,
+            height: 40,
+            width: 40,
+            flex: 'none',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: '50%',
             background: 'rgba(255,255,255,0.92)',
             border: `1px solid ${ROOM_EDGE}`,
             boxShadow: '0 4px 14px rgba(0,0,0,0.08)',
-            pointerEvents: 'none',
-            fontFamily: SANS,
           }}
         >
-          {zonesPresent.map((type) => (
-            <div key={type} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span
-                style={{
-                  width: 10,
-                  height: 10,
-                  borderRadius: 3,
-                  background: ROOM_ZONE_COLORS[type].fill,
-                  border: `1.5px solid ${ROOM_ZONE_COLORS[type].edge}`,
-                  flex: 'none',
-                }}
-              />
-              <span style={{ fontSize: 11.5, fontWeight: 600, color: INK }}>{type}</span>
-            </div>
-          ))}
+          <svg
+            width={22}
+            height={22}
+            viewBox="0 0 24 24"
+            style={{ transform: `rotate(${doc.northAngleDeg ?? 0}deg)` }}
+          >
+            <polygon points="12,2 16,13 12,10 8,13" fill={INK} />
+            <line x1="12" y1="13" x2="12" y2="22" stroke={FAINT} strokeWidth={1.6} />
+          </svg>
         </div>
-      )}
+
+        {planMode === 'presentation' && zonesPresent.length > 0 && (
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: '6px 14px',
+              maxWidth: 320,
+              padding: '10px 14px',
+              borderRadius: 12,
+              background: 'rgba(255,255,255,0.92)',
+              border: `1px solid ${ROOM_EDGE}`,
+              boxShadow: '0 4px 14px rgba(0,0,0,0.08)',
+              fontFamily: SANS,
+            }}
+          >
+            {zonesPresent.map((type) => (
+              <div key={type} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span
+                  style={{
+                    width: 10,
+                    height: 10,
+                    borderRadius: 3,
+                    background: ROOM_ZONE_COLORS[type].fill,
+                    border: `1.5px solid ${ROOM_ZONE_COLORS[type].edge}`,
+                    flex: 'none',
+                  }}
+                />
+                <span style={{ fontSize: 11.5, fontWeight: 600, color: INK }}>{type}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {contextMenu &&
         (() => {

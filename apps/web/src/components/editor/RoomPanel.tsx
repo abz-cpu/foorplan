@@ -735,6 +735,10 @@ export function RoomPanel({
                     label="Detect rooms from walls"
                     onClick={() => void handleDetectRooms()}
                   />
+                  <p className="text-[11px] leading-relaxed text-ink-ghost">
+                    L-shaped or other non-rectangular rooms: draw the walls around the shape, then
+                    detect — it's covered by a few rectangles sharing one name.
+                  </p>
                   <PanelButton
                     icon={<ListChecks size={13} />}
                     label="View room schedule"

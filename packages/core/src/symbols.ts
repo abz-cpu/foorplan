@@ -147,6 +147,10 @@ export const SYMBOL_DEFS = {
       { t: 'rect', x: 0, y: 0, w: 100, h: 100 },
       { t: 'line', x1: 0, y1: 0, x2: 20, y2: 20 },
       { t: 'line', x1: 100, y1: 0, x2: 80, y2: 20 },
+      // Door handle, offset to one side (real fridge doors hinge on one
+      // edge) — the one deliberately asymmetric detail, so "Mirror" has a
+      // visible effect: it moves the handle to the other edge.
+      { t: 'line', x1: 88, y1: 40, x2: 88, y2: 60 },
     ],
   },
   'kitchen-sink': {
@@ -155,9 +159,16 @@ export const SYMBOL_DEFS = {
     h: 550,
     prims: [
       { t: 'rect', x: 0, y: 0, w: 100, h: 100 },
-      { t: 'rect', x: 8, y: 14, w: 40, h: 72 },
-      { t: 'rect', x: 54, y: 14, w: 38, h: 72 },
-      { t: 'circle', cx: 50, cy: 50, r: 4 },
+      // Main bowl (left) + a grooved drainer board (right) — the common
+      // UK layout, and asymmetric on purpose so mirroring visibly swaps
+      // which side the drainer is on.
+      { t: 'rect', x: 8, y: 12, w: 46, h: 76 },
+      { t: 'circle', cx: 31, cy: 50, r: 5 },
+      { t: 'rect', x: 60, y: 12, w: 32, h: 76 },
+      { t: 'line', x1: 66, y1: 22, x2: 86, y2: 22 },
+      { t: 'line', x1: 66, y1: 40, x2: 86, y2: 40 },
+      { t: 'line', x1: 66, y1: 58, x2: 86, y2: 58 },
+      { t: 'line', x1: 66, y1: 76, x2: 86, y2: 76 },
     ],
   },
   wardrobe: {

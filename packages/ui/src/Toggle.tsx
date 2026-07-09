@@ -28,8 +28,8 @@ export function Toggle({
         }`}
       >
         <span
-          className={`absolute top-[3px] h-4 w-4 rounded-full bg-white shadow transition-transform ${
-            checked ? 'translate-x-[19px]' : 'translate-x-[3px]'
+          className={`absolute left-[3px] top-[3px] h-4 w-4 rounded-full bg-white shadow transition-transform ${
+            checked ? 'translate-x-[16px]' : 'translate-x-0'
           }`}
         />
       </span>

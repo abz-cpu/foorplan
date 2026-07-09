@@ -411,7 +411,7 @@ export default function EditorPage() {
           </TopBarButton>
         </div>
 
-        <div className="flex items-center gap-1.5 px-2.5 text-xs font-medium text-ink-soft">
+        <div className="flex min-w-[155px] items-center gap-1.5 px-2.5 text-xs font-medium text-ink-soft">
           <HardDrive size={15} className={saveState === 'saved' ? 'text-success' : 'text-ink-ghost'} />
           {saveState === 'saved' ? 'Saved on this device' : 'Saving…'}
         </div>
@@ -442,7 +442,7 @@ export default function EditorPage() {
           />
 
           {showWelcome && (
-            <div className="absolute right-3.5 top-3.5 z-10 w-[300px] rounded-[13px] border border-line bg-white p-4 shadow-float">
+            <div className="absolute right-3.5 top-[68px] z-10 w-[300px] rounded-[13px] border border-line bg-white p-4 shadow-float">
               <div className="flex items-start justify-between gap-2">
                 <div className="text-[13.5px] font-semibold tracking-tight">Welcome to the editor</div>
                 <button

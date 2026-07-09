@@ -14,6 +14,7 @@ import {
 } from 'react-konva';
 import type Konva from 'konva';
 import type { KonvaEventObject } from 'konva/lib/Node';
+import { useToast } from '@floorplan/ui';
 import {
   addLabel,
   addOpening,
@@ -82,6 +83,8 @@ const INK = '#22332F';
 const FAINT = '#71827C';
 const SANS = "'Instrument Sans', system-ui, sans-serif";
 const MONO = "'IBM Plex Mono', monospace";
+
+const PAN_TIP_SEEN_KEY = 'floorplan:seenPanTip';
 
 const clampZoom = (z: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
 
@@ -180,7 +183,7 @@ function SymbolNode({
   );
 }
 
-function StairsTreads({ room }: { room: RoomRect }) {
+function StairsTreads({ room, showLabel }: { room: RoomRect; showLabel: boolean }) {
   const horizontal = room.w >= room.h;
   const reversed = room.stairDirection === 'reversed';
   const spacing = 280;
@@ -229,6 +232,17 @@ function StairsTreads({ room }: { room: RoomRect }) {
             listening={false}
           />
         </>
+      )}
+      {showLabel && (
+        <Text
+          text={`${room.ceilingHeightM.toFixed(2)}m`}
+          x={100}
+          y={90}
+          fontSize={150}
+          fontFamily={MONO}
+          fill={FAINT}
+          listening={false}
+        />
       )}
     </>
   );
@@ -322,6 +336,7 @@ function OpeningShape({
 export function EditorCanvas({ className = '' }: { className?: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
+  const toast = useToast();
 
   const doc = useEditorStore((s) => s.doc);
   const tool = useEditorStore((s) => s.tool);
@@ -583,6 +598,24 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
         endpoints: doc.walls.flatMap((w) => [w.a, w.b]),
         endpointToleranceMm: ENDPOINT_TOLERANCE_PX / scale,
         orthoToleranceDeg: snapEnabled ? 7 : 0,
+      }),
+    [doc, scale, snapEnabled],
+  );
+
+  // Reshaping an already-drawn wall (dragging its endpoint handle) should
+  // move freely in any direction, same as dragging a room — only drawing a
+  // *new* wall gets the ortho-snap-to-horizontal/vertical assist above.
+  // orthoSnap pulls toward horizontal/vertical measured from the wall's
+  // fixed other end, which — reused unchanged here — trapped the dragged
+  // end in a narrow cone along the original axis, making it feel like it
+  // could only slide straight back/forward and never break out diagonally.
+  const snapEndFree = useCallback(
+    (raw: Point, start: Point | null): Point =>
+      snapWallEnd(raw, start, {
+        gridMm: snapEnabled ? GRID_MM : 1,
+        endpoints: doc.walls.flatMap((w) => [w.a, w.b]),
+        endpointToleranceMm: ENDPOINT_TOLERANCE_PX / scale,
+        orthoToleranceDeg: 0,
       }),
     [doc, scale, snapEnabled],
   );
@@ -895,7 +928,17 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
       // space threshold converted to world units.
       const movedMm = distance(marqueeDraft.a, marqueeDraft.b);
       if (movedMm >= 6 / scale) {
-        selectMany(entitiesInRect(marqueeDraft.a, marqueeDraft.b));
+        const hits = entitiesInRect(marqueeDraft.a, marqueeDraft.b);
+        selectMany(hits);
+        // A deliberate drag that ends up selecting nothing is the exact
+        // failure mode of a first-time user trying to pan by dragging
+        // empty space instead of holding Space — the static toolbar hint
+        // alone was easy to miss, so surface it again, once, right when it
+        // would actually help.
+        if (hits.length === 0 && localStorage.getItem(PAN_TIP_SEEN_KEY) !== '1') {
+          localStorage.setItem(PAN_TIP_SEEN_KEY, '1');
+          toast('Nothing there — hold Space and drag to pan the canvas');
+        }
       }
       setMarqueeDraft(null);
       return;
@@ -1132,7 +1175,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
         draggable
         onDragMove={(e) => {
           const raw = { x: e.target.x(), y: e.target.y() };
-          const snapped = snapEnd(raw, other);
+          const snapped = snapEndFree(raw, other);
           if (distance(snapped, other) < 100) return; // refuse to collapse the wall to near-zero length
           e.target.position(snapped);
           setWallEndDraft({
@@ -1290,7 +1333,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
 
   const gridBackgroundImage =
     gridStyle === 'dots'
-      ? 'radial-gradient(#DCE6E2 1px, transparent 1px)'
+      ? 'radial-gradient(#B7C4BE 1.5px, transparent 1.5px)'
       : gridStyle === 'lines'
         ? 'linear-gradient(#E3EBE8 1px, transparent 1px), linear-gradient(90deg, #E3EBE8 1px, transparent 1px)'
         : 'none';
@@ -1381,8 +1424,14 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
             />
           )}
 
-          {/* Rooms (incl. stairs) */}
-          {doc.rooms.map((room) => {
+          {/* Rooms (incl. stairs), largest-area first so a smaller room
+              nested/overlapping inside a bigger one (e.g. a stairs flight
+              inside a hallway) always paints on top of it — otherwise the
+              bigger room's own fill and label could end up drawn last and
+              bleed over the smaller one. Matches pickRoomAt's same
+              smallest-area-wins rule for clicks, so what's on top visually
+              is also what you actually select. */}
+          {[...doc.rooms].sort((a, b) => b.w * b.h - a.w * a.h).map((room) => {
             const r = resizeDraft?.id === room.id ? resizeDraft : room;
             const isSel = selectedIds.includes(room.id);
             const stairs = room.type === 'Stairs';
@@ -1435,7 +1484,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
                   dash={isSel ? [110, 75] : undefined}
                 />
                 {stairs ? (
-                  <StairsTreads room={r} />
+                  <StairsTreads room={r} showLabel={showRoomLabels} />
                 ) : (
                   <>
                     <Text
@@ -1487,7 +1536,12 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
                 stroke={isSel ? ACTION : WALL}
                 strokeWidth={w.thickness}
                 lineCap="square"
-                hitStrokeWidth={Math.max(w.thickness, 320)}
+                // Keep the clickable band a constant width on screen — a
+                // fixed mm value shrinks to just a few px once the user
+                // zooms out to see the whole plan, which is exactly when
+                // thin internal walls (sandwiched between two much larger,
+                // always-clickable room rects) become unselectable.
+                hitStrokeWidth={Math.max(w.thickness, 24 / scale)}
                 draggable={i === 0 && isGroupDraggable}
                 onClick={(e) => {
                   if (tool !== 'select') return;
@@ -1811,18 +1865,20 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
       <div
         style={{
           position: 'absolute',
-          left: 16,
+          right: 16,
           top: 16,
           display: 'flex',
           flexDirection: 'column',
-          alignItems: 'flex-start',
+          alignItems: 'flex-end',
           gap: 10,
           pointerEvents: 'none',
         }}
       >
         {/* Live North indicator — the "PLAN ORIENTATION" panel only shows a
             static icon off to the side; this keeps orientation visible right
-            on the plan itself while drawing, not just after export. */}
+            on the plan itself while drawing, not just after export. Pinned
+            top-right (EditorPage's "Welcome to the editor" card is shifted
+            down to clear it — see EDITOR_WELCOME_SEEN_KEY usage there). */}
         <div
           title={`North is ${doc.northAngleDeg ?? 0}°`}
           style={{

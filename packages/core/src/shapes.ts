@@ -163,6 +163,22 @@ function roomShapes(room: RoomRect, showLabels: boolean, planMode: 'technical' |
         width: 22,
       });
     }
+    // Stairs skip the name/area label (the treads already read as "stairs"),
+    // but ceiling height is still load-bearing info (headroom clearance) —
+    // a small corner label in the same style as other rooms' area/height
+    // line, tucked in a corner so it doesn't sit under the direction arrow.
+    if (showLabels) {
+      shapes.push({
+        kind: 'text',
+        x: room.x + 130,
+        y: room.y + 260,
+        text: `${room.ceilingHeightM.toFixed(2)}m`,
+        size: 150,
+        color: FAINT,
+        font: 'mono',
+        align: 'left',
+      });
+    }
     return shapes;
   }
 
@@ -373,7 +389,11 @@ export function docToShapes(doc: FloorDoc, options: DocShapesOptions = {}): Shap
   const { showDims = true, showLabels = true, planMode = 'technical' } = options;
   const shapes: Shape[] = [];
 
-  for (const room of doc.rooms) shapes.push(...roomShapes(room, showLabels, planMode));
+  // Largest-area first so a smaller nested room (e.g. stairs inside a
+  // hallway) always draws on top instead of being covered by — or
+  // covering the label of — the bigger room it sits inside.
+  const roomsByAreaDesc = [...doc.rooms].sort((a, b) => b.w * b.h - a.w * a.h);
+  for (const room of roomsByAreaDesc) shapes.push(...roomShapes(room, showLabels, planMode));
 
   for (const wall of doc.walls) {
     for (const seg of wallSegments(wall, doc.openings)) {

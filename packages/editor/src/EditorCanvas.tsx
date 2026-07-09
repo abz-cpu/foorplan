@@ -30,6 +30,7 @@ import {
   DEFAULT_WINDOW_WIDTH_MM,
   deleteEntities,
   distance,
+  distanceToWall,
   doorSwingGeometry,
   findWall,
   formatAreaM2,
@@ -716,6 +717,29 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
     [doc, wallHitToleranceMm, pickRoomAt],
   );
 
+  // Crash-proofing for drag handlers: if a geometry/commit throws mid-drag,
+  // swallow it (logged), clear any in-progress interaction state, and reset
+  // the dragged node to a sane position so the canvas never freezes.
+  const guardDrag = useCallback((label: string, fn: () => void, node?: Konva.Node) => {
+    try {
+      fn();
+    } catch (err) {
+      console.error(`[canvas] ${label} failed — resetting interaction`, err);
+      setGroupDragOrigin(null);
+      setWallEndDraft(null);
+      setResizeDraft(null);
+      setMarqueeDraft(null);
+      openingDrag.current = null;
+      panDrag.current = null;
+      try {
+        node?.position({ x: 0, y: 0 });
+        node?.getLayer()?.batchDraw();
+      } catch {
+        /* node may be gone; ignore */
+      }
+    }
+  }, []);
+
   // Furniture wall-alignment anchor: placing or dragging a symbol within
   // reach of a wall snaps it flush against the wall's face and rotates it
   // so its back (every symbol is authored with its back edge at local
@@ -723,8 +747,27 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
   // that wall, on whichever side of the wall the point actually sits.
   const alignToNearbyWall = useCallback(
     (p: Point, w: number, h: number): { x: number; y: number; rotationDeg: number } | null => {
-      const hit = nearestWall(doc, p, h / 2 + 400);
-      if (!hit) return null;
+      const tolerance = h / 2 + 400;
+      // Rank every wall by perpendicular distance so we can detect a corner
+      // (two walls comparably close). Auto-rotating flush against "whichever
+      // is nearest" made furniture flip 90° on a 1px move in a corner and
+      // fought the user trying to nudge a bed into it. When two walls are
+      // within ~250mm of each other's distance, treat it as a corner and
+      // DON'T force an orientation — just let the piece sit where dropped
+      // (grid-snapped, current rotation kept) so it slides in freely.
+      const ranked = doc.walls
+        .map((wall) => ({ wall, d: distanceToWall(wall, p) }))
+        .filter((x) => x.d <= tolerance)
+        .sort((a, b) => a.d - b.d);
+      if (ranked.length === 0) return null;
+      const closest = ranked[0];
+      const CORNER_EPS = 250;
+      if (ranked.length > 1 && ranked[1].d - closest.d < CORNER_EPS) {
+        // Ambiguous corner — signal "no forced alignment" so the caller
+        // free-snaps position and preserves the existing rotation.
+        return null;
+      }
+      const hit = { wall: closest.wall, offsetMm: nearestOffsetOnWall(closest.wall, p) };
       const n = wallNormal(hit.wall);
       const wallPt = pointAlongWall(hit.wall, hit.offsetMm);
       const toP = { x: p.x - wallPt.x, y: p.y - wallPt.y };
@@ -1248,24 +1291,28 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
         stroke={ACTION}
         strokeWidth={2 / scale}
         draggable
-        onDragMove={(e) => {
-          const raw = { x: e.target.x(), y: e.target.y() };
-          const snapped = snapEndFree(raw, other);
-          if (distance(snapped, other) < 100) return; // refuse to collapse the wall to near-zero length
-          e.target.position(snapped);
-          setWallEndDraft({
-            id: wall.id,
-            a: key === 'a' ? snapped : wall.a,
-            b: key === 'b' ? snapped : wall.b,
-          });
-        }}
-        onDragEnd={() => {
-          const draft = wallEndDraft;
-          setWallEndDraft(null);
-          if (draft && draft.id === wall.id) {
-            commit('Reshape wall', updateWall(doc, wall.id, key === 'a' ? { a: draft.a } : { b: draft.b }));
-          }
-        }}
+        onDragMove={(e) =>
+          guardDrag('Reshape wall (move)', () => {
+            const raw = { x: e.target.x(), y: e.target.y() };
+            const snapped = snapEndFree(raw, other);
+            if (distance(snapped, other) < 100) return; // refuse to collapse the wall to near-zero length
+            e.target.position(snapped);
+            setWallEndDraft({
+              id: wall.id,
+              a: key === 'a' ? snapped : wall.a,
+              b: key === 'b' ? snapped : wall.b,
+            });
+          })
+        }
+        onDragEnd={() =>
+          guardDrag('Reshape wall', () => {
+            const draft = wallEndDraft;
+            setWallEndDraft(null);
+            if (draft && draft.id === wall.id) {
+              commit('Reshape wall', updateWall(doc, wall.id, key === 'a' ? { a: draft.a } : { b: draft.b }));
+            }
+          })
+        }
       />
     ));
   };
@@ -1541,27 +1588,33 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
                     select(room.id);
                   }
                 }}
-                onDragEnd={(e) => {
-                  const snapped = snapFree({ x: e.target.x(), y: e.target.y() });
-                  e.target.position(snapped);
-                  if (groupDragOrigin && selectedIds.length > 1 && selectedIds.includes(room.id)) {
-                    const dx = snapped.x - groupDragOrigin.x;
-                    const dy = snapped.y - groupDragOrigin.y;
-                    setGroupDragOrigin(null);
-                    commitGroupMove(dx, dy);
-                    return;
-                  }
-                  // Single-entity move ONLY. An earlier version dragged the
-                  // room's "fabric" (walls whose endpoints fell inside the
-                  // room) along with it — but connected plans share walls
-                  // that extend beyond any one room, so partial carrying
-                  // tore the geometry apart (field bug: plans exploding
-                  // into shrapnel on first drag). Moving several things
-                  // together is what multi-select group-drag is for: it
-                  // translates the entire selection by one uniform delta,
-                  // which is always geometrically coherent.
-                  commit('Move room', updateRoom(doc, room.id, { x: snapped.x, y: snapped.y }));
-                }}
+                onDragEnd={(e) =>
+                  guardDrag(
+                    'Move room',
+                    () => {
+                      const snapped = snapFree({ x: e.target.x(), y: e.target.y() });
+                      e.target.position(snapped);
+                      if (groupDragOrigin && selectedIds.length > 1 && selectedIds.includes(room.id)) {
+                        const dx = snapped.x - groupDragOrigin.x;
+                        const dy = snapped.y - groupDragOrigin.y;
+                        setGroupDragOrigin(null);
+                        commitGroupMove(dx, dy);
+                        return;
+                      }
+                      // Single-entity move ONLY. An earlier version dragged the
+                      // room's "fabric" (walls whose endpoints fell inside the
+                      // room) along with it — but connected plans share walls
+                      // that extend beyond any one room, so partial carrying
+                      // tore the geometry apart (field bug: plans exploding
+                      // into shrapnel on first drag). Moving several things
+                      // together is what multi-select group-drag is for: it
+                      // translates the entire selection by one uniform delta,
+                      // which is always geometrically coherent.
+                      commit('Move room', updateRoom(doc, room.id, { x: snapped.x, y: snapped.y }));
+                    },
+                    e.target,
+                  )
+                }
               >
                 <Rect
                   width={r.w}
@@ -1813,19 +1866,21 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
                 if (additive) toggleSelect(sym.id, true);
                 else select(sym.id);
               }}
-              onMove={(x, y) => {
-                const centre = { x: x + sym.w / 2, y: y + sym.h / 2 };
-                const aligned = alignToNearbyWall(centre, sym.w, sym.h);
-                if (aligned) {
-                  commit(
-                    'Move symbol',
-                    updateSymbol(doc, sym.id, { x: aligned.x, y: aligned.y, rotationDeg: aligned.rotationDeg }),
-                  );
-                } else {
-                  const snapped = snapFree({ x, y });
-                  commit('Move symbol', updateSymbol(doc, sym.id, { x: snapped.x, y: snapped.y }));
-                }
-              }}
+              onMove={(x, y) =>
+                guardDrag('Move symbol', () => {
+                  const centre = { x: x + sym.w / 2, y: y + sym.h / 2 };
+                  const aligned = alignToNearbyWall(centre, sym.w, sym.h);
+                  if (aligned) {
+                    commit(
+                      'Move symbol',
+                      updateSymbol(doc, sym.id, { x: aligned.x, y: aligned.y, rotationDeg: aligned.rotationDeg }),
+                    );
+                  } else {
+                    const snapped = snapFree({ x, y });
+                    commit('Move symbol', updateSymbol(doc, sym.id, { x: snapped.x, y: snapped.y }));
+                  }
+                })
+              }
               onGroupDragStart={(x, y) => setGroupDragOrigin({ x, y })}
               onGroupDragEnd={(x, y) => {
                 if (!groupDragOrigin) return;
@@ -1866,16 +1921,22 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
                   select(label.id);
                 }
               }}
-              onDragEnd={(e) => {
-                if (groupDragOrigin && selectedIds.length > 1 && selectedIds.includes(label.id)) {
-                  const dx = e.target.x() - groupDragOrigin.x;
-                  const dy = e.target.y() - groupDragOrigin.y;
-                  setGroupDragOrigin(null);
-                  commitGroupMove(dx, dy);
-                  return;
-                }
-                commit('Move label', updateLabel(doc, label.id, { x: e.target.x(), y: e.target.y() }));
-              }}
+              onDragEnd={(e) =>
+                guardDrag(
+                  'Move label',
+                  () => {
+                    if (groupDragOrigin && selectedIds.length > 1 && selectedIds.includes(label.id)) {
+                      const dx = e.target.x() - groupDragOrigin.x;
+                      const dy = e.target.y() - groupDragOrigin.y;
+                      setGroupDragOrigin(null);
+                      commitGroupMove(dx, dy);
+                      return;
+                    }
+                    commit('Move label', updateLabel(doc, label.id, { x: e.target.x(), y: e.target.y() }));
+                  },
+                  e.target,
+                )
+              }
             />
           ))}
 

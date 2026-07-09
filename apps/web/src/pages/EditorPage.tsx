@@ -567,7 +567,12 @@ export default function EditorPage() {
             </div>
           )}
 
-          <div className="absolute left-1/2 top-3.5 z-10 flex w-max max-w-[calc(100%-24px)] -translate-x-1/2 items-center gap-2 rounded-[16px] bg-ink px-3.5 py-[7px] text-center text-xs font-medium text-[#E7F0ED] shadow-toast">
+          {/* pointer-events-none: this hint pill spans most of the canvas
+              width at the top — without it, clicks in that top strip land on
+              the pill instead of the shapes underneath (a real "clicks
+              swallowed" cause). It's purely informational, so let clicks
+              pass straight through to the canvas. */}
+          <div className="pointer-events-none absolute left-1/2 top-3.5 z-10 flex w-max max-w-[calc(100%-24px)] -translate-x-1/2 items-center gap-2 rounded-[16px] bg-ink px-3.5 py-[7px] text-center text-xs font-medium text-[#E7F0ED] shadow-toast">
             <span className="h-1.5 w-1.5 flex-none rounded-full bg-[#5FD3AE]" />
             {isMobile
               ? TOOL_HINTS[tool].replace('hold Space to pan', 'two-finger drag to pan')

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Arc,
   Circle,
@@ -25,6 +25,7 @@ import {
   DEFAULT_CEILING_HEIGHT_M,
   DEFAULT_DOOR_WIDTH_MM,
   DEFAULT_WALL_THICKNESS_MM,
+  detectRooms,
   EXTERNAL_WALL_THICKNESS_MM,
   DEFAULT_WINDOW_WIDTH_MM,
   deleteEntities,
@@ -381,6 +382,9 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
      (100mm) and external (200mm) — no more drawing first and re-typing the
      thickness afterwards. */
   const [drawExternal, setDrawExternal] = useState(false);
+  /* Wall tool: axis values the pending point is aligned with (matched to an
+     existing wall corner) — rendered as dashed guide lines. */
+  const [alignGuides, setAlignGuides] = useState<{ x: number | null; y: number | null } | null>(null);
   /* "Laser measure" keyboard wall entry: an arrow key locks a direction
      from the current chain point, digits type an exact length, Enter
      shoots the wall out and continues the chain. */
@@ -436,6 +440,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
 
   useEffect(() => {
     setContextMenu(null);
+    setAlignGuides(null);
   }, [tool, doc]);
 
   /* X toggles internal/external for the wall being drawn (Wall tool only,
@@ -452,6 +457,13 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
   }, [tool]);
 
   const drawThickness = drawExternal ? EXTERNAL_WALL_THICKNESS_MM : DEFAULT_WALL_THICKNESS_MM;
+
+  const detectPreview = useEditorStore((s) => s.detectPreview);
+  // Only computed while the Detect button is hovered; pure function of doc.
+  const detectPreviewRooms = useMemo(
+    () => (detectPreview ? detectRooms(doc) : []),
+    [detectPreview, doc],
+  );
 
   /* Laser-measure keyboard wall entry — only listens while the Wall tool is
      active and a chain is in progress (there's a fixed start point to
@@ -925,7 +937,32 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
     }
     if (tool === 'wall') {
       const raw = pointerWorld();
-      if (raw) setHoverPt(snapEnd(raw, wallStart));
+      if (raw) {
+        let pt = snapEnd(raw, wallStart);
+        // Smart alignment: when the pending point lines up (within ~6px on
+        // screen) with any existing wall corner on the X or Y axis, pull it
+        // exactly onto that axis and remember which corner matched so a
+        // dashed guide can be drawn through it.
+        const tol = 6 / scale;
+        let gx: number | null = null;
+        let gy: number | null = null;
+        for (const w of doc.walls) {
+          for (const p of [w.a, w.b]) {
+            // The pending point isn't in doc.walls yet, so there's no self to
+            // exclude — an exact axis match is precisely when the guide
+            // should show (it confirms the snap landed on that corner's
+            // line). Skip the wall's own start point so a chain in progress
+            // doesn't guide against where it just began.
+            if (wallStart && p.x === wallStart.x && p.y === wallStart.y) continue;
+            if (gx === null && Math.abs(p.x - pt.x) <= tol) gx = p.x;
+            if (gy === null && Math.abs(p.y - pt.y) <= tol) gy = p.y;
+          }
+        }
+        if (gx !== null) pt = { ...pt, x: gx };
+        if (gy !== null) pt = { ...pt, y: gy };
+        setAlignGuides(gx !== null || gy !== null ? { x: gx, y: gy } : null);
+        setHoverPt(pt);
+      }
     } else if (tool === 'measure' && measureA) {
       const raw = pointerWorld();
       if (raw) setHoverPt(snapFree(raw));
@@ -1514,47 +1551,16 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
                     commitGroupMove(dx, dy);
                     return;
                   }
-                  // Dragging a room takes its fabric with it — bounding
-                  // walls and anything sitting inside (stairs, furniture,
-                  // text) — so "move the room" moves the whole room, not
-                  // just the floor rect sliding out from under its walls.
-                  // Walls shared with a neighbouring room ride along too
-                  // (they ARE this room's wall); undo reverses the lot.
-                  const dx = snapped.x - room.x;
-                  const dy = snapped.y - room.y;
-                  if (dx === 0 && dy === 0) return;
-                  const margin = 200;
-                  const x0 = room.x - margin;
-                  const y0 = room.y - margin;
-                  const x1 = room.x + room.w + margin;
-                  const y1 = room.y + room.h + margin;
-                  const inside = (p: Point) => p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1;
-                  let next = updateRoom(doc, room.id, { x: snapped.x, y: snapped.y });
-                  for (const w of doc.walls) {
-                    if (inside(w.a) && inside(w.b)) {
-                      next = updateWall(next, w.id, {
-                        a: { x: w.a.x + dx, y: w.a.y + dy },
-                        b: { x: w.b.x + dx, y: w.b.y + dy },
-                      });
-                    }
-                  }
-                  for (const r2 of doc.rooms) {
-                    if (r2.id === room.id) continue;
-                    if (r2.x >= x0 && r2.y >= y0 && r2.x + r2.w <= x1 && r2.y + r2.h <= y1) {
-                      next = updateRoom(next, r2.id, { x: r2.x + dx, y: r2.y + dy });
-                    }
-                  }
-                  for (const s of doc.symbols) {
-                    if (inside({ x: s.x + s.w / 2, y: s.y + s.h / 2 })) {
-                      next = updateSymbol(next, s.id, { x: s.x + dx, y: s.y + dy });
-                    }
-                  }
-                  for (const l of doc.labels) {
-                    if (inside({ x: l.x, y: l.y })) {
-                      next = updateLabel(next, l.id, { x: l.x + dx, y: l.y + dy });
-                    }
-                  }
-                  commit('Move room', next);
+                  // Single-entity move ONLY. An earlier version dragged the
+                  // room's "fabric" (walls whose endpoints fell inside the
+                  // room) along with it — but connected plans share walls
+                  // that extend beyond any one room, so partial carrying
+                  // tore the geometry apart (field bug: plans exploding
+                  // into shrapnel on first drag). Moving several things
+                  // together is what multi-select group-drag is for: it
+                  // translates the entire selection by one uniform delta,
+                  // which is always geometrically coherent.
+                  commit('Move room', updateRoom(doc, room.id, { x: snapped.x, y: snapped.y }));
                 }}
               >
                 <Rect
@@ -1931,6 +1937,46 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
           )}
 
           {/* Wall draft preview */}
+          {/* "Detect rooms from walls" hover preview — light blue wash over
+              every enclosed area that would become a room if clicked. */}
+          {detectPreview &&
+            detectPreviewRooms.map((r) => (
+              <Rect
+                key={`dp-${r.id}`}
+                x={r.x}
+                y={r.y}
+                width={r.w}
+                height={r.h}
+                fill="rgba(96,141,222,0.22)"
+                stroke="#608DDE"
+                strokeWidth={18}
+                dash={[140, 100]}
+                listening={false}
+              />
+            ))}
+
+          {/* Smart-snap alignment guides: dashed lines through the wall
+              corner the pending point is axis-aligned with. */}
+          {tool === 'wall' && alignGuides && hoverPt && (
+            <Group listening={false}>
+              {alignGuides.x !== null && (
+                <Line
+                  points={[alignGuides.x, hoverPt.y - 60000, alignGuides.x, hoverPt.y + 60000]}
+                  stroke="#D9482F"
+                  strokeWidth={14}
+                  dash={[130, 130]}
+                />
+              )}
+              {alignGuides.y !== null && (
+                <Line
+                  points={[hoverPt.x - 60000, alignGuides.y, hoverPt.x + 60000, alignGuides.y]}
+                  stroke="#D9482F"
+                  strokeWidth={14}
+                  dash={[130, 130]}
+                />
+              )}
+            </Group>
+          )}
           {tool === 'wall' && hoverPt && !wallStart && (
             <Circle x={hoverPt.x} y={hoverPt.y} radius={90} stroke={ACTION} strokeWidth={30} listening={false} />
           )}

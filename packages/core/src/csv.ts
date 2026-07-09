@@ -49,3 +49,51 @@ export function buildRoomScheduleCsv(propertyName: string, floors: FloorForSched
 
   return rows.map((r) => r.map(esc).join(',')).join('\r\n');
 }
+
+/**
+ * EPC-focused CSV for Domestic Energy Assessors: one row per habitable room
+ * (stairs and other assets are excluded), with the exact columns an RdSAP
+ * workflow wants, plus per-floor GIA and heat-loss perimeter totals.
+ */
+export function buildEpcCsv(propertyName: string, floors: FloorForSchedule[]): string {
+  const rows: (string | number)[][] = [];
+  rows.push(['Property', propertyName]);
+  rows.push(['Generated', new Date().toISOString().slice(0, 10)]);
+  rows.push([]);
+  rows.push([
+    'Floor',
+    'Room Name',
+    'Room Type',
+    'Gross Internal Area (m2)',
+    'Ceiling Height (m)',
+    'Heat-loss Perimeter (m)',
+  ]);
+
+  for (const floor of floors) {
+    const fp = floorFootprint(floor.doc);
+    for (const r of floor.doc.rooms) {
+      if (r.type === 'Stairs') continue; // assets, not rooms
+      rows.push([
+        floor.name,
+        r.name,
+        r.type,
+        r.includeInGia ? roomAreaM2(r).toFixed(2) : '0.00',
+        r.ceilingHeightM.toFixed(2),
+        '', // perimeter is a floor-level figure; see the floor total row
+      ]);
+    }
+    rows.push([
+      floor.name,
+      'FLOOR TOTAL',
+      '',
+      floorGiaM2(floor.doc).toFixed(2),
+      '',
+      fp.exposedPerimeterM.toFixed(2),
+    ]);
+    rows.push([]);
+  }
+
+  const totalGia = floors.reduce((a, f) => a + floorGiaM2(f.doc), 0);
+  rows.push(['TOTAL', '', '', totalGia.toFixed(2), '', '']);
+  return rows.map((r) => r.map(esc).join(',')).join('\r\n');
+}

@@ -89,7 +89,8 @@ function SymbolPreview({ kind }: { kind: SymbolKind }) {
 }
 
 function paletteButtonClass(active: boolean): string {
-  return `flex h-10 w-10 flex-none cursor-pointer items-center justify-center rounded-[9px] transition-colors ${
+  // 44px touch target on phones/tablets, trimmed to 40px on desktop.
+  return `flex h-11 w-11 flex-none cursor-pointer items-center justify-center rounded-[9px] transition-colors md:h-10 md:w-10 ${
     active ? 'bg-brand text-brand-ink' : 'text-ink-mid hover:bg-shell'
   }`;
 }

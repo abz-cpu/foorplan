@@ -94,16 +94,24 @@ function PanelButton({
   icon,
   label,
   onClick,
+  onMouseEnter,
+  onMouseLeave,
 }: {
   icon: React.ReactNode;
   label: string;
   onClick: () => void;
+  onMouseEnter?: () => void;
+  onMouseLeave?: () => void;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="flex h-8 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-line bg-white text-xs font-semibold text-ink-mid hover:bg-shell"
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+      // 44px touch target on phones/tablets (on-site assessors), trimmed to
+      // 32px on desktop so the panel doesn't look oversized.
+      className="flex min-h-[44px] w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-line bg-white text-[13px] font-semibold text-ink-mid hover:bg-shell md:min-h-0 md:h-8 md:text-xs"
     >
       {icon}
       {label}
@@ -121,12 +129,14 @@ const blurOnEnter = (e: React.KeyboardEvent<HTMLInputElement>) =>
 
 export function RoomPanel({
   onDownloadCsv,
+  onDownloadEpcCsv,
   address,
   floors,
   initialTab = 'props',
   variant = 'sidebar',
 }: {
   onDownloadCsv: () => void;
+  onDownloadEpcCsv: () => void;
   address: string;
   floors: PanelFloor[];
   initialTab?: 'props' | 'assistant';
@@ -140,6 +150,7 @@ export function RoomPanel({
   const selectedIds = useEditorStore((s) => s.selectedIds);
   const commit = useEditorStore((s) => s.commit);
   const select = useEditorStore((s) => s.select);
+  const setDetectPreview = useEditorStore((s) => s.setDetectPreview);
   const toast = useToast();
 
   const [tab, setTab] = useState<'props' | 'assistant'>(initialTab);
@@ -163,6 +174,10 @@ export function RoomPanel({
   const [wallThickness, setWallThickness] = useState('');
   const [openingWidth, setOpeningWidth] = useState('');
   const [labelText, setLabelText] = useState('');
+
+  // Clear the detect-rooms preview if the panel unmounts mid-hover
+  // (e.g. the mobile sheet closes) so the canvas wash never gets stuck on.
+  useEffect(() => () => setDetectPreview(false), [setDetectPreview]);
 
   useEffect(() => {
     setName(room?.name ?? '');
@@ -766,7 +781,12 @@ export function RoomPanel({
                   <PanelButton
                     icon={<ScanSearch size={13} />}
                     label="Detect rooms from walls"
-                    onClick={() => void handleDetectRooms()}
+                    onClick={() => {
+                      setDetectPreview(false);
+                      void handleDetectRooms();
+                    }}
+                    onMouseEnter={() => setDetectPreview(true)}
+                    onMouseLeave={() => setDetectPreview(false)}
                   />
                   <p className="text-[11px] leading-relaxed text-ink-ghost">
                     L-shaped or other non-rectangular rooms: draw the walls around the shape, then
@@ -781,6 +801,11 @@ export function RoomPanel({
                     icon={<Download size={13} />}
                     label="Download room schedule (CSV)"
                     onClick={onDownloadCsv}
+                  />
+                  <PanelButton
+                    icon={<Download size={13} />}
+                    label="Export for EPC (CSV)"
+                    onClick={onDownloadEpcCsv}
                   />
                   <PanelButton
                     icon={<Layers size={13} />}

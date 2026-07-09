@@ -112,6 +112,9 @@ interface EditorState {
   showRoomLabels: boolean;
   showFurniture: boolean;
   planMode: PlanMode;
+  /** True while the "Detect rooms from walls" button is hovered — the
+   *  canvas previews the enclosed areas that would become rooms. */
+  detectPreview: boolean;
 
   loadFloor(floorId: string, doc: FloorDoc): void;
   setTool(tool: Tool): void;
@@ -138,6 +141,7 @@ interface EditorState {
   toggleShowRoomLabels(): void;
   toggleShowFurniture(): void;
   setPlanMode(mode: PlanMode): void;
+  setDetectPreview(on: boolean): void;
 }
 
 const clampZoom = (z: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
@@ -161,6 +165,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
     saveState: 'saved',
     viewport: { width: 800, height: 600 },
     symbolKind: 'sofa',
+    detectPreview: false,
     ...loadViewPrefs(),
 
     setSymbolKind(kind) {
@@ -337,6 +342,10 @@ export const useEditorStore = create<EditorState>((set, get) => {
     setPlanMode(planMode) {
       set({ planMode });
       saveViewPrefs(pickViewPrefs({ ...get(), planMode }));
+    },
+
+    setDetectPreview(detectPreview) {
+      set({ detectPreview });
     },
   };
 });

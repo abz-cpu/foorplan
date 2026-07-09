@@ -21,6 +21,7 @@ import {
   X,
 } from 'lucide-react';
 import {
+  buildEpcCsv,
   buildRoomScheduleCsv,
   copyPerimeterWalls,
   deleteEntities,
@@ -41,6 +42,13 @@ import { useIsMobile } from '../lib/useIsMobile';
 const FLOOR_NAMES = ['Ground Floor', 'First Floor', 'Second Floor', 'Third Floor'];
 const EDITOR_WELCOME_SEEN_KEY = 'floorplan:seenEditorWelcome';
 
+/** Shown one at a time to new users, capped by a localStorage counter. */
+const PRO_TIPS = [
+  'Pro tip: press W to draw walls, R for rooms, D for doors',
+  'Pro tip: hold Space (or pick the hand tool) and drag to pan',
+  'Pro tip: while drawing a wall, press X to flip internal/external',
+];
+
 function TopBarButton({
   title,
   disabled,
@@ -58,9 +66,9 @@ function TopBarButton({
       title={title}
       disabled={disabled}
       onClick={onClick}
-      // 38×38px — meets the 44dp touch-target requirement when combined with
-      // the 4px padding of the surrounding bg-shell strip (total hit area ~46px).
-      className="flex h-[38px] w-[38px] cursor-pointer items-center justify-center rounded-[8px] text-ink-mid hover:bg-white hover:shadow-segment disabled:cursor-default disabled:text-ink-ghost disabled:opacity-60 disabled:hover:bg-transparent disabled:hover:shadow-none"
+      // 44px touch target on phones/tablets, 38px on desktop (the surrounding
+      // bg-shell strip's 4px padding brings even that up to ~46px hit area).
+      className="flex h-[44px] w-[44px] cursor-pointer items-center justify-center rounded-[8px] text-ink-mid hover:bg-white hover:shadow-segment disabled:cursor-default disabled:text-ink-ghost disabled:opacity-60 disabled:hover:bg-transparent disabled:hover:shadow-none md:h-[38px] md:w-[38px]"
     >
       {children}
     </button>
@@ -126,6 +134,23 @@ export default function EditorPage() {
   useEffect(() => {
     if (isMobile && selectedCount > 0) setMobilePanelOpen(true);
   }, [isMobile, selectedCount]);
+
+  /* Keyboard pro-tips: a non-intrusive rotating hint shown a handful of
+     times to new users, then never again. Fires ~8s after the editor
+     settles so it doesn't collide with the welcome card. */
+  useEffect(() => {
+    const KEY = 'floorplan:proTipsShown';
+    const shown = Number(localStorage.getItem(KEY) ?? '0');
+    if (shown >= PRO_TIPS.length) return;
+    const tip = PRO_TIPS[shown];
+    const t = setTimeout(() => {
+      toast(tip);
+      localStorage.setItem(KEY, String(shown + 1));
+    }, 8000);
+    return () => clearTimeout(t);
+    // Run once per editor mount; the localStorage counter caps total shows.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const lastSavedRef = useRef<FloorDoc | null>(null);
 
@@ -328,6 +353,18 @@ export default function EditorPage() {
     );
     downloadBlob(`${slugify(property.addressLine1)}-room-schedule.csv`, new Blob([csv], { type: 'text/csv' }));
     toast('Room schedule downloaded');
+  };
+
+  const downloadEpcCsv = async () => {
+    if (!property) return;
+    await flushSave();
+    const fresh = await repos.floors.listByProperty(property.id);
+    const csv = buildEpcCsv(
+      `${property.addressLine1}${property.postcode ? `, ${property.postcode}` : ''}`,
+      fresh.map((f) => ({ name: f.name, doc: normalizeDoc(f.doc) })),
+    );
+    downloadBlob(`${slugify(property.addressLine1)}-epc.csv`, new Blob([csv], { type: 'text/csv' }));
+    toast('EPC data downloaded');
   };
 
   const closeExport = () => {
@@ -543,7 +580,7 @@ export default function EditorPage() {
                 <button
                   type="button"
                   onClick={() => void switchFloor(f)}
-                  className={`h-8 cursor-pointer rounded-lg px-3 text-[12.5px] font-semibold ${
+                  className={`h-11 cursor-pointer rounded-lg px-3 text-[12.5px] font-semibold md:h-8 ${
                     floorId === f.id ? 'bg-brand text-[#D7EFE6]' : 'text-ink-soft hover:bg-shell'
                   } ${floors.length > 1 ? 'pr-6' : ''}`}
                 >
@@ -571,7 +608,7 @@ export default function EditorPage() {
               type="button"
               title="Add floor"
               onClick={() => void addFloor()}
-              className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-ink-faint hover:bg-shell hover:text-ink"
+              className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg text-ink-faint hover:bg-shell hover:text-ink md:h-8 md:w-8"
             >
               <Plus size={14} strokeWidth={2.2} />
             </button>
@@ -580,7 +617,7 @@ export default function EditorPage() {
                 type="button"
                 title="Copy perimeter to a new floor"
                 onClick={() => void addFloorWithPerimeter()}
-                className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-ink-faint hover:bg-shell hover:text-ink"
+                className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg text-ink-faint hover:bg-shell hover:text-ink md:h-8 md:w-8"
               >
                 <Copy size={13} strokeWidth={2.2} />
               </button>
@@ -600,7 +637,7 @@ export default function EditorPage() {
               type="button"
               onClick={toggleSnap}
               title="Toggle snapping"
-              className={`flex cursor-pointer items-center gap-1.5 rounded-[9px] border border-line bg-white px-3 py-1.5 text-[11.5px] font-semibold shadow-segment ${
+              className={`flex min-h-[44px] cursor-pointer items-center gap-1.5 rounded-[9px] border border-line bg-white px-3 text-[11.5px] font-semibold shadow-segment md:min-h-0 md:py-1.5 ${
                 snapEnabled ? 'text-action-soft-ink' : 'text-ink-ghost'
               }`}
             >
@@ -613,7 +650,7 @@ export default function EditorPage() {
                 type="button"
                 onClick={() => setTweaksOpen((o) => !o)}
                 title="Display settings"
-                className={`flex h-full cursor-pointer items-center gap-1.5 rounded-[9px] border border-line bg-white px-3 py-1.5 text-[11.5px] font-semibold shadow-segment ${
+                className={`flex h-full min-h-[44px] cursor-pointer items-center gap-1.5 rounded-[9px] border border-line bg-white px-3 text-[11.5px] font-semibold shadow-segment md:min-h-0 md:py-1.5 ${
                   tweaksOpen ? 'text-action-soft-ink' : 'text-ink-mid'
                 }`}
               >
@@ -683,6 +720,7 @@ export default function EditorPage() {
         {!isMobile && (
           <RoomPanel
             onDownloadCsv={() => void downloadCsv()}
+            onDownloadEpcCsv={() => void downloadEpcCsv()}
             address={property ? `${property.addressLine1}${property.postcode ? `, ${property.postcode}` : ''}` : ''}
             floors={floors.map((f) => ({ id: f.id, name: f.name, doc: f.doc }))}
             initialTab={searchParams.get('assistant') === '1' ? 'assistant' : 'props'}
@@ -710,6 +748,7 @@ export default function EditorPage() {
           <RoomPanel
             variant="sheet"
             onDownloadCsv={() => void downloadCsv()}
+            onDownloadEpcCsv={() => void downloadEpcCsv()}
             address={property ? `${property.addressLine1}${property.postcode ? `, ${property.postcode}` : ''}` : ''}
             floors={floors.map((f) => ({ id: f.id, name: f.name, doc: f.doc }))}
             initialTab={searchParams.get('assistant') === '1' ? 'assistant' : 'props'}

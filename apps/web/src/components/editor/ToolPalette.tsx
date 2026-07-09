@@ -22,7 +22,7 @@ const ICONS: Record<string, string> = {
 export const TOOL_HINTS: Record<Tool, string> = {
   select: 'Select — tap anything to edit it, drag empty space to box-select, hold Space to pan',
   pan: 'Pan — drag anywhere to move around the canvas',
-  wall: 'Wall — click to place points, or after the first point press an arrow key + type a length + Enter',
+  wall: 'Wall — click to place points; press X to flip internal/external while drawing',
   room: 'Room — drag a rectangle to add a room',
   door: 'Door — click a wall to place, drag with Select to slide',
   window: 'Window — click a wall to place, drag with Select to slide',

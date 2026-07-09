@@ -448,10 +448,42 @@ export function RoomPanel({
                 }}
               />
             </div>
+          ) : room && room.type === 'Stairs' ? (
+            /* Stairs are a visual ASSET, not a room — no name, room type,
+               area, ceiling height, or GIA fields. Just its footprint and
+               asset actions, exactly like furniture. */
+            <>
+              <div>
+                <SectionLabel>SELECTED STAIRS</SectionLabel>
+                <div className="grid grid-cols-2 gap-2">
+                  <StatTile label="Width" value={formatMmAsM(room.w)} />
+                  <StatTile label="Length" value={formatMmAsM(room.h)} />
+                </div>
+              </div>
+              <PanelButton
+                icon={<FlipHorizontal2 size={13} />}
+                label="Flip direction"
+                onClick={() =>
+                  commit(
+                    'Flip stairs direction',
+                    updateRoom(doc, room.id, {
+                      stairDirection: room.stairDirection === 'reversed' ? 'forward' : 'reversed',
+                    }),
+                  )
+                }
+              />
+              <DeleteButton
+                label="Delete stairs"
+                onClick={() => {
+                  commit('Delete stairs', deleteEntity(doc, room.id));
+                  select(null);
+                }}
+              />
+            </>
           ) : room ? (
             <>
               <div>
-                <SectionLabel>{room.type === 'Stairs' ? 'SELECTED STAIRS' : 'SELECTED ROOM'}</SectionLabel>
+                <SectionLabel>SELECTED ROOM</SectionLabel>
                 <label className="mb-1.5 block text-xs font-semibold text-ink-mid">Room name</label>
                 <input
                   value={name}
@@ -470,7 +502,9 @@ export function RoomPanel({
                   }
                   className="h-9 w-full cursor-pointer rounded-[9px] border border-input bg-white px-2 text-[13px] text-ink outline-none focus:border-action"
                 >
-                  {ROOM_TYPES.map((t) => (
+                  {/* 'Stairs' is an asset placed with the Stairs tool, not a
+                      room type a room can be converted into. */}
+                  {ROOM_TYPES.filter((t) => t !== 'Stairs').map((t) => (
                     <option key={t}>{t}</option>
                   ))}
                 </select>
@@ -515,22 +549,8 @@ export function RoomPanel({
                 </label>
               </div>
 
-              {room.type === 'Stairs' && (
-                <PanelButton
-                  icon={<FlipHorizontal2 size={13} />}
-                  label="Flip direction"
-                  onClick={() =>
-                    commit(
-                      'Flip stairs direction',
-                      updateRoom(doc, room.id, {
-                        stairDirection: room.stairDirection === 'reversed' ? 'forward' : 'reversed',
-                      }),
-                    )
-                  }
-                />
-              )}
               <DeleteButton
-                label={room.type === 'Stairs' ? 'Delete stairs' : 'Delete room'}
+                label="Delete room"
                 onClick={() => {
                   commit('Delete room', deleteEntity(doc, room.id));
                   select(null);

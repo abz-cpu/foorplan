@@ -25,6 +25,7 @@ import {
   DEFAULT_CEILING_HEIGHT_M,
   DEFAULT_DOOR_WIDTH_MM,
   DEFAULT_WALL_THICKNESS_MM,
+  EXTERNAL_WALL_THICKNESS_MM,
   DEFAULT_WINDOW_WIDTH_MM,
   deleteEntities,
   distance,
@@ -376,6 +377,10 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
   const [underlayImg, setUnderlayImg] = useState<HTMLImageElement | null>(null);
   const [marqueeDraft, setMarqueeDraft] = useState<{ a: Point; b: Point } | null>(null);
   const [spacePressed, setSpacePressed] = useState(false);
+  /* Wall tool: press X mid-draw to flip the pending wall between internal
+     (100mm) and external (200mm) — no more drawing first and re-typing the
+     thickness afterwards. */
+  const [drawExternal, setDrawExternal] = useState(false);
   /* "Laser measure" keyboard wall entry: an arrow key locks a direction
      from the current chain point, digits type an exact length, Enter
      shoots the wall out and continues the chain. */
@@ -433,6 +438,21 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
     setContextMenu(null);
   }, [tool, doc]);
 
+  /* X toggles internal/external for the wall being drawn (Wall tool only,
+     ignored while typing in a field). */
+  useEffect(() => {
+    if (tool !== 'wall') return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
+      if (e.key.toLowerCase() === 'x') setDrawExternal((v) => !v);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [tool]);
+
+  const drawThickness = drawExternal ? EXTERNAL_WALL_THICKNESS_MM : DEFAULT_WALL_THICKNESS_MM;
+
   /* Laser-measure keyboard wall entry — only listens while the Wall tool is
      active and a chain is in progress (there's a fixed start point to
      extend from). */
@@ -473,7 +493,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
           };
           commit(
             'Draw wall',
-            addWall(doc, { id: newId(), a: wallStart, b: endpoint, thickness: DEFAULT_WALL_THICKNESS_MM }),
+            addWall(doc, { id: newId(), a: wallStart, b: endpoint, thickness: drawThickness }),
           );
           setWallStart(endpoint);
           setHoverPt(endpoint);
@@ -487,7 +507,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [tool, wallStart, keyedDirection, keyedLength, doc, commit]);
+  }, [tool, wallStart, keyedDirection, keyedLength, doc, commit, drawThickness]);
 
   /* Load the underlay image whenever it changes */
   const underlayUrl = doc.underlay?.dataUrl ?? null;
@@ -795,7 +815,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
       } else if (distance(wallStart, pt) >= 10) {
         commit(
           'Draw wall',
-          addWall(doc, { id: newId(), a: wallStart, b: pt, thickness: DEFAULT_WALL_THICKNESS_MM }),
+          addWall(doc, { id: newId(), a: wallStart, b: pt, thickness: drawThickness }),
         );
         setWallStart(pt);
         setHoverPt(pt);
@@ -1551,11 +1571,18 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
                   /* Name + area/height as one draggable group: drag the text
                      off to a corner when furniture sits mid-room. The halo
                      stroke keeps it readable over anything it lands on.
-                     Clicks still bubble up and select the room. */
+                     CRITICAL: the group only listens when its room is
+                     already selected — an always-active label would put an
+                     invisible room-wide band across every room's middle
+                     that steals clicks and drags meant for the room (and a
+                     label dragged elsewhere would swallow clicks wherever
+                     it landed). Flow: first click selects the room (label
+                     is transparent to it), then the label can be dragged. */
                   <Group
                     x={r.labelOffset?.x ?? 0}
                     y={r.labelOffset?.y ?? 0}
-                    draggable={tool === 'select'}
+                    listening={isSel && tool === 'select'}
+                    draggable={isSel && tool === 'select'}
                     onDragStart={(e) => {
                       e.cancelBubble = true;
                     }}
@@ -1912,7 +1939,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
               <Line
                 points={[wallStart.x, wallStart.y, hoverPt.x, hoverPt.y]}
                 stroke={ACTION}
-                strokeWidth={DEFAULT_WALL_THICKNESS_MM}
+                strokeWidth={drawThickness}
                 opacity={0.55}
                 lineCap="square"
                 listening={false}
@@ -1925,7 +1952,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
               >
                 <Tag fill="#FFFFFF" opacity={0.94} cornerRadius={90} />
                 <Text
-                  text={formatMmAsM(distance(wallStart, hoverPt))}
+                  text={`${formatMmAsM(distance(wallStart, hoverPt))} · ${drawExternal ? 'external' : 'internal'} — X flips`}
                   fontSize={210}
                   fontFamily={MONO}
                   fill={ACTION}
@@ -1952,7 +1979,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
                   <Line
                     points={[wallStart.x, wallStart.y, endpoint.x, endpoint.y]}
                     stroke={ACTION}
-                    strokeWidth={DEFAULT_WALL_THICKNESS_MM}
+                    strokeWidth={drawThickness}
                     opacity={typedMm ? 0.55 : 0.3}
                     dash={typedMm ? undefined : [60, 60]}
                     lineCap="square"

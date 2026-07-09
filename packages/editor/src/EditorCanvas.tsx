@@ -104,15 +104,24 @@ const isDraftingTool = (t: Tool) => t === 'room' || t === 'stairs';
 function SymbolNode({
   sym,
   selected,
+  isMultiSelected,
   draggable,
   onSelect,
   onMove,
+  onGroupDragStart,
+  onGroupDragEnd,
 }: {
   sym: SymbolInstance;
   selected: boolean;
+  /** True when this symbol is one of 2+ currently-selected entities —
+   *  dragging it then moves the whole selection instead of collapsing to
+   *  just this symbol. */
+  isMultiSelected: boolean;
   draggable: boolean;
   onSelect: (additive: boolean) => void;
   onMove: (x: number, y: number) => void;
+  onGroupDragStart: (x: number, y: number) => void;
+  onGroupDragEnd: (x: number, y: number) => void;
 }) {
   const def = SYMBOL_DEFS[sym.kind];
   const sx = sym.w / 100;
@@ -130,8 +139,14 @@ function SymbolNode({
       draggable={draggable}
       onClick={(e) => onSelect(e.evt.shiftKey || e.evt.metaKey || e.evt.ctrlKey)}
       onTap={() => onSelect(false)}
-      onDragStart={() => onSelect(false)}
-      onDragEnd={(e) => onMove(e.target.x() - sym.w / 2, e.target.y() - sym.h / 2)}
+      onDragStart={() => {
+        if (isMultiSelected) onGroupDragStart(sym.x, sym.y);
+        else onSelect(false);
+      }}
+      onDragEnd={(e) => {
+        if (isMultiSelected) onGroupDragEnd(e.target.x() - sym.w / 2, e.target.y() - sym.h / 2);
+        else onMove(e.target.x() - sym.w / 2, e.target.y() - sym.h / 2);
+      }}
     >
       {/* hit region */}
       <Rect width={sym.w} height={sym.h} fill="rgba(0,0,0,0.001)" />
@@ -351,6 +366,12 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
   const [rectDraft, setRectDraft] = useState<{ a: Point; b: Point; stairs: boolean } | null>(null);
   const [resizeDraft, setResizeDraft] = useState<RoomRect | null>(null);
   const [wallEndDraft, setWallEndDraft] = useState<{ id: string; a: Point; b: Point } | null>(null);
+  // Group-drag: dragging any one member of a multi-selection moves the
+  // whole selection together instead of collapsing to just that one item.
+  // Holds the grabbed shape's own pre-drag x/y (in whatever coordinate
+  // convention that shape's own Konva node uses); the delta between that
+  // and its drop position is applied identically to every selected entity.
+  const [groupDragOrigin, setGroupDragOrigin] = useState<Point | null>(null);
   const [openingHover, setOpeningHover] = useState<{ wall: Wall; offsetMm: number } | null>(null);
   const [openingDraft, setOpeningDraft] = useState<{ id: string; offsetMm: number } | null>(null);
   const [measureA, setMeasureA] = useState<Point | null>(null);
@@ -1019,6 +1040,37 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
     setHoverPt(null);
   };
 
+  /** Translate every currently-selected room/wall/symbol/label by the same
+   *  (dx, dy) in one undo step. Openings move implicitly — their offsetMm
+   *  is relative to their wall's endpoints, which shift together. */
+  const commitGroupMove = (dx: number, dy: number) => {
+    if (dx === 0 && dy === 0) return;
+    let next = doc;
+    for (const id of selectedIds) {
+      const room = next.rooms.find((r) => r.id === id);
+      if (room) {
+        next = updateRoom(next, id, { x: room.x + dx, y: room.y + dy });
+        continue;
+      }
+      const wall = next.walls.find((w) => w.id === id);
+      if (wall) {
+        next = updateWall(next, id, {
+          a: { x: wall.a.x + dx, y: wall.a.y + dy },
+          b: { x: wall.b.x + dx, y: wall.b.y + dy },
+        });
+        continue;
+      }
+      const sym = next.symbols.find((s) => s.id === id);
+      if (sym) {
+        next = updateSymbol(next, id, { x: sym.x + dx, y: sym.y + dy });
+        continue;
+      }
+      const label = next.labels.find((l) => l.id === id);
+      if (label) next = updateLabel(next, id, { x: label.x + dx, y: label.y + dy });
+    }
+    commit('Move selection', next);
+  };
+
   /* ---- render helpers ---- */
 
   const selectedRoom = doc.rooms.find((r) => r.id === selectedId) ?? null;
@@ -1367,10 +1419,23 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
                   const p = pointerWorld();
                   select((p ? pickRoomAt(p) : undefined)?.id ?? room.id);
                 }}
-                onDragStart={() => select(room.id)}
+                onDragStart={() => {
+                  if (selectedIds.length > 1 && selectedIds.includes(room.id)) {
+                    setGroupDragOrigin({ x: room.x, y: room.y });
+                  } else {
+                    select(room.id);
+                  }
+                }}
                 onDragEnd={(e) => {
                   const snapped = snapFree({ x: e.target.x(), y: e.target.y() });
                   e.target.position(snapped);
+                  if (groupDragOrigin && selectedIds.length > 1 && selectedIds.includes(room.id)) {
+                    const dx = snapped.x - groupDragOrigin.x;
+                    const dy = snapped.y - groupDragOrigin.y;
+                    setGroupDragOrigin(null);
+                    commitGroupMove(dx, dy);
+                    return;
+                  }
                   commit('Move room', updateRoom(doc, room.id, { x: snapped.x, y: snapped.y }));
                 }}
               >
@@ -1422,6 +1487,12 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
             const openings = doc.openings.map((o) =>
               openingDraft && o.id === openingDraft.id ? { ...o, offsetMm: openingDraft.offsetMm } : o,
             );
+            // Walls only move as a whole via group-drag (grabbing this wall
+            // while it's part of a multi-selection) — a lone selected wall
+            // is reshaped via its endpoint handles instead, not dragged
+            // bodily. Only the first segment is made draggable so a wall
+            // split by an opening doesn't visually tear apart mid-drag.
+            const isGroupDraggable = tool === 'select' && selectedIds.length > 1 && selectedIds.includes(w.id);
             return wallSegments(w, openings).map((seg, i) => (
               <Line
                 key={`${w.id}-${i}`}
@@ -1430,6 +1501,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
                 strokeWidth={w.thickness}
                 lineCap="square"
                 hitStrokeWidth={Math.max(w.thickness, 320)}
+                draggable={i === 0 && isGroupDraggable}
                 onClick={(e) => {
                   if (tool !== 'select') return;
                   const additive = e.evt.shiftKey || e.evt.metaKey || e.evt.ctrlKey;
@@ -1437,6 +1509,16 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
                   else select(w.id);
                 }}
                 onTap={() => tool === 'select' && select(w.id)}
+                onDragStart={() => setGroupDragOrigin(w.a)}
+                onDragEnd={(e) => {
+                  if (!groupDragOrigin) return;
+                  const snappedA = snapFree({ x: w.a.x + e.target.x(), y: w.a.y + e.target.y() });
+                  e.target.position({ x: 0, y: 0 });
+                  const dx = snappedA.x - w.a.x;
+                  const dy = snappedA.y - w.a.y;
+                  setGroupDragOrigin(null);
+                  commitGroupMove(dx, dy);
+                }}
               />
             ));
           })}
@@ -1500,6 +1582,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
               key={sym.id}
               sym={sym}
               selected={selectedIds.includes(sym.id)}
+              isMultiSelected={selectedIds.length > 1 && selectedIds.includes(sym.id)}
               draggable={tool === 'select'}
               onSelect={(additive) => {
                 if (tool !== 'select') return;
@@ -1518,6 +1601,15 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
                   const snapped = snapFree({ x, y });
                   commit('Move symbol', updateSymbol(doc, sym.id, { x: snapped.x, y: snapped.y }));
                 }
+              }}
+              onGroupDragStart={(x, y) => setGroupDragOrigin({ x, y })}
+              onGroupDragEnd={(x, y) => {
+                if (!groupDragOrigin) return;
+                const snapped = snapFree({ x, y });
+                const dx = snapped.x - groupDragOrigin.x;
+                const dy = snapped.y - groupDragOrigin.y;
+                setGroupDragOrigin(null);
+                commitGroupMove(dx, dy);
               }}
             />
           ))}
@@ -1543,10 +1635,23 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
                 else select(label.id);
               }}
               onTap={() => tool === 'select' && select(label.id)}
-              onDragStart={() => select(label.id)}
-              onDragEnd={(e) =>
-                commit('Move label', updateLabel(doc, label.id, { x: e.target.x(), y: e.target.y() }))
-              }
+              onDragStart={() => {
+                if (selectedIds.length > 1 && selectedIds.includes(label.id)) {
+                  setGroupDragOrigin({ x: label.x, y: label.y });
+                } else {
+                  select(label.id);
+                }
+              }}
+              onDragEnd={(e) => {
+                if (groupDragOrigin && selectedIds.length > 1 && selectedIds.includes(label.id)) {
+                  const dx = e.target.x() - groupDragOrigin.x;
+                  const dy = e.target.y() - groupDragOrigin.y;
+                  setGroupDragOrigin(null);
+                  commitGroupMove(dx, dy);
+                  return;
+                }
+                commit('Move label', updateLabel(doc, label.id, { x: e.target.x(), y: e.target.y() }));
+              }}
             />
           ))}
 

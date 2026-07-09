@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { docToShapes, transformShapes } from '../src/shapes';
+import { docToShapes, ROOM_ZONE_COLORS, transformShapes } from '../src/shapes';
 import { addOpening, addRoom, addWall, emptyFloorDoc } from '../src/doc';
 import type { Opening, RoomRect, Wall } from '../src/types';
 
@@ -45,6 +45,24 @@ describe('docToShapes', () => {
     const withoutDims = docToShapes(doc, { showDims: false });
     expect(withDims.length).toBeGreaterThan(withoutDims.length);
     expect(withDims.some((s) => s.kind === 'text' && s.rotateDeg === -90)).toBe(true);
+  });
+
+  it('carries the editor\'s zonal room colours into presentation-mode exports', () => {
+    const doc = addRoom(emptyFloorDoc(), room);
+    const technical = docToShapes(doc, { showDims: false, planMode: 'technical' });
+    const presentation = docToShapes(doc, { showDims: false, planMode: 'presentation' });
+    const technicalRect = technical.find((s) => s.kind === 'rect');
+    const presentationRect = presentation.find((s) => s.kind === 'rect');
+    expect(technicalRect).toMatchObject({ fill: '#FFFFFF' });
+    expect(presentationRect).toMatchObject({ fill: ROOM_ZONE_COLORS.Bedroom.fill });
+    expect(technicalRect?.fill).not.toBe(presentationRect?.fill);
+  });
+
+  it('defaults to technical (plain white) when planMode is omitted', () => {
+    const doc = addRoom(emptyFloorDoc(), room);
+    const shapes = docToShapes(doc, { showDims: false });
+    const rect = shapes.find((s) => s.kind === 'rect');
+    expect(rect).toMatchObject({ fill: '#FFFFFF' });
   });
 });
 

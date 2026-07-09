@@ -51,12 +51,16 @@ export function ExportModal({
   address,
   floorName,
   doc,
+  initialPlanMode = 'technical',
   onClose,
   onExported,
 }: {
   address: string;
   floorName: string;
   doc: FloorDoc;
+  /** The editor's live plan mode when Export was opened — used as this
+   *  export's starting point, independently overridable below. */
+  initialPlanMode?: 'technical' | 'presentation';
   onClose: () => void;
   onExported: (format: ExportFormat) => void;
 }) {
@@ -65,6 +69,7 @@ export function ExportModal({
   const [orientation, setOrientation] = useState<Orientation>('portrait');
   const [measurements, setMeasurements] = useState(true);
   const [disclaimer, setDisclaimer] = useState(true);
+  const [planMode, setPlanMode] = useState<'technical' | 'presentation'>(initialPlanMode);
   const [phase, setPhase] = useState<'idle' | 'working' | 'done'>('idle');
 
   useEffect(() => {
@@ -82,8 +87,9 @@ export function ExportModal({
         orientation,
         showMeasurements: measurements,
         disclaimer,
+        planMode,
       }),
-    [doc, address, floorName, paper, orientation, measurements, disclaimer],
+    [doc, address, floorName, paper, orientation, measurements, disclaimer, planMode],
   );
   const previewSvg = useMemo(
     () => shapesToSvg(sheet.shapes, sheet.widthMm, sheet.heightMm),
@@ -227,6 +233,18 @@ export function ExportModal({
                   );
                 })}
               </div>
+            </div>
+
+            <div>
+              <div className="mb-1.5 text-xs font-semibold text-ink-mid">Room colour</div>
+              <SegmentedControl
+                options={[
+                  { value: 'technical', label: 'Technical' },
+                  { value: 'presentation', label: 'Coloured' },
+                ]}
+                value={planMode}
+                onChange={(v) => setPlanMode(v as 'technical' | 'presentation')}
+              />
             </div>
 
             <div>

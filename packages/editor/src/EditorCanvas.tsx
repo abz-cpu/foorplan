@@ -40,6 +40,7 @@ import {
   pointAlongWall,
   roomAreaM2,
   ROOM_TYPES,
+  ROOM_ZONE_COLORS,
   snapPointToGrid,
   snapValueToGrid,
   snapWallEnd,
@@ -81,20 +82,6 @@ const INK = '#22332F';
 const FAINT = '#71827C';
 const SANS = "'Instrument Sans', system-ui, sans-serif";
 const MONO = "'IBM Plex Mono', monospace";
-
-/** Presentation-mode zonal shading — one soft fill/edge pair per room type,
- *  used instead of the plain white technical-drawing fill. */
-const ROOM_ZONE_COLORS: Record<RoomType, { fill: string; edge: string }> = {
-  'Living Room': { fill: '#E4EEE8', edge: '#9DBFAC' },
-  'Kitchen / Diner': { fill: '#FBEED9', edge: '#E0B871' },
-  Bedroom: { fill: '#E3EAF7', edge: '#9FB4DE' },
-  Bathroom: { fill: '#DFF1F0', edge: '#8FC9C5' },
-  WC: { fill: '#E8F1EF', edge: '#A9CAC4' },
-  Hallway: { fill: '#EEECE6', edge: '#C3BCAC' },
-  Stairs: { fill: '#EAE3F2', edge: '#B9A4D1' },
-  Utility: { fill: '#F0E8E1', edge: '#CBAF98' },
-  Other: { fill: '#EDEDED', edge: '#C6C6C6' },
-};
 
 const clampZoom = (z: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
 

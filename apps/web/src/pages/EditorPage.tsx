@@ -655,6 +655,7 @@ export default function EditorPage() {
           address={`${property.addressLine1}${property.postcode ? `, ${property.postcode}` : ''}`}
           floorName={activeFloor?.name ?? 'Ground Floor'}
           doc={doc}
+          initialPlanMode={planMode}
           onClose={closeExport}
           onExported={() => {
             void setStatus('exported');

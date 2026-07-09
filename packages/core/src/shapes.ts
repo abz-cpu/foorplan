@@ -2,7 +2,7 @@ import { docBounds, roomAreaM2 } from './geometry';
 import { doorSwingGeometry, openingJambs, wallNormal, wallSegments } from './openings';
 import { formatAreaM2, formatMmAsM } from './format';
 import { SYMBOL_DEFS, type SymbolInstance } from './symbols';
-import type { FloorDoc, Opening, Point, RoomRect, TextLabel, Wall } from './types';
+import type { FloorDoc, Opening, Point, RoomRect, RoomType, TextLabel, Wall } from './types';
 
 /**
  * Renderer-agnostic display list. All coordinates in world millimetres.
@@ -58,6 +58,10 @@ export type Shape =
 export interface DocShapesOptions {
   showDims?: boolean;
   showLabels?: boolean;
+  /** 'presentation' shades each room's fill by type (ROOM_ZONE_COLORS)
+   *  instead of plain white, matching the editor's Presentation plan mode
+   *  so an exported sheet looks the same as what was on screen. */
+  planMode?: 'technical' | 'presentation';
 }
 
 const WALL = '#1F312C';
@@ -68,7 +72,23 @@ const FAINT = '#71827C';
 const DIM = '#4A5D57';
 const DIM_LINE = '#7C9A90';
 
-function roomShapes(room: RoomRect, showLabels: boolean): Shape[] {
+/** Presentation-mode zonal shading — one soft fill/edge pair per room type,
+ *  used instead of the plain white technical-drawing fill. Shared by the
+ *  editor canvas and every export backend so they can never drift apart. */
+export const ROOM_ZONE_COLORS: Record<RoomType, { fill: string; edge: string }> = {
+  'Living Room': { fill: '#E4EEE8', edge: '#9DBFAC' },
+  'Kitchen / Diner': { fill: '#FBEED9', edge: '#E0B871' },
+  Bedroom: { fill: '#E3EAF7', edge: '#9FB4DE' },
+  Bathroom: { fill: '#DFF1F0', edge: '#8FC9C5' },
+  WC: { fill: '#E8F1EF', edge: '#A9CAC4' },
+  Hallway: { fill: '#EEECE6', edge: '#C3BCAC' },
+  Stairs: { fill: '#EAE3F2', edge: '#B9A4D1' },
+  Utility: { fill: '#F0E8E1', edge: '#CBAF98' },
+  Other: { fill: '#EDEDED', edge: '#C6C6C6' },
+};
+
+function roomShapes(room: RoomRect, showLabels: boolean, planMode: 'technical' | 'presentation'): Shape[] {
+  const zone = planMode === 'presentation' ? ROOM_ZONE_COLORS[room.type] : null;
   const shapes: Shape[] = [
     {
       kind: 'rect',
@@ -76,8 +96,8 @@ function roomShapes(room: RoomRect, showLabels: boolean): Shape[] {
       y: room.y,
       w: room.w,
       h: room.h,
-      fill: '#FFFFFF',
-      stroke: ROOM_EDGE,
+      fill: zone?.fill ?? '#FFFFFF',
+      stroke: zone?.edge ?? ROOM_EDGE,
       strokeWidth: 18,
     },
   ];
@@ -350,10 +370,10 @@ function dimensionShapes(doc: FloorDoc): Shape[] {
 
 /** Flatten a floor document into ordered drawing primitives (world mm). */
 export function docToShapes(doc: FloorDoc, options: DocShapesOptions = {}): Shape[] {
-  const { showDims = true, showLabels = true } = options;
+  const { showDims = true, showLabels = true, planMode = 'technical' } = options;
   const shapes: Shape[] = [];
 
-  for (const room of doc.rooms) shapes.push(...roomShapes(room, showLabels));
+  for (const room of doc.rooms) shapes.push(...roomShapes(room, showLabels, planMode));
 
   for (const wall of doc.walls) {
     for (const seg of wallSegments(wall, doc.openings)) {

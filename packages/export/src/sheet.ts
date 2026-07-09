@@ -25,6 +25,9 @@ export interface SheetOptions {
   orientation: Orientation;
   showMeasurements: boolean;
   disclaimer: boolean;
+  /** 'presentation' carries the editor's zonal room-color shading into the
+   *  exported sheet; 'technical' (default) keeps the plain line-art look. */
+  planMode?: 'technical' | 'presentation';
 }
 
 /** A composed export sheet: shapes in paper-millimetre coordinates. */
@@ -152,7 +155,11 @@ export function buildFloorSheet(doc: FloorDoc, opts: SheetOptions): Sheet {
     const scale = Math.min(cw / spanX, ch / spanY);
     const dx = cx0 + (cw - spanX * scale) / 2 - minX * scale;
     const dy = cy0 + (ch - spanY * scale) / 2 - minY * scale;
-    const planShapes = docToShapes(doc, { showDims: opts.showMeasurements, showLabels: true });
+    const planShapes = docToShapes(doc, {
+      showDims: opts.showMeasurements,
+      showLabels: true,
+      planMode: opts.planMode,
+    });
     shapes.push(...transformShapes(planShapes, scale, dx, dy));
 
     /* Scale bar (bottom-left of content box) */

@@ -575,11 +575,12 @@ export default function EditorPage() {
               {tweaksOpen && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setTweaksOpen(false)} />
-                  <div className="absolute bottom-10 right-0 z-50 w-64 rounded-xl border border-line-soft bg-ink p-4 text-white shadow-toast">
+                  <div className="absolute bottom-10 right-0 z-50 w-72 rounded-xl border border-line-soft bg-ink p-4 text-white shadow-toast">
                     <div className="text-[11px] font-semibold tracking-[0.07em] text-white/50">STYLE</div>
-                    <div className="mt-2.5 flex items-center justify-between">
+                    <div className="mt-3 flex items-center justify-between gap-3">
                       <span className="text-[13px] font-medium">Plan mode</span>
                       <SegmentedControl
+                        dark
                         options={[
                           { value: 'technical', label: 'Technical' },
                           { value: 'presentation', label: 'Presentation' },
@@ -595,9 +596,10 @@ export default function EditorPage() {
                     <div className="mt-4 border-t border-white/10 pt-3 text-[11px] font-semibold tracking-[0.07em] text-white/50">
                       CANVAS
                     </div>
-                    <div className="mt-2.5 flex items-center justify-between">
+                    <div className="mt-3 flex items-center justify-between gap-3">
                       <span className="text-[13px] font-medium">Grid style</span>
                       <SegmentedControl
+                        dark
                         options={[
                           { value: 'dots', label: 'Dots' },
                           { value: 'lines', label: 'Lines' },
@@ -607,33 +609,21 @@ export default function EditorPage() {
                         onChange={setGridStyle}
                       />
                     </div>
-                    <div className="mt-3 flex items-center justify-between">
-                      <Toggle
-                        dark
-                        checked={showDimensions}
-                        onChange={toggleShowDimensions}
-                        label="Show dimensions"
-                      />
+                    <div className="mt-3.5 flex items-center justify-between">
+                      <span className="text-[13px] font-medium">Show dimensions</span>
+                      <Toggle dark checked={showDimensions} onChange={toggleShowDimensions} title="Show dimensions" />
                     </div>
 
                     <div className="mt-4 border-t border-white/10 pt-3 text-[11px] font-semibold tracking-[0.07em] text-white/50">
                       LAYERS
                     </div>
-                    <div className="mt-2.5 flex items-center justify-between">
-                      <Toggle
-                        dark
-                        checked={showRoomLabels}
-                        onChange={toggleShowRoomLabels}
-                        label="Room area labels"
-                      />
+                    <div className="mt-3 flex items-center justify-between">
+                      <span className="text-[13px] font-medium">Room area labels</span>
+                      <Toggle dark checked={showRoomLabels} onChange={toggleShowRoomLabels} title="Room area labels" />
                     </div>
-                    <div className="mt-2.5 flex items-center justify-between">
-                      <Toggle
-                        dark
-                        checked={showFurniture}
-                        onChange={toggleShowFurniture}
-                        label="Furniture symbols"
-                      />
+                    <div className="mt-3 flex items-center justify-between">
+                      <span className="text-[13px] font-medium">Furniture symbols</span>
+                      <Toggle dark checked={showFurniture} onChange={toggleShowFurniture} title="Furniture symbols" />
                     </div>
                   </div>
                 </>

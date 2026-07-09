@@ -61,8 +61,8 @@ export function RoomScheduleModal({
                 {rooms.length === 0 ? (
                   <p className="text-[12.5px] text-ink-ghost">No rooms drawn on this floor yet.</p>
                 ) : (
-                  <div className="overflow-hidden rounded-[10px] border border-line-soft">
-                    <table className="w-full border-collapse text-[12.5px]">
+                  <div className="overflow-x-auto rounded-[10px] border border-line-soft">
+                    <table className="w-full min-w-[540px] border-collapse text-[12.5px]">
                       <thead>
                         <tr className="bg-[#F7FAF9] text-left text-[11px] font-semibold uppercase tracking-wide text-ink-faint">
                           <th className="px-3 py-2">Room</th>

@@ -103,7 +103,7 @@ export default function DashboardPage() {
     <div className="min-h-full">
       <AppNav onNewProperty={() => setDialogOpen(true)} />
 
-      <main className="mx-auto max-w-[1180px] px-6 pb-18 pt-8">
+      <main className="mx-auto max-w-[1180px] px-4 pb-18 pt-6 md:px-6 md:pt-8">
         <header>
           <h1 className="text-[26px] font-bold tracking-tight">My Properties</h1>
           <p className="mt-1 text-[13.5px] text-ink-soft">
@@ -135,8 +135,8 @@ export default function DashboardPage() {
             onChange={setTab}
           />
 
-          <div className="flex items-center gap-2.5">
-            <div className="relative">
+          <div className="flex w-full items-center gap-2.5 md:w-auto">
+            <div className="relative min-w-0 flex-1 md:flex-none">
               <Search
                 size={15}
                 className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint"
@@ -145,7 +145,7 @@ export default function DashboardPage() {
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 placeholder="Search address or postcode…"
-                className="h-[37px] w-[250px] rounded-[10px] border border-input bg-white pl-[34px] pr-3 text-[13px] text-ink outline-none placeholder:text-ink-ghost focus:border-action focus:ring-[3px] focus:ring-action/[0.13]"
+                className="h-[37px] w-full rounded-[10px] border border-input bg-white pl-[34px] pr-3 text-[13px] text-ink outline-none placeholder:text-ink-ghost focus:border-action focus:ring-[3px] focus:ring-action/[0.13] md:w-[250px]"
               />
             </div>
             <button
@@ -214,7 +214,7 @@ export default function DashboardPage() {
             )}
           </div>
         ) : view === 'grid' ? (
-          <div className="mt-5 grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-[18px]">
+          <div className="mt-5 grid grid-cols-[repeat(auto-fill,minmax(min(320px,100%),1fr))] gap-[18px]">
             {filtered.map((p) => (
               <PropertyCard
                 key={p.record.id}
@@ -227,7 +227,7 @@ export default function DashboardPage() {
           </div>
         ) : (
           <div className="mt-5 overflow-hidden rounded-[14px] border border-line bg-white">
-            <div className="grid grid-cols-[1fr_120px_130px_150px] items-center gap-3 border-b border-line-soft bg-[#F7FAF9] px-4 py-2 text-[11px] font-semibold tracking-wider text-ink-faint">
+            <div className="hidden grid-cols-[1fr_120px_130px_150px] items-center gap-3 border-b border-line-soft bg-[#F7FAF9] px-4 py-2 text-[11px] font-semibold tracking-wider text-ink-faint md:grid">
               <span>PROPERTY</span>
               <span>STATUS</span>
               <span>LAST EDITED</span>

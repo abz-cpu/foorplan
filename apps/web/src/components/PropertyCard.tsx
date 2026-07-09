@@ -104,7 +104,7 @@ export function PropertyRow({
 }) {
   const { record, thumbnailSvg, meta } = property;
   return (
-    <div className="relative z-[1] grid grid-cols-[1fr_120px_130px_150px] items-center gap-3 border-b border-line-soft px-4 py-2.5 last:border-b-0 hover:bg-[#F7FAF9]">
+    <div className="relative z-[1] grid grid-cols-[1fr_auto] items-center gap-3 border-b border-line-soft px-4 py-2.5 last:border-b-0 hover:bg-[#F7FAF9] md:grid-cols-[1fr_120px_130px_150px]">
       <div className="flex min-w-0 items-center gap-3">
         {showThumbnail && (
           <div
@@ -120,8 +120,12 @@ export function PropertyRow({
           </div>
         </div>
       </div>
-      <StatusPill status={record.status} />
-      <span className="text-[12.5px] text-ink-soft">{formatRelativeTime(record.updatedAt)}</span>
+      <span className="hidden md:block">
+        <StatusPill status={record.status} />
+      </span>
+      <span className="hidden text-[12.5px] text-ink-soft md:block">
+        {formatRelativeTime(record.updatedAt)}
+      </span>
       <div className="flex items-center justify-end gap-1.5">
         <Link
           to={`/editor/${record.id}`}

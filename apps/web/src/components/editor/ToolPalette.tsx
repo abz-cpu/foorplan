@@ -85,7 +85,7 @@ function SymbolPreview({ kind }: { kind: SymbolKind }) {
 }
 
 function paletteButtonClass(active: boolean): string {
-  return `flex h-10 w-10 cursor-pointer items-center justify-center rounded-[9px] transition-colors ${
+  return `flex h-10 w-10 flex-none cursor-pointer items-center justify-center rounded-[9px] transition-colors ${
     active ? 'bg-brand text-brand-ink' : 'text-ink-mid hover:bg-shell'
   }`;
 }
@@ -96,12 +96,16 @@ export function ToolPalette({
   onPick,
   onPickSymbol,
   className = '',
+  horizontal = false,
 }: {
   tool: Tool;
   symbolKind: SymbolKind;
   onPick: (tool: Tool) => void;
   onPickSymbol: (kind: SymbolKind) => void;
   className?: string;
+  /** Bottom-of-screen scrollable strip for phones instead of the floating
+   *  vertical palette; the furniture popover opens upward. */
+  horizontal?: boolean;
 }) {
   const [symbolsOpen, setSymbolsOpen] = useState(false);
 
@@ -110,7 +114,13 @@ export function ToolPalette({
     // another position class here or it fights it; the absolute wrapper is
     // already the positioning context the popover needs.
     <div className={className}>
-      <div className="flex flex-col gap-0.5 rounded-[13px] border border-line bg-white p-[5px] shadow-float">
+      <div
+        className={
+          horizontal
+            ? 'flex gap-0.5 overflow-x-auto border-t border-line bg-white px-1.5 py-1'
+            : 'flex flex-col gap-0.5 rounded-[13px] border border-line bg-white p-[5px] shadow-float'
+        }
+      >
         {ENTRIES.map((entry) => (
           <button
             key={entry.id}
@@ -133,7 +143,7 @@ export function ToolPalette({
         >
           <Armchair size={18} strokeWidth={1.9} />
         </button>
-        <div className="mx-[5px] my-[3px] h-px bg-line" />
+        <div className={horizontal ? 'mx-[3px] my-[5px] w-px flex-none bg-line' : 'mx-[5px] my-[3px] h-px bg-line'} />
         {EXTRA.map((entry) => (
           <button
             key={entry.id}
@@ -151,7 +161,11 @@ export function ToolPalette({
       </div>
 
       {symbolsOpen && (
-        <div className="absolute left-[56px] top-0 z-20 w-[228px] rounded-[13px] border border-line bg-white p-2.5 shadow-float">
+        <div
+          className={`absolute z-20 w-[228px] rounded-[13px] border border-line bg-white p-2.5 shadow-float ${
+            horizontal ? 'bottom-[calc(100%+8px)] left-2' : 'left-[56px] top-0'
+          }`}
+        >
           <div className="mb-1.5 px-1 text-[11px] font-semibold tracking-[0.07em] text-ink-ghost">
             FURNITURE & FIXTURES
           </div>

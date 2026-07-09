@@ -10,6 +10,7 @@ import {
   Maximize,
   Minus,
   MousePointerClick,
+  PanelsTopLeft,
   Plus,
   Redo2,
   Ruler,
@@ -35,6 +36,7 @@ import { ExportModal } from '../components/export/ExportModal';
 import { RoomPanel } from '../components/editor/RoomPanel';
 import { ToolPalette, TOOL_HINTS } from '../components/editor/ToolPalette';
 import { repos } from '../lib/repos';
+import { useIsMobile } from '../lib/useIsMobile';
 
 const FLOOR_NAMES = ['Ground Floor', 'First Floor', 'Second Floor', 'Third Floor'];
 const EDITOR_WELCOME_SEEN_KEY = 'floorplan:seenEditorWelcome';
@@ -81,6 +83,8 @@ export default function EditorPage() {
     () => localStorage.getItem(EDITOR_WELCOME_SEEN_KEY) !== '1',
   );
   const toast = useToast();
+  const isMobile = useIsMobile();
+  const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
 
   const dismissWelcome = () => {
     localStorage.setItem(EDITOR_WELCOME_SEEN_KEY, '1');
@@ -114,6 +118,14 @@ export default function EditorPage() {
   const doc = useEditorStore((s) => s.doc);
   const floorId = useEditorStore((s) => s.floorId);
   const loadFloor = useEditorStore((s) => s.loadFloor);
+  const selectedCount = useEditorStore((s) => s.selectedIds.length);
+
+  // On phones the properties panel is a bottom sheet. Slide it up whenever a
+  // selection appears (that's the moment its content becomes relevant) —
+  // closing is manual, so browsing the floor summary isn't interrupted.
+  useEffect(() => {
+    if (isMobile && selectedCount > 0) setMobilePanelOpen(true);
+  }, [isMobile, selectedCount]);
 
   const lastSavedRef = useRef<FloorDoc | null>(null);
 
@@ -334,9 +346,9 @@ export default function EditorPage() {
   }
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-white">
+    <div className="flex h-dvh flex-col overflow-hidden bg-white">
       {/* Top bar */}
-      <header className="z-20 flex h-[52px] flex-none items-center gap-2.5 border-b border-line bg-white px-3">
+      <header className="z-20 flex h-[52px] flex-none items-center gap-1.5 border-b border-line bg-white px-2 md:gap-2.5 md:px-3">
         <Link
           to="/"
           title="Back to My Properties"
@@ -344,7 +356,9 @@ export default function EditorPage() {
         >
           <ArrowLeft size={17} strokeWidth={2.2} />
         </Link>
-        <BrandMark size={26} />
+        <span className="hidden sm:block">
+          <BrandMark size={26} />
+        </span>
         <div className="flex min-w-0 items-center gap-2">
           <span className="truncate text-[13.5px] font-semibold tracking-tight">
             {property ? `${property.addressLine1}${property.postcode ? `, ${property.postcode}` : ''}` : '…'}
@@ -396,7 +410,9 @@ export default function EditorPage() {
           </TopBarButton>
         </div>
 
-        <div className="flex items-center gap-0.5 rounded-[9px] bg-shell p-0.5">
+        {/* Pinch-zoom covers zooming on touch screens; the button cluster
+            only earns its top-bar space on md+. */}
+        <div className="hidden items-center gap-0.5 rounded-[9px] bg-shell p-0.5 md:flex">
           <TopBarButton title="Zoom out (−)" onClick={() => zoomBy(1 / ZOOM_STEP)}>
             <Minus size={15} strokeWidth={2.2} />
           </TopBarButton>
@@ -411,18 +427,33 @@ export default function EditorPage() {
           </TopBarButton>
         </div>
 
-        <div className="flex min-w-[155px] items-center gap-1.5 px-2.5 text-xs font-medium text-ink-soft">
+        <div
+          className="flex items-center gap-1.5 px-1.5 text-xs font-medium text-ink-soft md:min-w-[155px] md:px-2.5"
+          title={saveState === 'saved' ? 'Saved on this device' : 'Saving…'}
+        >
           <HardDrive size={15} className={saveState === 'saved' ? 'text-success' : 'text-ink-ghost'} />
-          {saveState === 'saved' ? 'Saved on this device' : 'Saving…'}
+          <span className="hidden md:inline">
+            {saveState === 'saved' ? 'Saved on this device' : 'Saving…'}
+          </span>
         </div>
 
         <button
           type="button"
+          title="Properties & floor summary"
+          onClick={() => setMobilePanelOpen((o) => !o)}
+          className="flex h-[34px] w-[34px] cursor-pointer items-center justify-center rounded-[9px] border border-line bg-white text-ink-mid md:hidden"
+        >
+          <PanelsTopLeft size={16} />
+        </button>
+
+        <button
+          type="button"
           onClick={() => setExportOpen(true)}
-          className="flex h-[35px] cursor-pointer items-center gap-1.5 rounded-[9px] bg-action px-3.5 text-[13px] font-semibold text-white shadow-cta hover:bg-action-hover"
+          className="flex h-[35px] flex-none cursor-pointer items-center gap-1.5 rounded-[9px] bg-action px-2.5 text-[13px] font-semibold text-white shadow-cta hover:bg-action-hover md:px-3.5"
         >
           <Download size={14} strokeWidth={2.2} />
-          Export Plan
+          <span className="hidden sm:inline">Export Plan</span>
+          <span className="sm:hidden">Export</span>
         </button>
       </header>
 
@@ -438,11 +469,23 @@ export default function EditorPage() {
             symbolKind={symbolKind}
             onPick={setTool}
             onPickSymbol={setSymbolKind}
-            className="absolute left-3.5 top-1/2 z-10 -translate-y-1/2"
+            className="absolute left-3.5 top-1/2 z-10 hidden -translate-y-1/2 md:block"
+          />
+
+          {/* Phones get a horizontal, scrollable tool strip along the bottom
+              instead — the vertical palette would collide with the floor tabs
+              and eat a third of a narrow canvas. */}
+          <ToolPalette
+            horizontal
+            tool={tool}
+            symbolKind={symbolKind}
+            onPick={setTool}
+            onPickSymbol={setSymbolKind}
+            className="absolute inset-x-0 bottom-0 z-10 pb-[env(safe-area-inset-bottom)] md:hidden"
           />
 
           {showWelcome && (
-            <div className="absolute right-3.5 top-[68px] z-10 w-[300px] rounded-[13px] border border-line bg-white p-4 shadow-float">
+            <div className="absolute left-3.5 right-3.5 top-[68px] z-10 rounded-[13px] border border-line bg-white p-4 shadow-float md:left-auto md:w-[300px]">
               <div className="flex items-start justify-between gap-2">
                 <div className="text-[13.5px] font-semibold tracking-tight">Welcome to the editor</div>
                 <button
@@ -484,12 +527,14 @@ export default function EditorPage() {
             </div>
           )}
 
-          <div className="absolute left-1/2 top-3.5 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full bg-ink px-3.5 py-[7px] text-xs font-medium text-[#E7F0ED] shadow-toast">
-            <span className="h-1.5 w-1.5 rounded-full bg-[#5FD3AE]" />
-            {TOOL_HINTS[tool]}
+          <div className="absolute left-1/2 top-3.5 z-10 flex w-max max-w-[calc(100%-24px)] -translate-x-1/2 items-center gap-2 rounded-[16px] bg-ink px-3.5 py-[7px] text-center text-xs font-medium text-[#E7F0ED] shadow-toast">
+            <span className="h-1.5 w-1.5 flex-none rounded-full bg-[#5FD3AE]" />
+            {isMobile
+              ? TOOL_HINTS[tool].replace('hold Space to pan', 'two-finger drag to pan')
+              : TOOL_HINTS[tool]}
           </div>
 
-          <div className="absolute bottom-3.5 left-3.5 z-10 flex gap-[3px] rounded-[11px] border border-line bg-white p-1 shadow-float">
+          <div className="absolute left-3.5 z-10 flex max-w-[calc(100%-28px)] gap-[3px] overflow-x-auto rounded-[11px] border border-line bg-white p-1 shadow-float bottom-[calc(64px+env(safe-area-inset-bottom))] md:bottom-3.5">
             {floors.map((f) => (
               <div key={f.id} className="group relative">
                 <button
@@ -539,13 +584,13 @@ export default function EditorPage() {
             )}
           </div>
 
-          <div className="absolute bottom-3.5 right-3.5 z-10 flex gap-2">
+          <div className="absolute right-3.5 z-10 flex gap-2 bottom-[calc(64px+env(safe-area-inset-bottom))] md:bottom-3.5">
             {/* Computed scale: at BASE_PX_PER_MM px/mm and 96dpi, 1m world =
                 BASE_PX_PER_MM * 1000 * zoom px on screen. At 96px/inch we have
                 3.7795 px/mm on the display. Scale = display_mm / world_mm.
                 e.g. zoom=1: 0.06*1000=60px for 1m → 60/3.78≈15.87mm display
                 → ratio 1000/15.87≈63 → "1:63". */}
-            <span className="rounded-[9px] border border-line bg-white px-3 py-1.5 font-mono text-[11.5px] text-ink-mid shadow-segment">
+            <span className="hidden rounded-[9px] border border-line bg-white px-3 py-1.5 font-mono text-[11.5px] text-ink-mid shadow-segment md:inline-block">
               1 : {Math.round(1 / (zoom * BASE_PX_PER_MM * (96 / 25.4) * 0.001))}
             </span>
             <button
@@ -632,13 +677,42 @@ export default function EditorPage() {
           </div>
         </div>
 
-        <RoomPanel
-          onDownloadCsv={() => void downloadCsv()}
-          address={property ? `${property.addressLine1}${property.postcode ? `, ${property.postcode}` : ''}` : ''}
-          floors={floors.map((f) => ({ id: f.id, name: f.name, doc: f.doc }))}
-          initialTab={searchParams.get('assistant') === '1' ? 'assistant' : 'props'}
-        />
+        {!isMobile && (
+          <RoomPanel
+            onDownloadCsv={() => void downloadCsv()}
+            address={property ? `${property.addressLine1}${property.postcode ? `, ${property.postcode}` : ''}` : ''}
+            floors={floors.map((f) => ({ id: f.id, name: f.name, doc: f.doc }))}
+            initialTab={searchParams.get('assistant') === '1' ? 'assistant' : 'props'}
+          />
+        )}
       </div>
+
+      {/* On phones the properties panel becomes a bottom sheet over the
+          canvas — a fixed 296px sidebar would leave ~80px of drawing space.
+          Opens from the top-bar Properties button, and auto-opens when a
+          selection appears (see the selectedCount effect above). */}
+      {isMobile && mobilePanelOpen && (
+        <div className="fixed inset-x-0 bottom-0 z-40 flex max-h-[60dvh] flex-col overflow-hidden rounded-t-2xl border-t border-line bg-white pb-[env(safe-area-inset-bottom)] shadow-toast">
+          <div className="flex flex-none items-center justify-between border-b border-line-soft px-4 py-1">
+            <span className="mx-auto h-1 w-9 rounded-full bg-ink/15" />
+            <button
+              type="button"
+              title="Close panel"
+              onClick={() => setMobilePanelOpen(false)}
+              className="absolute right-2 top-1.5 flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-ink-faint hover:bg-shell"
+            >
+              <X size={15} />
+            </button>
+          </div>
+          <RoomPanel
+            variant="sheet"
+            onDownloadCsv={() => void downloadCsv()}
+            address={property ? `${property.addressLine1}${property.postcode ? `, ${property.postcode}` : ''}` : ''}
+            floors={floors.map((f) => ({ id: f.id, name: f.name, doc: f.doc }))}
+            initialTab={searchParams.get('assistant') === '1' ? 'assistant' : 'props'}
+          />
+        </div>
+      )}
 
       {exportOpen && property && (
         <ExportModal

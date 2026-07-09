@@ -86,6 +86,12 @@ const MONO = "'IBM Plex Mono', monospace";
 
 const PAN_TIP_SEEN_KEY = 'floorplan:seenPanTip';
 
+/** True on touch-first devices (phones/tablets) — used to size grab
+ *  handles for fingers instead of a mouse cursor. Evaluated once: a
+ *  device's primary pointer doesn't change mid-session. */
+const COARSE_POINTER =
+  typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
+
 const clampZoom = (z: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
 
 const isDraftingTool = (t: Tool) => t === 'room' || t === 'stairs';
@@ -937,7 +943,11 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
         // would actually help.
         if (hits.length === 0 && localStorage.getItem(PAN_TIP_SEEN_KEY) !== '1') {
           localStorage.setItem(PAN_TIP_SEEN_KEY, '1');
-          toast('Nothing there — hold Space and drag to pan the canvas');
+          toast(
+            COARSE_POINTER
+              ? 'Nothing there — drag with two fingers to pan the canvas'
+              : 'Nothing there — hold Space and drag to pan the canvas',
+          );
         }
       }
       setMarqueeDraft(null);
@@ -1034,6 +1044,15 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
       setRectDraft(null);
       return;
     }
+    // Cancel the compatibility mouse events browsers synthesize after a tap
+    // (mousedown/mouseup/click) — without this, pointerDown runs a second
+    // time for the same tap via onMouseDown, and stateful tools break: the
+    // wall tool's "tap the chain point again to finish" check sees the
+    // duplicate zero-distance call and instantly ends the chain the touch
+    // just started, making it impossible to draw walls by touch at all.
+    // Konva's own tap/drag synthesis works from the touch events directly,
+    // so shape selection and dragging are unaffected.
+    if (e.evt.cancelable) e.evt.preventDefault();
     const t = e.evt.touches[0];
     pointerDown(e.target === stageRef.current, { x: t.clientX, y: t.clientY });
   };
@@ -1105,7 +1124,10 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
 
   const selectedRoom = doc.rooms.find((r) => r.id === selectedId) ?? null;
   const selectedWall = doc.walls.find((w) => w.id === selectedId) ?? null;
-  const handleHalf = 5 / scale; // 10px squares on screen
+  // 10px handles are fine under a mouse cursor but nearly impossible to
+  // grab with a finger — on coarse pointers (touch screens) render them at
+  // 24px so resize/reshape works on phones and tablets.
+  const handleHalf = (COARSE_POINTER ? 12 : 5) / scale;
 
   const renderResizeHandles = (room: RoomRect) => {
     const r = resizeDraft?.id === room.id ? resizeDraft : room;

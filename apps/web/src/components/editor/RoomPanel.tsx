@@ -124,11 +124,15 @@ export function RoomPanel({
   address,
   floors,
   initialTab = 'props',
+  variant = 'sidebar',
 }: {
   onDownloadCsv: () => void;
   address: string;
   floors: PanelFloor[];
   initialTab?: 'props' | 'assistant';
+  /** 'sidebar' = fixed-width right column (desktop); 'sheet' = fills the
+   *  mobile bottom-sheet wrapper EditorPage puts it in. */
+  variant?: 'sidebar' | 'sheet';
 }) {
   const doc = useEditorStore((s) => s.doc);
   const floorId = useEditorStore((s) => s.floorId);
@@ -322,7 +326,13 @@ export function RoomPanel({
   const footprint = floorFootprint(doc);
 
   return (
-    <aside className="z-[15] flex w-[296px] flex-none flex-col border-l border-line bg-white">
+    <aside
+      className={
+        variant === 'sheet'
+          ? 'flex min-h-0 flex-1 flex-col bg-white'
+          : 'z-[15] flex w-[296px] flex-none flex-col border-l border-line bg-white'
+      }
+    >
       <div className="flex gap-[3px] border-b border-line-soft px-3 pt-2.5">
         {(
           [

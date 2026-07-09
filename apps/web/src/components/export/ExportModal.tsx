@@ -132,9 +132,9 @@ export function ExportModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(14,30,26,0.44)] p-6 backdrop-blur-[3px]" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(14,30,26,0.44)] p-3 backdrop-blur-[3px] md:p-6" onClick={onClose}>
       <div
-        className="flex max-h-[92vh] w-[780px] max-w-full flex-col overflow-hidden rounded-[18px] bg-white shadow-toast"
+        className="flex max-h-[94dvh] w-[780px] max-w-full flex-col overflow-hidden rounded-[18px] bg-white shadow-toast"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -155,10 +155,11 @@ export function ExportModal({
           </button>
         </div>
 
-        {/* Body */}
-        <div className="grid min-h-0 flex-1 grid-cols-[316px_1fr]">
+        {/* Body — options beside the preview on desktop, stacked above it
+            (whole body scrolls) on phones. */}
+        <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto md:grid-cols-[316px_1fr] md:overflow-visible">
           {/* Options */}
-          <div className="flex flex-col gap-[17px] overflow-y-auto border-r border-line-soft px-5 pb-5 pt-4">
+          <div className="flex flex-col gap-[17px] border-b border-line-soft px-5 pb-5 pt-4 md:overflow-y-auto md:border-b-0 md:border-r">
             <div>
               <div className="mb-1.5 text-xs font-semibold text-ink-mid">Format</div>
               <SegmentedControl
@@ -259,16 +260,17 @@ export function ExportModal({
           </div>
 
           {/* Preview */}
-          <div className="relative flex min-h-[380px] flex-col items-center justify-center bg-[#EDF2F0] p-5">
+          <div className="relative flex min-h-[300px] flex-none flex-col items-center justify-center bg-[#EDF2F0] p-5 md:min-h-[380px]">
             <span className="absolute right-3.5 top-3 rounded-md border border-line bg-white px-2 py-0.5 font-mono text-[10.5px] text-ink-faint">
               {paper.toUpperCase()} · {orientation === 'portrait' ? 'Portrait' : 'Landscape'} ·{' '}
               {format.toUpperCase()}
             </span>
             <div
-              className="rounded-[4px] bg-white shadow-card transition-all [&>svg]:block [&>svg]:h-full [&>svg]:w-full"
+              className="max-w-full rounded-[4px] bg-white shadow-card transition-all [&>svg]:block [&>svg]:h-full [&>svg]:w-full"
               style={{
                 width: orientation === 'portrait' ? 260 : 368,
-                height: orientation === 'portrait' ? 260 * (sheet.heightMm / sheet.widthMm) : 368 * (sheet.heightMm / sheet.widthMm),
+                height: 'auto',
+                aspectRatio: `${sheet.widthMm} / ${sheet.heightMm}`,
               }}
               dangerouslySetInnerHTML={{ __html: previewSvg }}
             />

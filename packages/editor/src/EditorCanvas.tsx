@@ -89,6 +89,7 @@ const MONO = "'IBM Plex Mono', monospace";
 const DIM_LINE = '#7C9A90';
 
 const PAN_TIP_SEEN_KEY = 'floorplan:seenPanTip';
+const ZERO_POINT = { x: 0, y: 0 } as const;
 
 /** True on touch-first devices (phones/tablets) — used to size grab
  *  handles for fingers instead of a mouse cursor. Evaluated once: a
@@ -101,28 +102,7 @@ const clampZoom = (z: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
 const isDraftingTool = (t: Tool) => t === 'room' || t === 'stairs';
 
 /** Furniture symbol rendered from its unit-box primitives inside a rotatable group. */
-function SymbolNode({
-  sym,
-  selected,
-  isMultiSelected,
-  draggable,
-  onSelect,
-  onMove,
-  onGroupDragStart,
-  onGroupDragEnd,
-}: {
-  sym: SymbolInstance;
-  selected: boolean;
-  /** True when this symbol is one of 2+ currently-selected entities —
-   *  dragging it then moves the whole selection instead of collapsing to
-   *  just this symbol. */
-  isMultiSelected: boolean;
-  draggable: boolean;
-  onSelect: (additive: boolean) => void;
-  onMove: (x: number, y: number) => void;
-  onGroupDragStart: (x: number, y: number) => void;
-  onGroupDragEnd: (x: number, y: number) => void;
-}) {
+function SymbolNode({ sym, selected }: { sym: SymbolInstance; selected: boolean }) {
   const def = SYMBOL_DEFS[sym.kind];
   const sx = sym.w / 100;
   const sy = sym.h / 100;
@@ -130,26 +110,16 @@ function SymbolNode({
   const mx = (ux: number) => (mirrored ? 100 - ux : ux);
   const stroke = selected ? ACTION : WALL_LIGHT;
   return (
+    // Non-interactive: selection + drag are handled by the Stage-level
+    // geometric pointer pipeline, not Konva hit detection.
     <Group
       x={sym.x + sym.w / 2}
       y={sym.y + sym.h / 2}
       offsetX={sym.w / 2}
       offsetY={sym.h / 2}
       rotation={sym.rotationDeg}
-      draggable={draggable}
-      onClick={(e) => onSelect(e.evt.shiftKey || e.evt.metaKey || e.evt.ctrlKey)}
-      onTap={() => onSelect(false)}
-      onDragStart={() => {
-        if (isMultiSelected) onGroupDragStart(sym.x, sym.y);
-        else onSelect(false);
-      }}
-      onDragEnd={(e) => {
-        if (isMultiSelected) onGroupDragEnd(e.target.x() - sym.w / 2, e.target.y() - sym.h / 2);
-        else onMove(e.target.x() - sym.w / 2, e.target.y() - sym.h / 2);
-      }}
+      listening={false}
     >
-      {/* hit region */}
-      <Rect width={sym.w} height={sym.h} fill="rgba(0,0,0,0.001)" />
       {def.prims.map((p, i) => {
         if (p.t === 'line') {
           return (
@@ -251,14 +221,10 @@ function OpeningShape({
   wall,
   opening,
   selected,
-  onSelect,
-  onGrab,
 }: {
   wall: Wall;
   opening: Opening;
   selected: boolean;
-  onSelect: (additive: boolean) => void;
-  onGrab: () => void;
 }) {
   const { start, end } = openingJambs(wall, opening);
   const n = wallNormal(wall);
@@ -319,15 +285,9 @@ function OpeningShape({
     <Group>
       {parts}
       {/* invisible grab/hit region across the opening */}
-      <Line
-        points={[start.x, start.y, end.x, end.y]}
-        stroke="rgba(0,0,0,0.001)"
-        strokeWidth={Math.max(t * 3, 360)}
-        onClick={(e) => onSelect(e.evt.shiftKey || e.evt.metaKey || e.evt.ctrlKey)}
-        onTap={() => onSelect(false)}
-        onMouseDown={onGrab}
-        onTouchStart={onGrab}
-      />
+      {/* No hit region — openings are selected/dragged via the Stage-level
+          geometric pointer pipeline (pickEntityAt + openingDrag), which is
+          browser-independent. */}
     </Group>
   );
 }
@@ -367,18 +327,22 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
   const [rectDraft, setRectDraft] = useState<{ a: Point; b: Point; stairs: boolean } | null>(null);
   const [resizeDraft, setResizeDraft] = useState<RoomRect | null>(null);
   const [wallEndDraft, setWallEndDraft] = useState<{ id: string; a: Point; b: Point } | null>(null);
-  // Group-drag: dragging any one member of a multi-selection moves the
-  // whole selection together instead of collapsing to just that one item.
-  // Holds the grabbed shape's own pre-drag x/y (in whatever coordinate
-  // convention that shape's own Konva node uses); the delta between that
-  // and its drop position is applied identically to every selected entity.
-  const [groupDragOrigin, setGroupDragOrigin] = useState<Point | null>(null);
   const [openingHover, setOpeningHover] = useState<{ wall: Wall; offsetMm: number } | null>(null);
   const [openingDraft, setOpeningDraft] = useState<{ id: string; offsetMm: number } | null>(null);
   const [measureA, setMeasureA] = useState<Point | null>(null);
   const [underlayImg, setUnderlayImg] = useState<HTMLImageElement | null>(null);
   const [marqueeDraft, setMarqueeDraft] = useState<{ a: Point; b: Point } | null>(null);
   const [spacePressed, setSpacePressed] = useState(false);
+  // Geometric select + drag: all selection and dragging is driven by
+  // pickEntityAt (pure math on the doc), NOT Konva's pixel-based hit canvas.
+  // Konva reads the shape under the pointer from an offscreen hit canvas via
+  // getImageData — which Brave's fingerprint defense ("farbling") perturbs
+  // with per-pixel noise, so hits land nowhere or on the wrong shape
+  // (intermittent "can't select walls / some furniture won't move"). Doing
+  // the hit-test ourselves makes it identical in every browser.
+  const [manualDrag, setManualDrag] = useState<{ ids: string[]; delta: Point } | null>(null);
+  const manualDragRef = useRef<{ ids: string[]; startWorld: Point; single: boolean } | null>(null);
+  const pointerMods = useRef({ additive: false });
   /* Wall tool: press X mid-draw to flip the pending wall between internal
      (100mm) and external (200mm) — no more drawing first and re-typing the
      thickness afterwards. */
@@ -724,11 +688,14 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
     try {
       fn();
     } catch (err) {
-      console.error(`[canvas] ${label} failed — resetting interaction`, err);
-      setGroupDragOrigin(null);
+      // Loud on purpose: if this ever fires in the field we want it in the
+      // console so a "drag did nothing" report has an actual error attached.
+      console.warn('Drag aborted by guardDrag:', label, err);
       setWallEndDraft(null);
       setResizeDraft(null);
       setMarqueeDraft(null);
+      setManualDrag(null);
+      manualDragRef.current = null;
       openingDrag.current = null;
       panDrag.current = null;
       try {
@@ -849,14 +816,48 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
       panDrag.current = { pointer: screen, pan };
       return;
     }
-    if (tool === 'select' && isStageTarget) {
+    if (tool === 'select') {
       if (spacePressed) {
         panDrag.current = { pointer: screen, pan };
         return;
       }
+      // The resize/wall-endpoint handles are the only shapes that still
+      // listen (they're Konva-draggable). If one of them was grabbed,
+      // e.target isn't the stage — let Konva drive that drag and don't run
+      // geometric picking on top of it.
+      if (!isStageTarget) return;
       const raw = pointerWorld();
-      if (raw) setMarqueeDraft({ a: raw, b: raw });
-      select(null);
+      if (!raw) return;
+      // Geometric hit-test — independent of Konva's (Brave-broken) pixel
+      // hit canvas. Picks the top-most entity under the cursor by the same
+      // priority the context menu uses (symbol → label → opening → wall →
+      // room).
+      const hit = pickEntityAt(raw);
+      const additive = pointerMods.current.additive;
+      if (!hit) {
+        setMarqueeDraft({ a: raw, b: raw });
+        if (!additive) select(null);
+        return;
+      }
+      if (additive) {
+        toggleSelect(hit.id, true);
+        return;
+      }
+      // An opening drags by sliding along its wall (offsetMm), not by XY.
+      if (hit.kind === 'opening') {
+        select(hit.id);
+        const opening = doc.openings.find((o) => o.id === hit.id);
+        if (opening) openingDrag.current = { id: opening.id, wallId: opening.wallId };
+        return;
+      }
+      // A lone wall is select-only (it reshapes via endpoint handles); only
+      // a wall that's part of a multi-selection rides along in a group drag.
+      const inMulti = selectedIds.length > 1 && selectedIds.includes(hit.id);
+      if (!inMulti) select(hit.id);
+      if (hit.kind === 'wall' && !inMulti) return;
+      const ids = inMulti ? selectedIds : [hit.id];
+      manualDragRef.current = { ids, startWorld: raw, single: ids.length === 1 };
+      setManualDrag({ ids, delta: { x: 0, y: 0 } });
       return;
     }
     const raw = pointerWorld();
@@ -960,6 +961,17 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
       });
       return;
     }
+    if (manualDragRef.current) {
+      const raw = pointerWorld();
+      if (raw) {
+        const md = manualDragRef.current;
+        setManualDrag({
+          ids: md.ids,
+          delta: { x: raw.x - md.startWorld.x, y: raw.y - md.startWorld.y },
+        });
+      }
+      return;
+    }
     if (marqueeDraft) {
       const raw = pointerWorld();
       if (raw) setMarqueeDraft({ a: marqueeDraft.a, b: raw });
@@ -1023,6 +1035,20 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
 
   const pointerUp = () => {
     panDrag.current = null;
+
+    if (manualDragRef.current) {
+      const md = manualDragRef.current;
+      manualDragRef.current = null;
+      const raw = pointerWorld();
+      const delta = raw ? { x: raw.x - md.startWorld.x, y: raw.y - md.startWorld.y } : { x: 0, y: 0 };
+      setManualDrag(null);
+      // Below the threshold it was a click, not a drag — selection already
+      // happened on pointerDown, so there's nothing to commit.
+      if (Math.hypot(delta.x, delta.y) >= 6 / scale) {
+        guardDrag('Move selection', () => commitManualMove(md.ids, delta));
+      }
+      return;
+    }
 
     if (marqueeDraft) {
       // Distinguish an intentional drag from a plain click (which should
@@ -1100,6 +1126,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
       return;
     }
     if (e.evt.button !== 0) return;
+    pointerMods.current.additive = e.evt.shiftKey || e.evt.metaKey || e.evt.ctrlKey;
     pointerDown(e.target === stageRef.current, { x: e.evt.clientX, y: e.evt.clientY });
   };
 
@@ -1149,6 +1176,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
     // Konva's own tap/drag synthesis works from the touch events directly,
     // so shape selection and dragging are unaffected.
     if (e.evt.cancelable) e.evt.preventDefault();
+    pointerMods.current.additive = false; // no modifier keys on touch
     const t = e.evt.touches[0];
     pointerDown(e.target === stageRef.current, { x: t.clientX, y: t.clientY });
   };
@@ -1185,38 +1213,98 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
     setHoverPt(null);
   };
 
-  /** Translate every currently-selected room/wall/symbol/label by the same
-   *  (dx, dy) in one undo step. Openings move implicitly — their offsetMm
-   *  is relative to their wall's endpoints, which shift together. */
-  const commitGroupMove = (dx: number, dy: number) => {
-    if (dx === 0 && dy === 0) return;
-    let next = doc;
-    for (const id of selectedIds) {
-      const room = next.rooms.find((r) => r.id === id);
-      if (room) {
-        next = updateRoom(next, id, { x: room.x + dx, y: room.y + dy });
-        continue;
+  // The primary anchor point of an entity (used to snap a manual drag delta
+  // to the grid). Rooms/symbols/labels have an x/y; a wall uses endpoint a.
+  const entityAnchor = useCallback(
+    (id: string): Point | null => {
+      const room = doc.rooms.find((r) => r.id === id);
+      if (room) return { x: room.x, y: room.y };
+      const sym = doc.symbols.find((s) => s.id === id);
+      if (sym) return { x: sym.x, y: sym.y };
+      const label = doc.labels.find((l) => l.id === id);
+      if (label) return { x: label.x, y: label.y };
+      const wall = doc.walls.find((w) => w.id === id);
+      if (wall) return { x: wall.a.x, y: wall.a.y };
+      return null;
+    },
+    [doc],
+  );
+
+  // Commit a geometric drag of `ids` by `rawDelta`, grid-snapped. A single
+  // furniture symbol also re-runs wall-alignment so it still tucks flush to
+  // a nearby wall the way a placed piece does.
+  const commitManualMove = useCallback(
+    (ids: string[], rawDelta: Point) => {
+      if (ids.length === 0) return;
+      const anchor = entityAnchor(ids[0]);
+      if (!anchor) return;
+      const snapped = snapFree({ x: anchor.x + rawDelta.x, y: anchor.y + rawDelta.y });
+      const dx = snapped.x - anchor.x;
+      const dy = snapped.y - anchor.y;
+      if (dx === 0 && dy === 0) return;
+
+      if (ids.length === 1) {
+        const id = ids[0];
+        const sym = doc.symbols.find((s) => s.id === id);
+        if (sym) {
+          const nx = sym.x + dx;
+          const ny = sym.y + dy;
+          const aligned = alignToNearbyWall({ x: nx + sym.w / 2, y: ny + sym.h / 2 }, sym.w, sym.h);
+          commit(
+            'Move symbol',
+            aligned
+              ? updateSymbol(doc, id, { x: aligned.x, y: aligned.y, rotationDeg: aligned.rotationDeg })
+              : updateSymbol(doc, id, { x: nx, y: ny }),
+          );
+          return;
+        }
+        const room = doc.rooms.find((r) => r.id === id);
+        if (room) {
+          commit('Move room', updateRoom(doc, id, { x: room.x + dx, y: room.y + dy }));
+          return;
+        }
+        const label = doc.labels.find((l) => l.id === id);
+        if (label) {
+          commit('Move label', updateLabel(doc, id, { x: label.x + dx, y: label.y + dy }));
+          return;
+        }
+        return; // lone walls/openings aren't XY-dragged here
       }
-      const wall = next.walls.find((w) => w.id === id);
-      if (wall) {
-        next = updateWall(next, id, {
-          a: { x: wall.a.x + dx, y: wall.a.y + dy },
-          b: { x: wall.b.x + dx, y: wall.b.y + dy },
-        });
-        continue;
+
+      // Multi-selection: uniform delta across every selected entity.
+      let next = doc;
+      for (const id of ids) {
+        const room = next.rooms.find((r) => r.id === id);
+        if (room) {
+          next = updateRoom(next, id, { x: room.x + dx, y: room.y + dy });
+          continue;
+        }
+        const wall = next.walls.find((w) => w.id === id);
+        if (wall) {
+          next = updateWall(next, id, {
+            a: { x: wall.a.x + dx, y: wall.a.y + dy },
+            b: { x: wall.b.x + dx, y: wall.b.y + dy },
+          });
+          continue;
+        }
+        const sym = next.symbols.find((s) => s.id === id);
+        if (sym) {
+          next = updateSymbol(next, id, { x: sym.x + dx, y: sym.y + dy });
+          continue;
+        }
+        const label = next.labels.find((l) => l.id === id);
+        if (label) next = updateLabel(next, id, { x: label.x + dx, y: label.y + dy });
       }
-      const sym = next.symbols.find((s) => s.id === id);
-      if (sym) {
-        next = updateSymbol(next, id, { x: sym.x + dx, y: sym.y + dy });
-        continue;
-      }
-      const label = next.labels.find((l) => l.id === id);
-      if (label) next = updateLabel(next, id, { x: label.x + dx, y: label.y + dy });
-    }
-    commit('Move selection', next);
-  };
+      commit('Move selection', next);
+    },
+    [doc, entityAnchor, snapFree, alignToNearbyWall, commit],
+  );
 
   /* ---- render helpers ---- */
+
+  // Live visual offset for an entity during a geometric (manual) drag.
+  const manualOffset = (id: string): Point =>
+    manualDrag && manualDrag.ids.includes(id) ? manualDrag.delta : ZERO_POINT;
 
   const selectedRoom = doc.rooms.find((r) => r.id === selectedId) ?? null;
   const selectedWall = doc.walls.find((w) => w.id === selectedId) ?? null;
@@ -1562,59 +1650,16 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
             const isSel = selectedIds.includes(room.id);
             const stairs = room.type === 'Stairs';
             const zone = planMode === 'presentation' ? ROOM_ZONE_COLORS[room.type] : null;
+            const off = manualOffset(room.id);
             return (
+              // Selection + dragging are handled by the Stage-level geometric
+              // pointer pipeline (pickEntityAt), NOT Konva's pixel hit canvas
+              // — so no onClick/draggable here. `off` is the live drag preview.
               <Group
                 key={room.id}
-                x={r.x}
-                y={r.y}
-                draggable={tool === 'select' && !resizeDraft}
-                onClick={(e) => {
-                  if (tool !== 'select') return;
-                  const p = pointerWorld();
-                  const id = (p ? pickRoomAt(p) : undefined)?.id ?? room.id;
-                  const additive = e.evt.shiftKey || e.evt.metaKey || e.evt.ctrlKey;
-                  if (additive) toggleSelect(id, true);
-                  else select(id);
-                }}
-                onTap={() => {
-                  if (tool !== 'select') return;
-                  const p = pointerWorld();
-                  select((p ? pickRoomAt(p) : undefined)?.id ?? room.id);
-                }}
-                onDragStart={() => {
-                  if (selectedIds.length > 1 && selectedIds.includes(room.id)) {
-                    setGroupDragOrigin({ x: room.x, y: room.y });
-                  } else {
-                    select(room.id);
-                  }
-                }}
-                onDragEnd={(e) =>
-                  guardDrag(
-                    'Move room',
-                    () => {
-                      const snapped = snapFree({ x: e.target.x(), y: e.target.y() });
-                      e.target.position(snapped);
-                      if (groupDragOrigin && selectedIds.length > 1 && selectedIds.includes(room.id)) {
-                        const dx = snapped.x - groupDragOrigin.x;
-                        const dy = snapped.y - groupDragOrigin.y;
-                        setGroupDragOrigin(null);
-                        commitGroupMove(dx, dy);
-                        return;
-                      }
-                      // Single-entity move ONLY. An earlier version dragged the
-                      // room's "fabric" (walls whose endpoints fell inside the
-                      // room) along with it — but connected plans share walls
-                      // that extend beyond any one room, so partial carrying
-                      // tore the geometry apart (field bug: plans exploding
-                      // into shrapnel on first drag). Moving several things
-                      // together is what multi-select group-drag is for: it
-                      // translates the entire selection by one uniform delta,
-                      // which is always geometrically coherent.
-                      commit('Move room', updateRoom(doc, room.id, { x: snapped.x, y: snapped.y }));
-                    },
-                    e.target,
-                  )
-                }
+                x={r.x + off.x}
+                y={r.y + off.y}
+                listening={false}
               >
                 <Rect
                   width={r.w}
@@ -1627,33 +1672,15 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
                 {stairs ? (
                   <StairsTreads room={r} />
                 ) : (
-                  /* Name + area/height as one draggable group: drag the text
-                     off to a corner when furniture sits mid-room. The halo
-                     stroke keeps it readable over anything it lands on.
-                     CRITICAL: the group only listens when its room is
-                     already selected — an always-active label would put an
-                     invisible room-wide band across every room's middle
-                     that steals clicks and drags meant for the room (and a
-                     label dragged elsewhere would swallow clicks wherever
-                     it landed). Flow: first click selects the room (label
-                     is transparent to it), then the label can be dragged. */
+                  /* Name + area/height label. Non-interactive (listening
+                     false) so it never intercepts a click meant for the
+                     room — selection/drag is entirely geometric now. Any
+                     saved labelOffset is still honoured for position. The
+                     halo keeps it readable over furniture. */
                   <Group
                     x={r.labelOffset?.x ?? 0}
                     y={r.labelOffset?.y ?? 0}
-                    listening={isSel && tool === 'select'}
-                    draggable={isSel && tool === 'select'}
-                    onDragStart={(e) => {
-                      e.cancelBubble = true;
-                    }}
-                    onDragEnd={(e) => {
-                      e.cancelBubble = true;
-                      commit(
-                        'Move room label',
-                        updateRoom(doc, room.id, {
-                          labelOffset: { x: e.target.x(), y: e.target.y() },
-                        }),
-                      );
-                    }}
+                    listening={false}
                   >
                     <Text
                       text={r.name}
@@ -1695,43 +1722,19 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
             const openings = doc.openings.map((o) =>
               openingDraft && o.id === openingDraft.id ? { ...o, offsetMm: openingDraft.offsetMm } : o,
             );
-            // Walls only move as a whole via group-drag (grabbing this wall
-            // while it's part of a multi-selection) — a lone selected wall
-            // is reshaped via its endpoint handles instead, not dragged
-            // bodily. Only the first segment is made draggable so a wall
-            // split by an opening doesn't visually tear apart mid-drag.
-            const isGroupDraggable = tool === 'select' && selectedIds.length > 1 && selectedIds.includes(w.id);
-            return wallSegments(w, openings).map((seg, i) => (
+            // Selection is geometric (pickEntityAt); a lone wall reshapes via
+            // its endpoint handles and only rides along bodily as part of a
+            // multi-selection group drag, previewed here via manualOffset.
+            const off = manualOffset(w.id);
+            const dw = { a: { x: w.a.x + off.x, y: w.a.y + off.y }, b: { x: w.b.x + off.x, y: w.b.y + off.y } };
+            return wallSegments({ ...w, ...dw }, openings).map((seg, i) => (
               <Line
                 key={`${w.id}-${i}`}
                 points={[seg.a.x, seg.a.y, seg.b.x, seg.b.y]}
                 stroke={isSel ? ACTION : WALL}
                 strokeWidth={w.thickness}
                 lineCap="square"
-                // Keep the clickable band a constant width on screen — a
-                // fixed mm value shrinks to just a few px once the user
-                // zooms out to see the whole plan, which is exactly when
-                // thin internal walls (sandwiched between two much larger,
-                // always-clickable room rects) become unselectable.
-                hitStrokeWidth={Math.max(w.thickness, 24 / scale)}
-                draggable={i === 0 && isGroupDraggable}
-                onClick={(e) => {
-                  if (tool !== 'select') return;
-                  const additive = e.evt.shiftKey || e.evt.metaKey || e.evt.ctrlKey;
-                  if (additive) toggleSelect(w.id, true);
-                  else select(w.id);
-                }}
-                onTap={() => tool === 'select' && select(w.id)}
-                onDragStart={() => setGroupDragOrigin(w.a)}
-                onDragEnd={(e) => {
-                  if (!groupDragOrigin) return;
-                  const snappedA = snapFree({ x: w.a.x + e.target.x(), y: w.a.y + e.target.y() });
-                  e.target.position({ x: 0, y: 0 });
-                  const dx = snappedA.x - w.a.x;
-                  const dy = snappedA.y - w.a.y;
-                  setGroupDragOrigin(null);
-                  commitGroupMove(dx, dy);
-                }}
+                listening={false}
               />
             ));
           })}
@@ -1833,112 +1836,43 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
             const wall = findWall(doc, o.wallId);
             if (!wall) return null;
             const effective = openingDraft && o.id === openingDraft.id ? { ...o, offsetMm: openingDraft.offsetMm } : o;
+            return <OpeningShape key={o.id} wall={wall} opening={effective} selected={selectedIds.includes(o.id)} />;
+          })}
+
+          {/* Furniture symbols — non-interactive; selection + drag come from
+              the Stage-level geometric pipeline. `off` is the live preview. */}
+          {showFurniture &&
+            doc.symbols.map((sym) => {
+              const off = manualOffset(sym.id);
+              return (
+                <SymbolNode
+                  key={sym.id}
+                  sym={off.x || off.y ? { ...sym, x: sym.x + off.x, y: sym.y + off.y } : sym}
+                  selected={selectedIds.includes(sym.id)}
+                />
+              );
+            })}
+
+          {/* Text labels — non-interactive; selection + drag via the
+              Stage-level geometric pipeline. `off` is the live preview. */}
+          {doc.labels.map((label) => {
+            const off = manualOffset(label.id);
             return (
-              <OpeningShape
-                key={o.id}
-                wall={wall}
-                opening={effective}
-                selected={selectedIds.includes(o.id)}
-                onSelect={(additive) => {
-                  if (tool !== 'select') return;
-                  if (additive) toggleSelect(o.id, true);
-                  else select(o.id);
-                }}
-                onGrab={() => {
-                  if (tool !== 'select') return;
-                  select(o.id);
-                  openingDrag.current = { id: o.id, wallId: o.wallId };
-                }}
+              <Text
+                key={label.id}
+                x={label.x + off.x}
+                y={label.y + off.y}
+                text={label.text}
+                fontSize={220}
+                fontFamily={SANS}
+                fontStyle="600"
+                fill={selectedIds.includes(label.id) ? ACTION : INK}
+                align="center"
+                offsetX={label.text.length * 55}
+                listening={false}
               />
             );
           })}
-
-          {/* Furniture symbols */}
-          {showFurniture && doc.symbols.map((sym) => (
-            <SymbolNode
-              key={sym.id}
-              sym={sym}
-              selected={selectedIds.includes(sym.id)}
-              isMultiSelected={selectedIds.length > 1 && selectedIds.includes(sym.id)}
-              draggable={tool === 'select'}
-              onSelect={(additive) => {
-                if (tool !== 'select') return;
-                if (additive) toggleSelect(sym.id, true);
-                else select(sym.id);
-              }}
-              onMove={(x, y) =>
-                guardDrag('Move symbol', () => {
-                  const centre = { x: x + sym.w / 2, y: y + sym.h / 2 };
-                  const aligned = alignToNearbyWall(centre, sym.w, sym.h);
-                  if (aligned) {
-                    commit(
-                      'Move symbol',
-                      updateSymbol(doc, sym.id, { x: aligned.x, y: aligned.y, rotationDeg: aligned.rotationDeg }),
-                    );
-                  } else {
-                    const snapped = snapFree({ x, y });
-                    commit('Move symbol', updateSymbol(doc, sym.id, { x: snapped.x, y: snapped.y }));
-                  }
-                })
-              }
-              onGroupDragStart={(x, y) => setGroupDragOrigin({ x, y })}
-              onGroupDragEnd={(x, y) => {
-                if (!groupDragOrigin) return;
-                const snapped = snapFree({ x, y });
-                const dx = snapped.x - groupDragOrigin.x;
-                const dy = snapped.y - groupDragOrigin.y;
-                setGroupDragOrigin(null);
-                commitGroupMove(dx, dy);
-              }}
-            />
-          ))}
-
-          {/* Text labels */}
-          {doc.labels.map((label) => (
-            <Text
-              key={label.id}
-              x={label.x}
-              y={label.y}
-              text={label.text}
-              fontSize={220}
-              fontFamily={SANS}
-              fontStyle="600"
-              fill={selectedIds.includes(label.id) ? ACTION : INK}
-              align="center"
-              offsetX={label.text.length * 55}
-              draggable={tool === 'select'}
-              onClick={(e) => {
-                if (tool !== 'select') return;
-                const additive = e.evt.shiftKey || e.evt.metaKey || e.evt.ctrlKey;
-                if (additive) toggleSelect(label.id, true);
-                else select(label.id);
-              }}
-              onTap={() => tool === 'select' && select(label.id)}
-              onDragStart={() => {
-                if (selectedIds.length > 1 && selectedIds.includes(label.id)) {
-                  setGroupDragOrigin({ x: label.x, y: label.y });
-                } else {
-                  select(label.id);
-                }
-              }}
-              onDragEnd={(e) =>
-                guardDrag(
-                  'Move label',
-                  () => {
-                    if (groupDragOrigin && selectedIds.length > 1 && selectedIds.includes(label.id)) {
-                      const dx = e.target.x() - groupDragOrigin.x;
-                      const dy = e.target.y() - groupDragOrigin.y;
-                      setGroupDragOrigin(null);
-                      commitGroupMove(dx, dy);
-                      return;
-                    }
-                    commit('Move label', updateLabel(doc, label.id, { x: e.target.x(), y: e.target.y() }));
-                  },
-                  e.target,
-                )
-              }
-            />
-          ))}
 
           {/* Measure overlay */}
           {tool === 'measure' && measureA && hoverPt && (

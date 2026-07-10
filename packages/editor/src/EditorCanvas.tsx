@@ -618,10 +618,16 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
     [snapEnabled],
   );
 
-  // Floored at 150mm so a thin (100mm) internal wall stays reliably
-  // clickable even at max zoom, where 24/scale alone would shrink below
-  // the wall's own thickness.
+  // Generous band used when PLACING a door/window (you click near a wall
+  // and it snaps on) — a wide catch radius is helpful there.
   const wallHitToleranceMm = Math.max(24 / scale, 150);
+  // Tight ~12px band for SELECTING a wall/opening by click. A wide select
+  // band overlaps at corners, so the perpendicular-nearest wall
+  // cannibalises clicks meant for its neighbour ("some walls can't be
+  // selected even clicked directly" / "selects from far away"). Floored at
+  // 60mm so the full visible thickness of a 100mm wall stays grabbable even
+  // at max zoom-in.
+  const wallSelectToleranceMm = Math.max(12 / scale, 60);
 
   // Rooms and stairs are both plain RoomRects sharing doc.rooms, so a click
   // inside a room can also land inside a smaller stairs (or other room)
@@ -666,7 +672,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
           return { id: l.id, kind: 'label' };
         }
       }
-      const hit = nearestWall(doc, p, wallHitToleranceMm);
+      const hit = nearestWall(doc, p, wallSelectToleranceMm);
       if (hit) {
         const opening = doc.openings.find(
           (o) => o.wallId === hit.wall.id && Math.abs(hit.offsetMm - o.offsetMm) <= o.widthMm / 2 + 100,
@@ -678,7 +684,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
       if (room) return { id: room.id, kind: 'room' };
       return undefined;
     },
-    [doc, wallHitToleranceMm, pickRoomAt],
+    [doc, wallSelectToleranceMm, pickRoomAt],
   );
 
   // Crash-proofing for drag handlers: if a geometry/commit throws mid-drag,
@@ -850,11 +856,11 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
         if (opening) openingDrag.current = { id: opening.id, wallId: opening.wallId };
         return;
       }
-      // A lone wall is select-only (it reshapes via endpoint handles); only
-      // a wall that's part of a multi-selection rides along in a group drag.
+      // Every hit entity — walls included — is grabbable: a click selects,
+      // a drag moves. Grabbing the wall BODY translates the whole wall;
+      // its endpoint handles (separate listening nodes) still reshape it.
       const inMulti = selectedIds.length > 1 && selectedIds.includes(hit.id);
       if (!inMulti) select(hit.id);
-      if (hit.kind === 'wall' && !inMulti) return;
       const ids = inMulti ? selectedIds : [hit.id];
       manualDragRef.current = { ids, startWorld: raw, single: ids.length === 1 };
       setManualDrag({ ids, delta: { x: 0, y: 0 } });
@@ -1268,7 +1274,18 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
           commit('Move label', updateLabel(doc, id, { x: label.x + dx, y: label.y + dy }));
           return;
         }
-        return; // lone walls/openings aren't XY-dragged here
+        const wall = doc.walls.find((w) => w.id === id);
+        if (wall) {
+          commit(
+            'Move wall',
+            updateWall(doc, id, {
+              a: { x: wall.a.x + dx, y: wall.a.y + dy },
+              b: { x: wall.b.x + dx, y: wall.b.y + dy },
+            }),
+          );
+          return;
+        }
+        return; // openings slide along their wall, handled separately
       }
 
       // Multi-selection: uniform delta across every selected entity.

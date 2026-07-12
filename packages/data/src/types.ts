@@ -1,4 +1,4 @@
-import type { FloorDoc, PropertyStatus } from '@floorplan/core';
+import type { FloorDoc, PropertySurvey, PropertyStatus } from '@floorplan/core';
 
 /**
  * Repository layer. The app only ever talks to these interfaces.
@@ -19,6 +19,8 @@ export interface PropertyRecord {
   buildYear?: number;
   constructionType?: 'masonry' | 'timber-frame' | 'steel-frame' | 'unknown';
   heatingSystem?: string;
+  /** Structured RdSAP survey capture (see SURVEY_SCHEMA). */
+  survey?: PropertySurvey;
 }
 
 export interface FloorRecord {

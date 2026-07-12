@@ -10,6 +10,7 @@ import {
   parseDoc,
   serializeDoc,
   setNorthAngle,
+  scaleDoc,
   updateRoom,
   wallEndpoints,
   wallsForRoom,
@@ -191,5 +192,38 @@ describe('autoClassifyWallThickness', () => {
     expect(th('bottom')).toBe(200);
     expect(th('mid')).toBe(100);
     expect(th('custom')).toBe(150); // untouched
+  });
+});
+
+
+describe('scaleDoc', () => {
+  const p = (x: number, y: number) => ({ x, y });
+  it('scales every planar length about the origin but leaves ceiling height alone', () => {
+    let d = emptyFloorDoc();
+    d = addWall(d, { id: 'w', a: p(1000, 0), b: p(3000, 0), thickness: 100 });
+    d = addRoom(d, { ...room, id: 'r', x: 1000, y: 1000, w: 2000, h: 1000, ceilingHeightM: 2.4 });
+    d = { ...d, openings: [{ id: 'o', wallId: 'w', kind: 'door', offsetMm: 1000, widthMm: 800, hinge: 'left' }] };
+    const out = scaleDoc(d, 2, p(1000, 0));
+    expect(out.walls[0].a).toEqual(p(1000, 0));
+    expect(out.walls[0].b).toEqual(p(5000, 0));
+    expect(out.walls[0].thickness).toBe(200);
+    expect(out.openings[0].widthMm).toBe(1600);
+    expect(out.openings[0].offsetMm).toBe(2000);
+    expect(out.rooms[0].w).toBe(4000);
+    expect(out.rooms[0].ceilingHeightM).toBe(2.4);
+  });
+
+  it('calibrating a wall to a target length makes it exactly that length', () => {
+    let d = emptyFloorDoc();
+    d = addWall(d, { id: 'w', a: p(0, 0), b: p(0, 2200), thickness: 100 });
+    const out = scaleDoc(d, 3000 / 2200, p(0, 0));
+    const len = Math.hypot(out.walls[0].b.x - out.walls[0].a.x, out.walls[0].b.y - out.walls[0].a.y);
+    expect(Math.round(len)).toBe(3000);
+  });
+
+  it('ignores a non-positive or non-finite factor', () => {
+    const d = addWall(emptyFloorDoc(), { id: 'w', a: p(0, 0), b: p(1000, 0), thickness: 100 });
+    expect(scaleDoc(d, 0)).toBe(d);
+    expect(scaleDoc(d, Number.NaN)).toBe(d);
   });
 });

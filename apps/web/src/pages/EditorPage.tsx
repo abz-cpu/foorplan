@@ -27,6 +27,7 @@ import {
   deleteEntities,
   normalizeDoc,
   type FloorDoc,
+  type PropertySurvey,
   type PropertyStatus,
 } from '@floorplan/core';
 import type { FloorRecord, PropertyRecord } from '@floorplan/data';
@@ -366,10 +367,23 @@ export default function EditorPage() {
     const csv = buildEpcCsv(
       `${property.addressLine1}${property.postcode ? `, ${property.postcode}` : ''}`,
       fresh.map((f) => ({ name: f.name, doc: normalizeDoc(f.doc) })),
+      property.survey,
     );
     downloadBlob(`${slugify(property.addressLine1)}-epc.csv`, new Blob([csv], { type: 'text/csv' }));
     toast('EPC data downloaded');
   };
+
+  // RdSAP survey edits persist to the property record (debounced by React's
+  // batching — each field change writes the whole small object, which is
+  // cheap) and update local state so the panel reflects it immediately.
+  const handleSurveyChange = useCallback(
+    (survey: PropertySurvey) => {
+      setProperty((prev) => (prev ? { ...prev, survey } : prev));
+      const id = property?.id;
+      if (id) void repos.properties.update(id, { survey });
+    },
+    [property?.id],
+  );
 
   const closeExport = () => {
     setExportOpen(false);
@@ -747,6 +761,8 @@ export default function EditorPage() {
             onDownloadEpcCsv={() => void downloadEpcCsv()}
             address={property ? `${property.addressLine1}${property.postcode ? `, ${property.postcode}` : ''}` : ''}
             floors={floors.map((f) => ({ id: f.id, name: f.name, doc: f.doc }))}
+            survey={property?.survey}
+            onSurveyChange={handleSurveyChange}
             initialTab={searchParams.get('assistant') === '1' ? 'assistant' : 'props'}
           />
         )}
@@ -775,6 +791,8 @@ export default function EditorPage() {
             onDownloadEpcCsv={() => void downloadEpcCsv()}
             address={property ? `${property.addressLine1}${property.postcode ? `, ${property.postcode}` : ''}` : ''}
             floors={floors.map((f) => ({ id: f.id, name: f.name, doc: f.doc }))}
+            survey={property?.survey}
+            onSurveyChange={handleSurveyChange}
             initialTab={searchParams.get('assistant') === '1' ? 'assistant' : 'props'}
           />
         </div>

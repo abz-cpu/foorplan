@@ -7,18 +7,45 @@ const FONTS = {
 
 const rad = (deg: number) => (deg * Math.PI) / 180;
 
-/** Rasterize a shape list (paper-mm coordinates) onto a canvas at `pxPerMm`. */
-export function drawShapesToCanvas(
+function loadImage(href: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new window.Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Image failed to load'));
+    img.src = href;
+  });
+}
+
+/**
+ * Rasterize a shape list (paper-mm coordinates) onto a canvas at `pxPerMm`.
+ * Async because `image` shapes (e.g. a branding logo) must be decoded before
+ * they can be drawn.
+ */
+export async function drawShapesToCanvas(
   canvas: HTMLCanvasElement,
   shapes: Shape[],
   widthMm: number,
   heightMm: number,
   pxPerMm: number,
-): void {
+): Promise<void> {
   canvas.width = Math.round(widthMm * pxPerMm);
   canvas.height = Math.round(heightMm * pxPerMm);
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Canvas 2D context unavailable');
+
+  // Decode every image up front so the draw loop stays synchronous.
+  const images = new Map<string, HTMLImageElement>();
+  await Promise.all(
+    shapes
+      .filter((s): s is Extract<Shape, { kind: 'image' }> => s.kind === 'image')
+      .map(async (s) => {
+        try {
+          images.set(s.href, await loadImage(s.href));
+        } catch {
+          /* a broken logo shouldn't sink the whole export */
+        }
+      }),
+  );
 
   ctx.fillStyle = '#FFFFFF';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -77,6 +104,11 @@ export function drawShapesToCanvas(
         } else {
           ctx.fillText(s.text, s.x, s.y);
         }
+        break;
+      }
+      case 'image': {
+        const img = images.get(s.href);
+        if (img) ctx.drawImage(img, s.x, s.y, s.w, s.h);
         break;
       }
     }

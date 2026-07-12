@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Check, Download, FileText, Image, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Check, Download, FileText, Image, Trash2, Upload, X } from 'lucide-react';
 import type { FloorDoc } from '@floorplan/core';
 import {
   buildFloorSheet,
@@ -13,7 +13,8 @@ import {
   type Orientation,
   type PaperSize,
 } from '@floorplan/export';
-import { SegmentedControl } from '@floorplan/ui';
+import { SegmentedControl, useToast } from '@floorplan/ui';
+import { loadBrandProfile, readLogoFile, saveBrandProfile } from '../../lib/brand';
 
 const EXPORT_DPI = 300;
 const PX_PER_MM = EXPORT_DPI / 25.4;
@@ -71,6 +72,22 @@ export function ExportModal({
   const [disclaimer, setDisclaimer] = useState(true);
   const [planMode, setPlanMode] = useState<'technical' | 'presentation'>(initialPlanMode);
   const [phase, setPhase] = useState<'idle' | 'working' | 'done'>('idle');
+  const [brand, setBrand] = useState(() => loadBrandProfile());
+  const logoInputRef = useRef<HTMLInputElement>(null);
+  const toast = useToast();
+
+  // Persist the brand profile whenever it changes so it's reused next time.
+  useEffect(() => saveBrandProfile(brand), [brand]);
+
+  const pickLogo = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      const { dataUrl, aspect } = await readLogoFile(file);
+      setBrand((b) => ({ ...b, logoDataUrl: dataUrl, logoAspect: aspect }));
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Could not load that logo');
+    }
+  };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -88,8 +105,9 @@ export function ExportModal({
         showMeasurements: measurements,
         disclaimer,
         planMode,
+        brand,
       }),
-    [doc, address, floorName, paper, orientation, measurements, disclaimer, planMode],
+    [doc, address, floorName, paper, orientation, measurements, disclaimer, planMode, brand],
   );
   const previewSvg = useMemo(
     () => shapesToSvg(sheet.shapes, sheet.widthMm, sheet.heightMm),
@@ -114,7 +132,7 @@ export function ExportModal({
         blob = new Blob([previewSvg], { type: 'image/svg+xml' });
       } else {
         const canvas = document.createElement('canvas');
-        drawShapesToCanvas(canvas, sheet.shapes, sheet.widthMm, sheet.heightMm, PX_PER_MM);
+        await drawShapesToCanvas(canvas, sheet.shapes, sheet.widthMm, sheet.heightMm, PX_PER_MM);
         blob = await canvasToBlob(
           canvas,
           format === 'png' ? 'image/png' : 'image/jpeg',
@@ -251,11 +269,61 @@ export function ExportModal({
             <div>
               <div className="mb-0.5 text-xs font-semibold text-ink-mid">Options</div>
               <Toggle label="Include measurements" checked={measurements} onChange={setMeasurements} />
-              <Toggle
-                label="Include L&D Energy disclaimer"
-                checked={disclaimer}
-                onChange={setDisclaimer}
+              <Toggle label="Include disclaimer" checked={disclaimer} onChange={setDisclaimer} />
+            </div>
+
+            <div>
+              <div className="mb-1.5 text-xs font-semibold text-ink-mid">Branding</div>
+              <input
+                value={brand.companyName ?? ''}
+                onChange={(e) => setBrand((b) => ({ ...b, companyName: e.target.value }))}
+                placeholder="Company name (e.g. L&D Energy)"
+                className="h-8 w-full rounded-lg border border-input bg-white px-2.5 text-[12.5px] text-ink outline-none focus:border-action"
               />
+              <input
+                ref={logoInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/svg+xml"
+                className="hidden"
+                onChange={(e) => {
+                  void pickLogo(e.target.files?.[0]);
+                  e.target.value = '';
+                }}
+              />
+              <div className="mt-2 flex items-center gap-2">
+                {brand.logoDataUrl ? (
+                  <img
+                    src={brand.logoDataUrl}
+                    alt="Logo preview"
+                    className="h-9 max-w-[96px] rounded border border-line-soft bg-white object-contain p-0.5"
+                  />
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => logoInputRef.current?.click()}
+                  className="flex h-8 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-input bg-white text-[12px] font-semibold text-ink-mid hover:bg-shell"
+                >
+                  <Upload size={13} /> {brand.logoDataUrl ? 'Replace logo' : 'Upload logo'}
+                </button>
+                {brand.logoDataUrl ? (
+                  <button
+                    type="button"
+                    title="Remove logo"
+                    onClick={() => setBrand((b) => ({ ...b, logoDataUrl: undefined, logoAspect: undefined }))}
+                    className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg border border-input bg-white text-ink-faint hover:bg-shell hover:text-danger"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                ) : null}
+              </div>
+              <textarea
+                value={brand.disclaimerText ?? ''}
+                onChange={(e) => setBrand((b) => ({ ...b, disclaimerText: e.target.value }))}
+                placeholder="Custom disclaimer (optional — leave blank for the standard RICS wording)"
+                rows={2}
+                className="mt-2 w-full resize-none rounded-lg border border-input bg-white px-2.5 py-1.5 text-[11.5px] leading-snug text-ink outline-none focus:border-action"
+              />
+              <p className="mt-1 text-[11px] text-ink-ghost">Saved on this device and reused for every export.</p>
             </div>
           </div>
 

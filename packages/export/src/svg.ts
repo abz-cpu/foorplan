@@ -63,6 +63,12 @@ export function shapesToSvg(shapes: Shape[], widthMm: number, heightMm: number):
         );
         break;
       }
+      case 'image': {
+        parts.push(
+          `<image x="${n(s.x)}" y="${n(s.y)}" width="${n(s.w)}" height="${n(s.h)}" href="${escXml(s.href)}" preserveAspectRatio="xMidYMid meet"/>`,
+        );
+        break;
+      }
     }
   }
   parts.push('</svg>');

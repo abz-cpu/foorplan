@@ -18,6 +18,18 @@ const PAPER_MM: Record<PaperSize, [number, number]> = {
   a3: [297, 420],
 };
 
+/** Reusable company branding stamped onto the exported sheet. All optional —
+ *  anything omitted falls back to the built-in L&D Energy defaults. */
+export interface BrandProfile {
+  companyName?: string;
+  /** data: URL (PNG/JPEG) of the company logo */
+  logoDataUrl?: string;
+  /** logo width ÷ height, so the sheet can size it without decoding it */
+  logoAspect?: number;
+  /** overrides the standard RICS disclaimer wording */
+  disclaimerText?: string;
+}
+
 export interface SheetOptions {
   address: string;
   floorName: string;
@@ -28,6 +40,8 @@ export interface SheetOptions {
   /** 'presentation' carries the editor's zonal room-color shading into the
    *  exported sheet; 'technical' (default) keeps the plain line-art look. */
   planMode?: 'technical' | 'presentation';
+  /** Company branding for the header/footer. */
+  brand?: BrandProfile;
 }
 
 /** A composed export sheet: shapes in paper-millimetre coordinates. */
@@ -81,8 +95,9 @@ export function buildFloorSheet(doc: FloorDoc, opts: SheetOptions): Sheet {
   const headerH = 15;
 
   const shapes: Shape[] = [];
+  const brand = opts.brand ?? {};
 
-  /* Header: address + floor/GIA, brand mark right */
+  /* Header: address + floor/GIA, brand mark (logo or company name) right */
   shapes.push(
     { kind: 'text', x: margin, y: margin + 4.6, text: opts.address, size: 5, color: INK, font: 'sans', weight: 700, align: 'left' },
     {
@@ -95,26 +110,45 @@ export function buildFloorSheet(doc: FloorDoc, opts: SheetOptions): Sheet {
       font: 'sans',
       align: 'left',
     },
-    { kind: 'rect', x: W - margin - 27.5, y: margin + 0.6, w: 4.2, h: 4.2, fill: BRAND },
-    {
-      kind: 'text',
-      x: W - margin,
-      y: margin + 4,
-      text: 'L&D ENERGY',
-      size: 2.9,
-      color: '#33433E',
-      font: 'sans',
-      weight: 700,
-      align: 'right',
-    },
-    { kind: 'line', x1: margin, y1: margin + headerH - 2.5, x2: W - margin, y2: margin + headerH - 2.5, stroke: RULE, width: 0.4 },
   );
+  if (brand.logoDataUrl) {
+    // Right-aligned logo, capped to a header-sized box.
+    const logoH = 9;
+    const aspect = brand.logoAspect && brand.logoAspect > 0 ? brand.logoAspect : 3;
+    const logoW = Math.min(logoH * aspect, 52);
+    shapes.push({
+      kind: 'image',
+      x: W - margin - logoW,
+      y: margin,
+      w: logoW,
+      h: logoH,
+      href: brand.logoDataUrl,
+    });
+  } else {
+    const company = (brand.companyName && brand.companyName.trim()) || 'L&D ENERGY';
+    shapes.push(
+      { kind: 'rect', x: W - margin - 27.5, y: margin + 0.6, w: 4.2, h: 4.2, fill: BRAND },
+      {
+        kind: 'text',
+        x: W - margin,
+        y: margin + 4,
+        text: company.toUpperCase(),
+        size: 2.9,
+        color: '#33433E',
+        font: 'sans',
+        weight: 700,
+        align: 'right',
+      },
+    );
+  }
+  shapes.push({ kind: 'line', x1: margin, y1: margin + headerH - 2.5, x2: W - margin, y2: margin + headerH - 2.5, stroke: RULE, width: 0.4 });
 
   /* Footer disclaimer */
   let footerH = 0;
   if (opts.disclaimer) {
     const size = 2.2;
-    const lines = wrapText(DISCLAIMER_TEXT, Math.floor((W - margin * 2) / (size * 0.5)));
+    const text = (brand.disclaimerText && brand.disclaimerText.trim()) || DISCLAIMER_TEXT;
+    const lines = wrapText(text, Math.floor((W - margin * 2) / (size * 0.5)));
     footerH = lines.length * (size * 1.5) + 4;
     shapes.push({
       kind: 'line',

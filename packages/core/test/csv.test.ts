@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildEpcCsv } from '../src/csv';
 import { addRoom, emptyFloorDoc } from '../src/doc';
+import { surveyCompletion } from '../src/survey';
 import type { RoomRect } from '../src/types';
 
 const room = (over: Partial<RoomRect>): RoomRect => ({
@@ -36,5 +37,32 @@ describe('buildEpcCsv', () => {
     expect(csv).not.toMatch(/Ground Floor,Stairs,Stairs/);
     // Floor total carries the heat-loss perimeter figure
     expect(csv).toMatch(/Ground Floor,FLOOR TOTAL,,/);
+  });
+
+  it('appends only the filled-in RdSAP survey fields, with suffixes', () => {
+    const doc = addRoom(emptyFloorDoc(), room({ id: 'r1', name: 'Living Room', type: 'Living Room' }));
+    const csv = buildEpcCsv('42 Sample Street', [{ name: 'Ground Floor', doc }], {
+      wallConstruction: 'Cavity',
+      lowEnergyLightingPct: 80,
+      roofType: '', // blank → skipped
+    });
+    expect(csv).toContain('RDSAP SURVEY');
+    expect(csv).toContain('Walls,Construction,Cavity');
+    expect(csv).toContain('Ventilation & lighting,Low-energy lighting,80%');
+    expect(csv).not.toContain('Roof,Type,');
+  });
+
+  it('omits the survey block entirely when no survey is passed', () => {
+    const doc = addRoom(emptyFloorDoc(), room({ id: 'r1' }));
+    expect(buildEpcCsv('X', [{ name: 'Ground Floor', doc }])).not.toContain('RDSAP SURVEY');
+  });
+});
+
+describe('surveyCompletion', () => {
+  it('counts filled fields, ignoring blanks and undefined', () => {
+    const { total } = surveyCompletion({});
+    expect(total).toBeGreaterThan(10);
+    expect(surveyCompletion({}).done).toBe(0);
+    expect(surveyCompletion({ wallConstruction: 'Cavity', ageBand: '', notes: '  ' }).done).toBe(1);
   });
 });

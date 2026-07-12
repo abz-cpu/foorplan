@@ -53,6 +53,16 @@ export type Shape =
       weight?: number;
       align?: 'left' | 'center' | 'right';
       rotateDeg?: number;
+    }
+  | {
+      kind: 'image';
+      /** top-left, paper-mm */
+      x: number;
+      y: number;
+      w: number;
+      h: number;
+      /** data: URL (PNG/JPEG) — embedded so export stays fully offline */
+      href: string;
     };
 
 export interface DocShapesOptions {
@@ -444,6 +454,8 @@ export function transformShapes(shapes: Shape[], scale: number, dx: number, dy: 
         };
       case 'text':
         return { ...s, x: sx(s.x), y: sy(s.y), size: s.size * scale };
+      case 'image':
+        return { ...s, x: sx(s.x), y: sy(s.y), w: s.w * scale, h: s.h * scale };
     }
   });
 }

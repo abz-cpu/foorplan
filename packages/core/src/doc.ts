@@ -50,6 +50,44 @@ export function addWall(doc: FloorDoc, wall: Wall): FloorDoc {
   return { ...doc, walls: [...doc.walls, wall] };
 }
 
+/**
+ * Uniformly scale the whole plan's drawn geometry by `factor` about
+ * `origin` — the "calibrate to a known measurement" operation: sketch
+ * roughly, then set one wall's true length and the entire plan snaps to
+ * scale (Leica DISTO / zPlan style). Every planar length scales — wall
+ * endpoints, room rects, opening offsets/widths, wall thickness, symbol
+ * footprints, label positions. Ceiling heights and the north angle are NOT
+ * spatial drawing data, so they're left untouched.
+ */
+export function scaleDoc(doc: FloorDoc, factor: number, origin: Point = { x: 0, y: 0 }): FloorDoc {
+  if (!Number.isFinite(factor) || factor <= 0) return doc;
+  const sp = (p: Point): Point => ({
+    x: origin.x + (p.x - origin.x) * factor,
+    y: origin.y + (p.y - origin.y) * factor,
+  });
+  return {
+    ...doc,
+    walls: doc.walls.map((w) => ({ ...w, a: sp(w.a), b: sp(w.b), thickness: w.thickness * factor })),
+    rooms: doc.rooms.map((r) => ({
+      ...r,
+      x: origin.x + (r.x - origin.x) * factor,
+      y: origin.y + (r.y - origin.y) * factor,
+      w: r.w * factor,
+      h: r.h * factor,
+      labelOffset: r.labelOffset ? { x: r.labelOffset.x * factor, y: r.labelOffset.y * factor } : r.labelOffset,
+    })),
+    openings: doc.openings.map((o) => ({ ...o, offsetMm: o.offsetMm * factor, widthMm: o.widthMm * factor })),
+    symbols: doc.symbols.map((s) => ({
+      ...s,
+      x: origin.x + (s.x - origin.x) * factor,
+      y: origin.y + (s.y - origin.y) * factor,
+      w: s.w * factor,
+      h: s.h * factor,
+    })),
+    labels: doc.labels.map((l) => ({ ...l, x: origin.x + (l.x - origin.x) * factor, y: origin.y + (l.y - origin.y) * factor })),
+  };
+}
+
 export function addRoom(doc: FloorDoc, room: RoomRect): FloorDoc {
   return { ...doc, rooms: [...doc.rooms, room] };
 }

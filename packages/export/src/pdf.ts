@@ -111,6 +111,23 @@ export async function shapesToPdfBytes(
         });
         break;
       }
+      case 'image': {
+        try {
+          const comma = s.href.indexOf(',');
+          const meta = s.href.slice(0, comma);
+          const bytes = Uint8Array.from(atob(s.href.slice(comma + 1)), (c) => c.charCodeAt(0));
+          const img = /jpe?g/i.test(meta) ? await pdf.embedJpg(bytes) : await pdf.embedPng(bytes);
+          page.drawImage(img, {
+            x: X(s.x),
+            y: Y(s.y) - s.h * PT_PER_MM,
+            width: s.w * PT_PER_MM,
+            height: s.h * PT_PER_MM,
+          });
+        } catch {
+          /* skip an unembeddable logo rather than fail the export */
+        }
+        break;
+      }
       case 'text': {
         const font = pickFont(s);
         const size = s.size * PT_PER_MM;

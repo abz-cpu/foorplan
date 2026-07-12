@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
+  ChevronDown,
+  ClipboardList,
   Compass,
   Copy,
   Download,
@@ -13,6 +15,7 @@ import {
   RefreshCw,
   RotateCcw,
   RotateCw,
+  Ruler,
   ScanSearch,
   Sparkles,
   Trash2,
@@ -36,7 +39,11 @@ import {
   roomAreaM2,
   roomPerimeterM,
   ROOM_TYPES,
+  scaleDoc,
   setNorthAngle,
+  SURVEY_SCHEMA,
+  surveyCompletion,
+  type PropertySurvey,
   setUnderlay,
   SYMBOL_DEFS,
   updateLabel,
@@ -120,6 +127,10 @@ function PanelButton({
   );
 }
 
+/** Floor for the room W/L steppers — a room can't be dragged smaller than
+ *  this on canvas either (MIN_ROOM_MM in the editor constants). */
+const MIN_ROOM_MM_UI = 300;
+
 const numberInputClass =
   'h-9 w-full rounded-[9px] border border-input bg-white pl-3 pr-9 font-mono text-[13px] text-ink outline-none focus:border-action focus:ring-[3px] focus:ring-action/[0.13]';
 const textInputClass =
@@ -196,11 +207,110 @@ function SizeStepper({
   );
 }
 
+/** Property-level RdSAP survey capture, rendered generically from
+ *  SURVEY_SCHEMA so a new field only has to be declared in core. */
+function SurveySection({
+  survey,
+  onChange,
+}: {
+  survey: PropertySurvey;
+  onChange: (next: PropertySurvey) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const { done, total } = surveyCompletion(survey);
+  const set = (key: string, value: string) =>
+    onChange({ ...survey, [key]: value === '' ? undefined : value });
+  const selectClass =
+    'h-8 w-full cursor-pointer rounded-[8px] border border-input bg-white px-2 text-[12.5px] text-ink outline-none focus:border-action';
+  return (
+    <div className="rounded-[10px] border border-line-soft">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full cursor-pointer items-center justify-between gap-2 px-3 py-2.5 text-left"
+      >
+        <span className="flex items-center gap-1.5 text-[11px] font-semibold tracking-[0.06em] text-ink-ghost">
+          <ClipboardList size={12} strokeWidth={2} /> EPC SURVEY (RDSAP)
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span
+            className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+              done > 0 ? 'bg-[#E4EEE8] text-[#3D7457]' : 'bg-shell text-ink-faint'
+            }`}
+          >
+            {done}/{total}
+          </span>
+          <ChevronDown
+            size={14}
+            className={`text-ink-faint transition-transform ${open ? 'rotate-180' : ''}`}
+          />
+        </span>
+      </button>
+      {open && (
+        <div className="flex flex-col gap-3 border-t border-line-soft px-3 pb-3 pt-2.5">
+          {SURVEY_SCHEMA.map((group) => (
+            <div key={group.title}>
+              <div className="mb-1.5 text-[11px] font-semibold text-ink-mid">{group.title}</div>
+              <div className="flex flex-col gap-1.5">
+                {group.fields.map((f) => (
+                  <label key={f.key} className="flex items-center gap-2">
+                    <span className="w-[42%] shrink-0 text-[11.5px] text-ink-faint">{f.label}</span>
+                    {f.options ? (
+                      <select
+                        value={String(survey[f.key] ?? '')}
+                        onChange={(e) => set(f.key, e.target.value)}
+                        className={selectClass}
+                      >
+                        <option value="">—</option>
+                        {f.options.map((o) => (
+                          <option key={o} value={o}>
+                            {o}
+                          </option>
+                        ))}
+                      </select>
+                    ) : f.kind === 'number' ? (
+                      <div className="relative flex-1">
+                        <input
+                          value={String(survey[f.key] ?? '')}
+                          onChange={(e) => set(f.key, e.target.value.replace(/[^0-9.]/g, ''))}
+                          inputMode="numeric"
+                          className={`${selectClass} pr-6`}
+                        />
+                        {f.suffix ? (
+                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-ink-ghost">
+                            {f.suffix}
+                          </span>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <input
+                        value={String(survey[f.key] ?? '')}
+                        onChange={(e) => set(f.key, e.target.value)}
+                        className={selectClass}
+                      />
+                    )}
+                  </label>
+                ))}
+              </div>
+            </div>
+          ))}
+          <p className="text-[11px] leading-relaxed text-ink-ghost">
+            Captured per property and included in the EPC CSV export. A data-capture aid, not a SAP
+            calculation.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function RoomPanel({
   onDownloadCsv,
   onDownloadEpcCsv,
   address,
   floors,
+  survey,
+  onSurveyChange,
   initialTab = 'props',
   variant = 'sidebar',
 }: {
@@ -208,6 +318,10 @@ export function RoomPanel({
   onDownloadEpcCsv: () => void;
   address: string;
   floors: PanelFloor[];
+  /** Property-level RdSAP survey capture (see SURVEY_SCHEMA), persisted by
+   *  the parent — undefined until the property loads. */
+  survey?: PropertySurvey;
+  onSurveyChange?: (next: PropertySurvey) => void;
   initialTab?: 'props' | 'assistant';
   /** 'sidebar' = fixed-width right column (desktop); 'sheet' = fills the
    *  mobile bottom-sheet wrapper EditorPage puts it in. */
@@ -221,6 +335,7 @@ export function RoomPanel({
   const select = useEditorStore((s) => s.select);
   const setDetectPreview = useEditorStore((s) => s.setDetectPreview);
   const autoWallThickness = useEditorStore((s) => s.autoWallThickness);
+  const fitToView = useEditorStore((s) => s.fitToView);
   const toast = useToast();
 
   const [tab, setTab] = useState<'props' | 'assistant'>(initialTab);
@@ -243,6 +358,7 @@ export function RoomPanel({
   const [wallLen, setWallLen] = useState('');
   const [wallThickness, setWallThickness] = useState('');
   const [labelText, setLabelText] = useState('');
+  const [calibrateLen, setCalibrateLen] = useState('');
 
   // Clear the detect-rooms preview if the panel unmounts mid-hover
   // (e.g. the mobile sheet closes) so the canvas wash never gets stuck on.
@@ -301,6 +417,21 @@ export function RoomPanel({
     if (label && labelText.trim() && labelText.trim() !== label.text) {
       commit('Edit label', updateLabel(doc, label.id, { text: labelText.trim() }));
     }
+  };
+  // Calibrate the whole plan from this wall's real measured length: scale
+  // every drawn dimension by target/current so a roughly-sketched plan (or
+  // one traced over a photo at unknown scale) snaps to true scale at once.
+  const applyCalibration = () => {
+    if (!wall) return;
+    const currentMm = wallLengthMm(wall);
+    const targetMm = parseLengthToMm(calibrateLen);
+    setCalibrateLen('');
+    if (targetMm === null || targetMm < 100 || currentMm < 1) return;
+    const factor = targetMm / currentMm;
+    if (Math.abs(factor - 1) < 0.001) return;
+    commit('Calibrate plan scale', scaleDoc(doc, factor, wall.a));
+    fitToView();
+    toast(`Plan scaled ×${factor.toFixed(3)} to match ${(targetMm / 1000).toFixed(2)}m`);
   };
 
   const handleDetectRooms = async () => {
@@ -589,9 +720,25 @@ export function RoomPanel({
 
               <div>
                 <SectionLabel>DIMENSIONS</SectionLabel>
-                <div className="grid grid-cols-2 gap-2">
-                  <StatTile label="Width" value={formatMmAsM(room.w)} />
-                  <StatTile label="Length" value={formatMmAsM(room.h)} />
+                <div className="flex flex-col gap-2.5">
+                  <SizeStepper
+                    label="Width"
+                    value={room.w}
+                    step={100}
+                    min={MIN_ROOM_MM_UI}
+                    max={100000}
+                    onCommit={(mm) => commit('Set room width', updateRoom(doc, room.id, { w: mm }))}
+                  />
+                  <SizeStepper
+                    label="Length"
+                    value={room.h}
+                    step={100}
+                    min={MIN_ROOM_MM_UI}
+                    max={100000}
+                    onCommit={(mm) => commit('Set room length', updateRoom(doc, room.id, { h: mm }))}
+                  />
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-2">
                   <StatTile label="Floor area" value={formatAreaM2(roomAreaM2(room), 2)} accent />
                   <StatTile label="Perimeter" value={`${roomPerimeterM(room).toFixed(1)} m`} />
                 </div>
@@ -818,6 +965,31 @@ export function RoomPanel({
                   Set Internal ({DEFAULT_WALL_THICKNESS_MM}mm)
                 </button>
               </div>
+              <div className="mt-4 rounded-[10px] border border-line-soft bg-[#F7FAF9] p-3">
+                <div className="flex items-center gap-1.5 text-[11px] font-semibold tracking-[0.06em] text-ink-ghost">
+                  <Ruler size={12} strokeWidth={2} /> CALIBRATE PLAN SCALE
+                </div>
+                <p className="mt-1.5 text-[11.5px] leading-relaxed text-ink-faint">
+                  Measured this wall on site? Enter its real length and the whole plan scales to
+                  match — ideal after a rough sketch or tracing a photo.
+                </p>
+                <div className="mt-2 flex gap-2">
+                  <input
+                    value={calibrateLen}
+                    onChange={(e) => setCalibrateLen(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && applyCalibration()}
+                    placeholder="Measured length, e.g. 3.6m"
+                    className={`${textInputClass} flex-1`}
+                  />
+                  <button
+                    type="button"
+                    onClick={applyCalibration}
+                    className="h-9 shrink-0 cursor-pointer rounded-[9px] bg-action px-3 text-[12.5px] font-semibold text-white hover:bg-[#0A6B53]"
+                  >
+                    Scale plan
+                  </button>
+                </div>
+              </div>
               <DeleteButton
                 label="Delete wall"
                 onClick={() => {
@@ -883,6 +1055,11 @@ export function RoomPanel({
                     onClick={handleAutoWallThickness}
                   />
                 </div>
+                {onSurveyChange && (
+                  <div className="mt-3">
+                    <SurveySection survey={survey ?? {}} onChange={onSurveyChange} />
+                  </div>
+                )}
               </div>
 
               <div>

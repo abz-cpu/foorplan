@@ -1,5 +1,6 @@
 import { floorGiaM2, roomAreaM2 } from './geometry';
 import { floorFootprint } from './measure';
+import { SURVEY_SCHEMA, type PropertySurvey } from './survey';
 import type { FloorDoc } from './types';
 
 export interface FloorForSchedule {
@@ -55,7 +56,11 @@ export function buildRoomScheduleCsv(propertyName: string, floors: FloorForSched
  * (stairs and other assets are excluded), with the exact columns an RdSAP
  * workflow wants, plus per-floor GIA and heat-loss perimeter totals.
  */
-export function buildEpcCsv(propertyName: string, floors: FloorForSchedule[]): string {
+export function buildEpcCsv(
+  propertyName: string,
+  floors: FloorForSchedule[],
+  survey?: PropertySurvey,
+): string {
   const rows: (string | number)[][] = [];
   rows.push(['Property', propertyName]);
   rows.push(['Generated', new Date().toISOString().slice(0, 10)]);
@@ -95,5 +100,24 @@ export function buildEpcCsv(propertyName: string, floors: FloorForSchedule[]): s
 
   const totalGia = floors.reduce((a, f) => a + floorGiaM2(f.doc), 0);
   rows.push(['TOTAL', '', '', totalGia.toFixed(2), '', '']);
+
+  // RdSAP survey block — only the fields the assessor actually filled in.
+  if (survey) {
+    const filled = SURVEY_SCHEMA.flatMap((group) =>
+      group.fields
+        .filter((f) => {
+          const v = survey[f.key];
+          return v !== undefined && String(v).trim() !== '';
+        })
+        .map((f) => [group.title, f.label, String(survey[f.key]) + (f.suffix ?? '')]),
+    );
+    if (filled.length > 0) {
+      rows.push([]);
+      rows.push(['RDSAP SURVEY']);
+      rows.push(['Section', 'Item', 'Value']);
+      rows.push(...filled);
+    }
+  }
+
   return rows.map((r) => r.map(esc).join(',')).join('\r\n');
 }

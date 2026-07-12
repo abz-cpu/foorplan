@@ -31,7 +31,10 @@ import {
   EXTERNAL_WALL_THICKNESS_MM,
   findRoomOverlaps,
   findWall,
+  floorCeilingHeightM,
   floorFootprint,
+  floorHasMixedCeilings,
+  setFloorCeilingHeight,
   floorGiaM2,
   formatAreaM2,
   formatMmAsM,
@@ -356,7 +359,7 @@ export function RoomPanel({
   const openingWall = opening ? findWall(doc, opening.wallId) : undefined;
 
   const [name, setName] = useState('');
-  const [ceiling, setCeiling] = useState('');
+  const [floorCeiling, setFloorCeiling] = useState('');
   const [wallLen, setWallLen] = useState('');
   const [wallThickness, setWallThickness] = useState('');
   const [labelText, setLabelText] = useState('');
@@ -368,8 +371,10 @@ export function RoomPanel({
 
   useEffect(() => {
     setName(room?.name ?? '');
-    setCeiling(room ? room.ceilingHeightM.toFixed(2) : '');
-  }, [room?.id, room?.name, room?.ceilingHeightM, room]);
+  }, [room?.id, room?.name, room]);
+  useEffect(() => {
+    setFloorCeiling(floorCeilingHeightM(doc).toFixed(2));
+  }, [doc]);
   useEffect(() => {
     setWallLen(wall ? formatMmForInput(wallLengthMm(wall)) : '');
   }, [wall?.id, wall?.a, wall?.b, wall]);
@@ -385,12 +390,11 @@ export function RoomPanel({
       commit('Rename room', updateRoom(doc, room.id, { name: name.trim() }));
     }
   };
-  const commitCeiling = () => {
-    if (!room) return;
-    const v = Number.parseFloat(ceiling);
-    if (Number.isFinite(v) && v >= 1 && v <= 6 && v !== room.ceilingHeightM) {
-      commit('Set ceiling height', updateRoom(doc, room.id, { ceilingHeightM: v }));
-    } else setCeiling(room.ceilingHeightM.toFixed(2));
+  const commitFloorCeiling = () => {
+    const v = Number.parseFloat(floorCeiling);
+    if (Number.isFinite(v) && v >= 1 && v <= 6 && v !== floorCeilingHeightM(doc)) {
+      commit('Set ceiling height', setFloorCeilingHeight(doc, v));
+    } else setFloorCeiling(floorCeilingHeightM(doc).toFixed(2));
   };
   const commitWallLength = () => {
     if (!wall) return;
@@ -757,22 +761,9 @@ export function RoomPanel({
                   <StatTile label="Floor area" value={formatAreaM2(roomAreaM2(room), 2)} accent />
                   <StatTile label="Perimeter" value={`${roomPerimeterM(room).toFixed(1)} m`} />
                 </div>
-                <label className="mb-1.5 mt-3 block text-xs font-semibold text-ink-mid">
-                  Ceiling height
-                </label>
-                <div className="relative">
-                  <input
-                    value={ceiling}
-                    onChange={(e) => setCeiling(e.target.value)}
-                    onBlur={commitCeiling}
-                    onKeyDown={blurOnEnter}
-                    inputMode="decimal"
-                    className={numberInputClass}
-                  />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-ink-ghost">
-                    m
-                  </span>
-                </div>
+                <p className="mt-2.5 text-[11px] leading-relaxed text-ink-ghost">
+                  Ceiling height is set for the whole floor — see Floor summary (deselect this room).
+                </p>
                 <label className="mt-3.5 flex cursor-pointer items-center gap-2.5">
                   <input
                     type="checkbox"
@@ -1034,6 +1025,27 @@ export function RoomPanel({
                     value={String(doc.rooms.filter((r) => r.type !== 'Stairs').length)}
                   />
                 </div>
+                {doc.rooms.some((r) => r.type !== 'Stairs') && (
+                  <div className="mt-3 flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-[12.5px] font-medium text-ink-mid">Ceiling height</div>
+                      <div className="text-[11px] text-ink-ghost">
+                        Applies to the whole floor{floorHasMixedCeilings(doc) ? ' — mixed, will unify' : ''}
+                      </div>
+                    </div>
+                    <div className="relative w-[92px] shrink-0">
+                      <input
+                        value={floorCeiling}
+                        onChange={(e) => setFloorCeiling(e.target.value)}
+                        onBlur={commitFloorCeiling}
+                        onKeyDown={blurOnEnter}
+                        inputMode="decimal"
+                        className={numberInputClass}
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-ink-ghost">m</span>
+                    </div>
+                  </div>
+                )}
                 {overlaps.length > 0 && (
                   <div className="mt-3 rounded-[10px] border border-[#F0DCC0] bg-[#FBF2E4] p-3">
                     <div className="flex items-center gap-1.5 text-[12px] font-semibold text-[#9A6B25]">

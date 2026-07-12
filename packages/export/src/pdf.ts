@@ -1,4 +1,4 @@
-import { degrees, LineCapStyle, PDFDocument, rgb, StandardFonts, type PDFFont } from 'pdf-lib';
+import { degrees, LineCapStyle, PDFDocument, PDFString, rgb, StandardFonts, type PDFFont } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
 import type { Shape } from '@floorplan/core';
 
@@ -144,13 +144,21 @@ export async function shapesToPdfBytes(
           });
         } else {
           const dx = s.align === 'center' ? width / 2 : s.align === 'right' ? width : 0;
-          page.drawText(s.text, {
-            x: X(s.x) - dx,
-            y: Y(s.y),
-            size,
-            font,
-            color: hexToRgb(s.color),
-          });
+          const left = X(s.x) - dx;
+          const baseline = Y(s.y);
+          page.drawText(s.text, { x: left, y: baseline, size, font, color: hexToRgb(s.color) });
+          if (s.href) {
+            const link = pdf.context.register(
+              pdf.context.obj({
+                Type: 'Annot',
+                Subtype: 'Link',
+                Rect: [left, baseline - size * 0.25, left + width, baseline + size * 0.9],
+                Border: [0, 0, 0],
+                A: { Type: 'Action', S: 'URI', URI: PDFString.of(s.href) },
+              }),
+            );
+            page.node.addAnnot(link);
+          }
         }
         break;
       }

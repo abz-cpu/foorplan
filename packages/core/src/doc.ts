@@ -103,6 +103,31 @@ export function updateRoom(doc: FloorDoc, id: string, patch: Partial<Omit<RoomRe
   };
 }
 
+/** Set the ceiling height on every room at once — ceiling height is usually
+ *  a whole-floor property, so it's captured once rather than per room. */
+export function setFloorCeilingHeight(doc: FloorDoc, metres: number): FloorDoc {
+  return { ...doc, rooms: doc.rooms.map((r) => ({ ...r, ceilingHeightM: metres })) };
+}
+
+/** The floor's representative ceiling height (the most common room value),
+ *  or a default when there are no rooms yet. */
+export function floorCeilingHeightM(doc: FloorDoc, fallback = 2.4): number {
+  const rooms = doc.rooms.filter((r) => r.type !== 'Stairs');
+  if (rooms.length === 0) return fallback;
+  const counts = new Map<number, number>();
+  for (const r of rooms) counts.set(r.ceilingHeightM, (counts.get(r.ceilingHeightM) ?? 0) + 1);
+  let best = rooms[0].ceilingHeightM;
+  let bestN = 0;
+  for (const [h, n] of counts) if (n > bestN) [best, bestN] = [h, n];
+  return best;
+}
+
+/** True when the rooms don't all share one ceiling height. */
+export function floorHasMixedCeilings(doc: FloorDoc): boolean {
+  const hs = new Set(doc.rooms.filter((r) => r.type !== 'Stairs').map((r) => r.ceilingHeightM));
+  return hs.size > 1;
+}
+
 export function updateWall(doc: FloorDoc, id: string, patch: Partial<Omit<Wall, 'id'>>): FloorDoc {
   return {
     ...doc,

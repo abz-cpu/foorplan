@@ -438,6 +438,8 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
   const [openingDraft, setOpeningDraft] = useState<{ id: string; offsetMm: number } | null>(null);
   const [measureA, setMeasureA] = useState<Point | null>(null);
   const [underlayImg, setUnderlayImg] = useState<HTMLImageElement | null>(null);
+  const [underlayDrag, setUnderlayDrag] = useState<Point | null>(null);
+  const underlayDragRef = useRef<{ startWorld: Point; origin: Point } | null>(null);
   const [marqueeDraft, setMarqueeDraft] = useState<{ a: Point; b: Point } | null>(null);
   const [spacePressed, setSpacePressed] = useState(false);
   // Geometric select + drag: all selection and dragging is driven by
@@ -876,8 +878,10 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
       setLabelScaleDraft(null);
       setMarqueeDraft(null);
       setManualDrag(null);
+      setUnderlayDrag(null);
       manualDragRef.current = null;
       handleDragRef.current = null;
+      underlayDragRef.current = null;
       openingDrag.current = null;
       panDrag.current = null;
       try {
@@ -1087,6 +1091,14 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
     return null;
   };
 
+  // Is the point over the (unlocked) photo underlay?
+  const underlayAt = (p: Point): boolean => {
+    const u = doc.underlay;
+    if (!u || u.locked || !underlayImg) return false;
+    const h = u.widthMm * (underlayImg.naturalHeight / underlayImg.naturalWidth);
+    return p.x >= u.xMm && p.x <= u.xMm + u.widthMm && p.y >= u.yMm && p.y <= u.yMm + h;
+  };
+
   /* ---- shared pointer logic (mouse + single touch) ---- */
 
   const pointerDown = (isStageTarget: boolean, screen: Point) => {
@@ -1120,6 +1132,14 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
       const hit = pickEntityAt(raw);
       const additive = pointerMods.current.additive;
       if (!hit) {
+        // No entity here — if an unlocked photo underlay is under the
+        // pointer, grab it to reposition (geometric, so Brave-safe). Grab
+        // an empty part of the underlay (not covered by a room) to move it.
+        if (underlayAt(raw) && doc.underlay) {
+          underlayDragRef.current = { startWorld: raw, origin: { x: doc.underlay.xMm, y: doc.underlay.yMm } };
+          setUnderlayDrag({ x: 0, y: 0 });
+          return;
+        }
         setMarqueeDraft({ a: raw, b: raw });
         if (!additive) select(null);
         return;
@@ -1295,6 +1315,14 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
       });
       return;
     }
+    if (underlayDragRef.current) {
+      const raw = worldFromClient(screen);
+      if (raw) {
+        const ud = underlayDragRef.current;
+        setUnderlayDrag({ x: raw.x - ud.startWorld.x, y: raw.y - ud.startWorld.y });
+      }
+      return;
+    }
     if (manualDragRef.current) {
       const raw = worldFromClient(screen);
       if (raw) {
@@ -1417,6 +1445,23 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
       return;
     }
 
+    if (underlayDragRef.current) {
+      const ud = underlayDragRef.current;
+      underlayDragRef.current = null;
+      const raw = client ? worldFromClient(client) : pointerWorld();
+      const delta = raw ? { x: raw.x - ud.startWorld.x, y: raw.y - ud.startWorld.y } : { x: 0, y: 0 };
+      setUnderlayDrag(null);
+      if (doc.underlay && (delta.x !== 0 || delta.y !== 0)) {
+        guardDrag('Move underlay', () =>
+          commit('Move underlay', {
+            ...doc,
+            underlay: { ...doc.underlay!, xMm: ud.origin.x + delta.x, yMm: ud.origin.y + delta.y },
+          }),
+        );
+      }
+      return;
+    }
+
     if (manualDragRef.current) {
       const md = manualDragRef.current;
       manualDragRef.current = null;
@@ -1518,6 +1563,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
     const dragActive = () =>
       !!handleDragRef.current ||
       !!manualDragRef.current ||
+      !!underlayDragRef.current ||
       !!openingDrag.current ||
       !!panDrag.current ||
       !!marqueeDraft ||
@@ -2061,24 +2107,19 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
         onTouchEnd={onTouchEnd}
       >
         <Layer>
-          {/* Photo underlay for tracing (below everything) */}
+          {/* Photo underlay for tracing (below everything). Non-interactive:
+              dragging it runs through the Stage-level geometric pipeline
+              (grab an empty part with Select), so it works under Brave too.
+              `underlayDrag` is the live preview offset. */}
           {underlayImg && doc.underlay && (
             <KonvaImage
               image={underlayImg}
-              x={doc.underlay.xMm}
-              y={doc.underlay.yMm}
+              x={doc.underlay.xMm + (underlayDrag?.x ?? 0)}
+              y={doc.underlay.yMm + (underlayDrag?.y ?? 0)}
               width={doc.underlay.widthMm}
               height={doc.underlay.widthMm * (underlayImg.naturalHeight / underlayImg.naturalWidth)}
               opacity={doc.underlay.opacity}
-              draggable={tool === 'select' && !doc.underlay.locked}
-              listening={tool === 'select' && !doc.underlay.locked}
-              onDragEnd={(e) => {
-                if (!doc.underlay) return;
-                commit('Move underlay', {
-                  ...doc,
-                  underlay: { ...doc.underlay, xMm: e.target.x(), yMm: e.target.y() },
-                });
-              }}
+              listening={false}
             />
           )}
 
@@ -2142,7 +2183,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
                     />
                     {showRoomLabels && (
                       <Text
-                        text={`${formatAreaM2(roomAreaM2(r))} · ${r.ceilingHeightM.toFixed(2)}m`}
+                        text={formatAreaM2(roomAreaM2(r))}
                         width={r.w}
                         y={r.h / 2 + 60 * roomLabelScale(room)}
                         align="center"

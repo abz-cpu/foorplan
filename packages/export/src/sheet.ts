@@ -1,7 +1,9 @@
 import {
   docBounds,
   docToShapes,
+  floorCeilingHeightM,
   floorGiaM2,
+  floorHasMixedCeilings,
   formatAreaM2,
   transformShapes,
   type FloorDoc,
@@ -104,13 +106,18 @@ export function buildFloorSheet(doc: FloorDoc, opts: SheetOptions): Sheet {
       kind: 'text',
       x: margin,
       y: margin + 9.6,
-      text: `${opts.floorName} · Approx. GIA ${formatAreaM2(floorGiaM2(doc))}`,
+      text:
+        `${opts.floorName} · Approx. GIA ${formatAreaM2(floorGiaM2(doc))}` +
+        (doc.rooms.length > 0
+          ? ` · Ceiling ${floorCeilingHeightM(doc).toFixed(2)}m${floorHasMixedCeilings(doc) ? ' (typical)' : ''}`
+          : ''),
       size: 3.1,
       color: GHOST,
       font: 'sans',
       align: 'left',
     },
   );
+  const company = (brand.companyName && brand.companyName.trim()) || (brand.logoDataUrl ? '' : 'L&D ENERGY');
   if (brand.logoDataUrl) {
     // Right-aligned logo, capped to a header-sized box.
     const logoH = 9;
@@ -124,8 +131,23 @@ export function buildFloorSheet(doc: FloorDoc, opts: SheetOptions): Sheet {
       h: logoH,
       href: brand.logoDataUrl,
     });
+    // A typed company name still shows, small, beneath the logo — so
+    // filling it in always does something visible.
+    if (company) {
+      shapes.push({
+        kind: 'text',
+        x: W - margin,
+        y: margin + logoH + 2.8,
+        text: company,
+        size: 2.6,
+        color: '#33433E',
+        font: 'sans',
+        weight: 600,
+        align: 'right',
+      });
+    }
   } else {
-    const company = (brand.companyName && brand.companyName.trim()) || 'L&D ENERGY';
+    // No logo: a bold company name is the brand mark.
     shapes.push(
       { kind: 'rect', x: W - margin - 27.5, y: margin + 0.6, w: 4.2, h: 4.2, fill: BRAND },
       {
@@ -133,8 +155,8 @@ export function buildFloorSheet(doc: FloorDoc, opts: SheetOptions): Sheet {
         x: W - margin,
         y: margin + 4,
         text: company.toUpperCase(),
-        size: 2.9,
-        color: '#33433E',
+        size: 3.4,
+        color: BRAND,
         font: 'sans',
         weight: 700,
         align: 'right',
@@ -249,6 +271,20 @@ export function buildFloorSheet(doc: FloorDoc, opts: SheetOptions): Sheet {
       },
     );
   }
+
+  // "Made with" credit — always present, hyperlinked (SVG/PDF) back to the
+  // app so anyone who receives the plan can find where it was produced.
+  shapes.push({
+    kind: 'text',
+    x: W / 2,
+    y: H - 4,
+    text: 'Made with Floor Plan Studio · floorplan.luminousanddeliver.co.uk',
+    size: 2.1,
+    color: '#9AA8A3',
+    font: 'sans',
+    align: 'center',
+    href: 'https://floorplan.luminousanddeliver.co.uk/',
+  });
 
   return { widthMm: W, heightMm: H, shapes };
 }

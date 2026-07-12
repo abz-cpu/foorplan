@@ -53,6 +53,9 @@ export type Shape =
       weight?: number;
       align?: 'left' | 'center' | 'right';
       rotateDeg?: number;
+      /** Optional hyperlink — rendered as <a> in SVG and a link annotation
+       *  in PDF (ignored in raster PNG/JPG). */
+      href?: string;
     }
   | {
       kind: 'image';
@@ -197,7 +200,7 @@ function roomShapes(room: RoomRect, showLabels: boolean, planMode: 'technical' |
       kind: 'text',
       x: cx,
       y: cy + 240,
-      text: `${formatAreaM2(roomAreaM2(room))} · ${room.ceilingHeightM.toFixed(2)}m`,
+      text: formatAreaM2(roomAreaM2(room)),
       size: 185,
       color: FAINT,
       font: 'mono',

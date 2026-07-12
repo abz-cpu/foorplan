@@ -10,7 +10,10 @@ import {
   parseDoc,
   serializeDoc,
   setNorthAngle,
+  floorCeilingHeightM,
+  floorHasMixedCeilings,
   scaleDoc,
+  setFloorCeilingHeight,
   updateRoom,
   wallEndpoints,
   wallsForRoom,
@@ -225,5 +228,28 @@ describe('scaleDoc', () => {
     const d = addWall(emptyFloorDoc(), { id: 'w', a: p(0, 0), b: p(1000, 0), thickness: 100 });
     expect(scaleDoc(d, 0)).toBe(d);
     expect(scaleDoc(d, Number.NaN)).toBe(d);
+  });
+});
+
+describe('floor ceiling height', () => {
+  const rm = (id: string, h: number): RoomRect => ({ ...room, id, ceilingHeightM: h });
+  it('setFloorCeilingHeight applies to every room', () => {
+    let d = emptyFloorDoc();
+    d = addRoom(d, rm('a', 2.4));
+    d = addRoom(d, rm('b', 2.7));
+    const out = setFloorCeilingHeight(d, 2.5);
+    expect(out.rooms.every((r) => r.ceilingHeightM === 2.5)).toBe(true);
+  });
+  it('floorCeilingHeightM returns the most common value; mixed flagged', () => {
+    let d = emptyFloorDoc();
+    d = addRoom(d, rm('a', 2.4));
+    d = addRoom(d, rm('b', 2.4));
+    d = addRoom(d, rm('c', 3.0));
+    expect(floorCeilingHeightM(d)).toBe(2.4);
+    expect(floorHasMixedCeilings(d)).toBe(true);
+    expect(floorHasMixedCeilings(setFloorCeilingHeight(d, 2.4))).toBe(false);
+  });
+  it('floorCeilingHeightM falls back with no rooms', () => {
+    expect(floorCeilingHeightM(emptyFloorDoc())).toBe(2.4);
   });
 });

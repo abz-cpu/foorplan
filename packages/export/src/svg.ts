@@ -58,8 +58,11 @@ export function shapesToSvg(shapes: Shape[], widthMm: number, heightMm: number):
       case 'text': {
         const anchor = s.align === 'center' ? 'middle' : s.align === 'right' ? 'end' : 'start';
         const rotate = s.rotateDeg ? ` transform="rotate(${s.rotateDeg} ${n(s.x)} ${n(s.y)})"` : '';
+        const el = `<text x="${n(s.x)}" y="${n(s.y)}" font-family="${FONTS[s.font]}" font-size="${n(s.size)}" font-weight="${s.weight ?? 400}" fill="${s.color}" text-anchor="${anchor}"${rotate}>${escXml(s.text)}</text>`;
         parts.push(
-          `<text x="${n(s.x)}" y="${n(s.y)}" font-family="${FONTS[s.font]}" font-size="${n(s.size)}" font-weight="${s.weight ?? 400}" fill="${s.color}" text-anchor="${anchor}"${rotate}>${escXml(s.text)}</text>`,
+          s.href
+            ? `<a href="${escXml(s.href)}" target="_blank" rel="noopener">${el}</a>`
+            : el,
         );
         break;
       }

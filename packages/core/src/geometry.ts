@@ -41,9 +41,63 @@ export function roomPerimeterM(room: RoomRect): number {
   return 2 * (mmToM(room.w) + mmToM(room.h));
 }
 
-/** Gross internal area of a floor in m², honouring per-room include flags. */
+/** Area (mm²) covered by the UNION of axis-aligned rectangles — coordinate-
+ *  compression sweep, so any region covered by more than one rectangle is
+ *  counted once, not per-rectangle. */
+export function rectUnionAreaMm2(rects: { x: number; y: number; w: number; h: number }[]): number {
+  const valid = rects.filter((r) => r.w > 0 && r.h > 0);
+  if (valid.length === 0) return 0;
+  const xs = Array.from(new Set(valid.flatMap((r) => [r.x, r.x + r.w]))).sort((a, b) => a - b);
+  const ys = Array.from(new Set(valid.flatMap((r) => [r.y, r.y + r.h]))).sort((a, b) => a - b);
+  let area = 0;
+  for (let i = 0; i < xs.length - 1; i++) {
+    const cx = (xs[i] + xs[i + 1]) / 2;
+    for (let j = 0; j < ys.length - 1; j++) {
+      const cy = (ys[j] + ys[j + 1]) / 2;
+      if (valid.some((r) => cx >= r.x && cx <= r.x + r.w && cy >= r.y && cy <= r.y + r.h)) {
+        area += (xs[i + 1] - xs[i]) * (ys[j + 1] - ys[j]);
+      }
+    }
+  }
+  return area;
+}
+
+/**
+ * Gross internal area of a floor in m², honouring per-room include flags.
+ * Uses the UNION of the included rooms, so if two rooms overlap (a drawing
+ * mistake) the shared floor area is counted once — a plain sum would
+ * double-count it and inflate the GIA. For a correctly drawn plan (rooms
+ * inset from walls, never overlapping) union === sum, so nothing changes.
+ */
 export function floorGiaM2(doc: FloorDoc): number {
-  return doc.rooms.filter((r) => r.includeInGia).reduce((sum, r) => sum + roomAreaM2(r), 0);
+  return rectUnionAreaMm2(doc.rooms.filter((r) => r.includeInGia)) / 1_000_000;
+}
+
+export interface RoomOverlap {
+  a: RoomRect;
+  b: RoomRect;
+  areaM2: number;
+}
+
+/**
+ * Pairs of GIA-counted rooms whose footprints overlap by a meaningful
+ * amount (a drawing mistake — real adjacent rooms are inset from their
+ * shared wall and never touch). Stairs are assets nested inside rooms by
+ * design, so they're excluded.
+ */
+export function findRoomOverlaps(doc: FloorDoc): RoomOverlap[] {
+  const rooms = doc.rooms.filter((r) => r.includeInGia && r.type !== 'Stairs');
+  const out: RoomOverlap[] = [];
+  for (let i = 0; i < rooms.length; i++) {
+    for (let j = i + 1; j < rooms.length; j++) {
+      const a = rooms[i];
+      const b = rooms[j];
+      const ox = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+      const oy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+      if (ox > 50 && oy > 50) out.push({ a, b, areaM2: (ox * oy) / 1_000_000 });
+    }
+  }
+  return out;
 }
 
 export interface Bounds {

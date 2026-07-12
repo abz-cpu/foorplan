@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   docBounds,
+  findRoomOverlaps,
   floorGiaM2,
   polygonAreaMm2,
   polygonPerimeterMm,
@@ -8,7 +9,7 @@ import {
   roomPerimeterM,
   wallLengthMm,
 } from '../src/geometry';
-import { emptyFloorDoc } from '../src/doc';
+import { addRoom, emptyFloorDoc } from '../src/doc';
 import type { FloorDoc, RoomRect } from '../src/types';
 
 const room = (over: Partial<RoomRect> = {}): RoomRect => ({
@@ -74,9 +75,9 @@ describe('floorGiaM2', () => {
     const doc: FloorDoc = {
       ...emptyFloorDoc(),
       rooms: [
-        room({ id: 'a', w: 4000, h: 3000 }), // 12 m²
-        room({ id: 'b', w: 2000, h: 1500, includeInGia: false }), // excluded (stairs)
-        room({ id: 'c', w: 1000, h: 1000 }), // 1 m²
+        room({ id: 'a', x: 0, y: 0, w: 4000, h: 3000 }), // 12 m²
+        room({ id: 'b', x: 0, y: 0, w: 2000, h: 1500, includeInGia: false }), // excluded (stairs)
+        room({ id: 'c', x: 5000, y: 0, w: 1000, h: 1000 }), // 1 m², clear of room a
       ],
     };
     expect(floorGiaM2(doc)).toBeCloseTo(13, 5);
@@ -96,5 +97,45 @@ describe('wallLengthMm / docBounds', () => {
 
   it('returns null bounds for an empty doc', () => {
     expect(docBounds(emptyFloorDoc())).toBeNull();
+  });
+});
+
+describe('GIA union area and overlap detection', () => {
+  const mkRoom = (id: string, x: number, y: number, w: number, h: number, over: Partial<RoomRect> = {}): RoomRect => ({
+    id, x, y, w, h, name: id, type: 'Bedroom', ceilingHeightM: 2.4, includeInGia: true, ...over,
+  });
+
+  it('sums non-overlapping rooms normally', () => {
+    let d = emptyFloorDoc();
+    d = addRoom(d, mkRoom('a', 0, 0, 3000, 2000)); // 6 m2
+    d = addRoom(d, mkRoom('b', 4000, 0, 2000, 2000)); // 4 m2
+    expect(floorGiaM2(d)).toBeCloseTo(10, 5);
+    expect(findRoomOverlaps(d)).toHaveLength(0);
+  });
+
+  it('counts overlapping floor area only once (no double count)', () => {
+    let d = emptyFloorDoc();
+    d = addRoom(d, mkRoom('big', 0, 0, 4000, 4000)); // 16 m2
+    d = addRoom(d, mkRoom('small', 2000, 2000, 2000, 2000)); // 4 m2, fully inside big
+    // plain sum would be 20; union is just the 16 m2 of the big room
+    expect(floorGiaM2(d)).toBeCloseTo(16, 5);
+    const overlaps = findRoomOverlaps(d);
+    expect(overlaps).toHaveLength(1);
+    expect(overlaps[0].areaM2).toBeCloseTo(4, 5);
+  });
+
+  it('partial overlap: union is sum minus the shared area', () => {
+    let d = emptyFloorDoc();
+    d = addRoom(d, mkRoom('a', 0, 0, 3000, 3000)); // 9 m2
+    d = addRoom(d, mkRoom('b', 2000, 2000, 3000, 3000)); // 9 m2, overlaps 1x1 m
+    expect(floorGiaM2(d)).toBeCloseTo(17, 5); // 9 + 9 - 1
+  });
+
+  it('excludes rooms flagged out of GIA and Stairs from overlaps', () => {
+    let d = emptyFloorDoc();
+    d = addRoom(d, mkRoom('room', 0, 0, 4000, 4000));
+    d = addRoom(d, mkRoom('stairs', 1000, 1000, 1000, 2000, { type: 'Stairs', includeInGia: false }));
+    expect(floorGiaM2(d)).toBeCloseTo(16, 5);
+    expect(findRoomOverlaps(d)).toHaveLength(0);
   });
 });

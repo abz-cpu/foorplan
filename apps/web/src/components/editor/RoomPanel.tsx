@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
+  AlertTriangle,
   ChevronDown,
   ClipboardList,
   Compass,
@@ -28,6 +29,7 @@ import {
   deleteEntity,
   detectRooms,
   EXTERNAL_WALL_THICKNESS_MM,
+  findRoomOverlaps,
   findWall,
   floorFootprint,
   floorGiaM2,
@@ -532,6 +534,7 @@ export function RoomPanel({
   };
 
   const footprint = floorFootprint(doc);
+  const overlaps = findRoomOverlaps(doc);
 
   return (
     <aside
@@ -690,6 +693,18 @@ export function RoomPanel({
             </>
           ) : room ? (
             <>
+              {(() => {
+                const others = overlaps
+                  .filter((o) => o.a.id === room.id || o.b.id === room.id)
+                  .map((o) => (o.a.id === room.id ? o.b : o.a));
+                if (others.length === 0) return null;
+                return (
+                  <div className="rounded-[10px] border border-[#F0DCC0] bg-[#FBF2E4] px-3 py-2 text-[11.5px] leading-relaxed text-[#8A6B3E]">
+                    <span className="font-semibold text-[#9A6B25]">Overlaps {others.map((r) => r.name).join(', ')}.</span>{' '}
+                    Move or resize this room so they don't share floor area.
+                  </div>
+                );
+              })()}
               <div>
                 <SectionLabel>SELECTED ROOM</SectionLabel>
                 <label className="mb-1.5 block text-xs font-semibold text-ink-mid">Room name</label>
@@ -1019,6 +1034,32 @@ export function RoomPanel({
                     value={String(doc.rooms.filter((r) => r.type !== 'Stairs').length)}
                   />
                 </div>
+                {overlaps.length > 0 && (
+                  <div className="mt-3 rounded-[10px] border border-[#F0DCC0] bg-[#FBF2E4] p-3">
+                    <div className="flex items-center gap-1.5 text-[12px] font-semibold text-[#9A6B25]">
+                      <AlertTriangle size={13} strokeWidth={2.2} />
+                      {overlaps.length === 1 ? '2 rooms overlap' : `${overlaps.length} room overlaps`}
+                    </div>
+                    <p className="mt-1 text-[11.5px] leading-relaxed text-[#8A6B3E]">
+                      GIA now counts the shared floor area once, but overlapping rooms are usually a
+                      mistake. Move, resize or delete one of each pair:
+                    </p>
+                    <ul className="mt-1.5 flex flex-col gap-1">
+                      {overlaps.slice(0, 4).map((o) => (
+                        <li key={`${o.a.id}-${o.b.id}`}>
+                          <button
+                            type="button"
+                            onClick={() => select(o.a.id)}
+                            className="w-full cursor-pointer rounded-md bg-white/60 px-2 py-1 text-left text-[11.5px] font-medium text-[#7A5A2E] hover:bg-white"
+                          >
+                            {o.a.name} ↔ {o.b.name}
+                            <span className="text-[#A98A5C]"> · {o.areaM2.toFixed(1)} m² shared</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
                 <div className="mt-3 flex flex-col gap-2">
                   <PanelButton
                     icon={<ScanSearch size={13} />}

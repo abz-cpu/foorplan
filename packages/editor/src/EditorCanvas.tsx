@@ -29,6 +29,7 @@ import {
   detectRooms,
   EXTERNAL_WALL_THICKNESS_MM,
   DEFAULT_WINDOW_WIDTH_MM,
+  findRoomOverlaps,
   deleteEntities,
   distance,
   distanceToWall,
@@ -87,6 +88,7 @@ const SELECT_FILL = 'rgba(11,122,94,0.08)';
 const ROOM_EDGE = '#D8E1DD';
 const INK = '#22332F';
 const FAINT = '#71827C';
+const WARN = '#D08A2C';
 const SANS = "'Instrument Sans', system-ui, sans-serif";
 const MONO = "'IBM Plex Mono', monospace";
 const DIM_LINE = '#7C9A90';
@@ -447,7 +449,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
   // the hit-test ourselves makes it identical in every browser.
   const [manualDrag, setManualDrag] = useState<{ ids: string[]; delta: Point } | null>(null);
   const manualDragRef = useRef<{ ids: string[]; startWorld: Point; single: boolean } | null>(null);
-  const pointerMods = useRef({ additive: false });
+  const pointerMods = useRef({ additive: false, shift: false });
   /* Wall tool: press X mid-draw to flip the pending wall between internal
      (100mm) and external (200mm) — no more drawing first and re-typing the
      thickness afterwards. */
@@ -712,6 +714,23 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
         orthoToleranceDeg: snapEnabled ? 7 : 0,
       }),
     [doc, scale, snapEnabled],
+  );
+
+  // Hold Shift while drawing to lock the pending segment to 45° increments
+  // (horizontal / vertical / diagonal) from the chain point — the standard
+  // "draw straight" constraint. Length still snaps to the grid.
+  const constrainOrthoTo = useCallback(
+    (raw: Point, start: Point): Point => {
+      const dx = raw.x - start.x;
+      const dy = raw.y - start.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist < 1) return raw;
+      const step = Math.PI / 4;
+      const ang = Math.round(Math.atan2(dy, dx) / step) * step;
+      const len = snapEnabled ? Math.max(GRID_MM, Math.round(dist / GRID_MM) * GRID_MM) : dist;
+      return { x: start.x + Math.cos(ang) * len, y: start.y + Math.sin(ang) * len };
+    },
+    [snapEnabled],
   );
 
   // Reshaping an already-drawn wall (dragging its endpoint handle) should
@@ -986,6 +1005,17 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
     return m;
   }, [doc.rooms, doc.symbols, doc.walls]);
 
+  // Rooms that overlap another GIA room — flagged amber on canvas (a drawing
+  // mistake; GIA already counts the shared area once).
+  const overlapRoomIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const o of findRoomOverlaps(doc)) {
+      ids.add(o.a.id);
+      ids.add(o.b.id);
+    }
+    return ids;
+  }, [doc]);
+
   const effectiveLabelOffset = (room: RoomRect): Point =>
     room.labelOffset ?? smartLabelOffsets.get(room.id) ?? ZERO_POINT;
 
@@ -1119,7 +1149,8 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
     if (!raw) return;
 
     if (tool === 'wall') {
-      const pt = snapEnd(raw, wallStart);
+      const pt =
+        wallStart && pointerMods.current.shift ? constrainOrthoTo(raw, wallStart) : snapEnd(raw, wallStart);
       if (!wallStart) {
         setWallStart(pt);
         setHoverPt(pt);
@@ -1296,6 +1327,13 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
     if (tool === 'wall') {
       const raw = worldFromClient(screen);
       if (raw) {
+        // Shift locks to 45° increments — takes priority over corner
+        // alignment (which would tug the point back off the axis).
+        if (wallStart && pointerMods.current.shift) {
+          setAlignGuides(null);
+          setHoverPt(constrainOrthoTo(raw, wallStart));
+          return;
+        }
         let pt = snapEnd(raw, wallStart);
         // Smart alignment: when the pending point lines up (within ~6px on
         // screen) with any existing wall corner on the X or Y axis, pull it
@@ -1515,10 +1553,12 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
     }
     if (e.evt.button !== 0) return;
     pointerMods.current.additive = e.evt.shiftKey || e.evt.metaKey || e.evt.ctrlKey;
+    pointerMods.current.shift = e.evt.shiftKey;
     pointerDown(e.target === stageRef.current, { x: e.evt.clientX, y: e.evt.clientY });
   };
 
   const onMouseMove = (e: KonvaEventObject<MouseEvent>) => {
+    pointerMods.current.shift = e.evt.shiftKey;
     pointerMove({ x: e.evt.clientX, y: e.evt.clientY });
   };
 
@@ -2055,6 +2095,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
             const stairs = room.type === 'Stairs';
             const zone = planMode === 'presentation' ? ROOM_ZONE_COLORS[room.type] : null;
             const off = manualOffset(room.id);
+            const overlapping = overlapRoomIds.has(room.id);
             return (
               // Selection + dragging are handled by the Stage-level geometric
               // pointer pipeline (pickEntityAt), NOT Konva's pixel hit canvas
@@ -2069,9 +2110,9 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
                   width={r.w}
                   height={r.h}
                   fill={isSel ? SELECT_FILL : (zone?.fill ?? '#FFFFFF')}
-                  stroke={isSel ? ACTION : (zone?.edge ?? ROOM_EDGE)}
-                  strokeWidth={isSel ? 34 : 18}
-                  dash={isSel ? [110, 75] : undefined}
+                  stroke={isSel ? ACTION : overlapping ? WARN : (zone?.edge ?? ROOM_EDGE)}
+                  strokeWidth={isSel ? 34 : overlapping ? 28 : 18}
+                  dash={isSel ? [110, 75] : overlapping ? [140, 90] : undefined}
                 />
                 {stairs ? (
                   <StairsTreads room={r} />

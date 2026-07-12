@@ -62,6 +62,7 @@ import {
   type RoomRect,
   type RoomType,
   type SymbolInstance,
+  type TextLabel,
   type Wall,
 } from '@floorplan/core';
 import {
@@ -100,6 +101,88 @@ const COARSE_POINTER =
 const clampZoom = (z: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
 
 const isDraftingTool = (t: Tool) => t === 'room' || t === 'stairs';
+
+/** Perpendicular distance from `p` to segment [a,b], mm. */
+function distanceToSegment(p: Point, a: Point, b: Point): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len2 = dx * dx + dy * dy;
+  if (len2 === 0) return Math.hypot(p.x - a.x, p.y - a.y);
+  let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+}
+
+/** Signed shortest angular difference b-a, degrees in (-180, 180]. */
+function angleDeltaDeg(a: number, b: number): number {
+  let d = b - a;
+  while (d > 180) d -= 360;
+  while (d <= -180) d += 360;
+  return d;
+}
+
+/** Rotate vector `v` by `deg` degrees about the origin. */
+function rotateVec(v: Point, deg: number): Point {
+  const r = (deg * Math.PI) / 180;
+  const c = Math.cos(r);
+  const s = Math.sin(r);
+  return { x: v.x * c - v.y * s, y: v.x * s + v.y * c };
+}
+
+/** Smallest furniture footprint a resize handle can shrink to, mm. */
+const MIN_SYMBOL_MM = 150;
+
+/** Overlap area of two AABBs {x0,y0,x1,y1}. */
+function aabbOverlap(
+  a: { x0: number; y0: number; x1: number; y1: number },
+  b: { x0: number; y0: number; x1: number; y1: number },
+): number {
+  const ox = Math.max(0, Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0));
+  const oy = Math.max(0, Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0));
+  return ox * oy;
+}
+
+/**
+ * A room's default label position (room-local offset from centre) when the
+ * user hasn't dragged it. Nudges the name/area block off any furniture or
+ * internal wall sitting mid-room, instead of stamping it dead-centre over a
+ * bed or partition. Furniture footprints and thin wall strips become
+ * obstacle boxes; the label box is scored against them at a few vertical
+ * positions and the clearest one nearest the centre wins.
+ */
+function computeSmartLabelOffset(room: RoomRect, symbols: SymbolInstance[], walls: Wall[]): Point {
+  const halfW = Math.min(room.w * 0.45, 1600);
+  const halfH = 420;
+  const obstacles: { x0: number; y0: number; x1: number; y1: number }[] = [];
+  for (const s of symbols) {
+    if (s.x + s.w < room.x || s.x > room.x + room.w || s.y + s.h < room.y || s.y > room.y + room.h) continue;
+    obstacles.push({ x0: s.x - room.x, y0: s.y - room.y, x1: s.x + s.w - room.x, y1: s.y + s.h - room.y });
+  }
+  for (const w of walls) {
+    const t = w.thickness / 2 + 60;
+    obstacles.push({
+      x0: Math.min(w.a.x, w.b.x) - t - room.x,
+      y0: Math.min(w.a.y, w.b.y) - t - room.y,
+      x1: Math.max(w.a.x, w.b.x) + t - room.x,
+      y1: Math.max(w.a.y, w.b.y) + t - room.y,
+    });
+  }
+  if (obstacles.length === 0) return { x: 0, y: 0 };
+  const cx = room.w / 2;
+  const candidates = [room.h / 2, room.h * 0.74, room.h * 0.26, room.h * 0.86, room.h * 0.14];
+  let best = { x: 0, y: 0 };
+  let bestScore = Infinity;
+  for (const cy of candidates) {
+    const box = { x0: cx - halfW, y0: cy - halfH, x1: cx + halfW, y1: cy + halfH };
+    let score = Math.abs(cy - room.h / 2) * 0.02; // tie-break toward centre
+    for (const o of obstacles) score += aabbOverlap(box, o);
+    if (score < bestScore) {
+      bestScore = score;
+      best = { x: 0, y: cy - room.h / 2 };
+    }
+  }
+  return best;
+}
 
 /** Furniture symbol rendered from its unit-box primitives inside a rotatable group. */
 function SymbolNode({ sym, selected }: { sym: SymbolInstance; selected: boolean }) {
@@ -326,6 +409,8 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
   const [hoverPt, setHoverPt] = useState<Point | null>(null);
   const [rectDraft, setRectDraft] = useState<{ a: Point; b: Point; stairs: boolean } | null>(null);
   const [resizeDraft, setResizeDraft] = useState<RoomRect | null>(null);
+  const [symbolResizeDraft, setSymbolResizeDraft] = useState<SymbolInstance | null>(null);
+  const [labelScaleDraft, setLabelScaleDraft] = useState<{ id: string; scale: number } | null>(null);
   const [wallEndDraft, setWallEndDraft] = useState<{ id: string; a: Point; b: Point } | null>(null);
   const [openingHover, setOpeningHover] = useState<{ wall: Wall; offsetMm: number } | null>(null);
   const [openingDraft, setOpeningDraft] = useState<{ id: string; offsetMm: number } | null>(null);
@@ -658,6 +743,37 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
   // What's under a point, for the right-click context menu — checked in
   // roughly visual stacking order (small/specific things before the room
   // fill that sits behind everything).
+  // A door's clickable graphics (leaf + swing arc) reach OUT into the room,
+  // far from the wall centreline — so nearestWall alone never catches a
+  // click on the visible door, only on the thin gap where it meets the
+  // wall. (Windows sit flush in the wall, which is why they select fine and
+  // doors didn't.) Pick a door when the pointer is near its leaf line or on
+  // its swing arc band. Tolerance is touch-sized in world mm.
+  const pickDoorAt = useCallback(
+    (p: Point): string | undefined => {
+      const tol = Math.max(220, 16 / scale);
+      for (let i = doc.openings.length - 1; i >= 0; i--) {
+        const o = doc.openings[i];
+        if (o.kind !== 'door') continue;
+        const wall = doc.walls.find((w) => w.id === o.wallId);
+        if (!wall) continue;
+        const { hinge, tip, startDeg, delta } = doorSwingGeometry(wall, o);
+        // On the leaf (hinge → tip)?
+        if (distanceToSegment(p, hinge, tip) <= tol) return o.id;
+        // On the swing arc band (radius ≈ widthMm, within the swept angle)?
+        const r = Math.hypot(p.x - hinge.x, p.y - hinge.y);
+        if (Math.abs(r - o.widthMm) <= tol) {
+          const ang = (Math.atan2(p.y - hinge.y, p.x - hinge.x) * 180) / Math.PI;
+          const rel = angleDeltaDeg(startDeg, ang);
+          const within = delta >= 0 ? rel >= -6 && rel <= delta + 6 : rel <= 6 && rel >= delta - 6;
+          if (within) return o.id;
+        }
+      }
+      return undefined;
+    },
+    [doc, scale],
+  );
+
   const pickEntityAt = useCallback(
     (p: Point): { id: string; kind: 'room' | 'wall' | 'opening' | 'symbol' | 'label' } | undefined => {
       for (let i = doc.symbols.length - 1; i >= 0; i--) {
@@ -672,6 +788,10 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
           return { id: l.id, kind: 'label' };
         }
       }
+      // Doors, picked by their leaf/arc graphics (see pickDoorAt) — before
+      // the wall test so clicking the visible door beats the wall behind it.
+      const doorId = pickDoorAt(p);
+      if (doorId) return { id: doorId, kind: 'opening' };
       const hit = nearestWall(doc, p, wallSelectToleranceMm);
       if (hit) {
         const opening = doc.openings.find(
@@ -684,7 +804,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
       if (room) return { id: room.id, kind: 'room' };
       return undefined;
     },
-    [doc, wallSelectToleranceMm, pickRoomAt],
+    [doc, wallSelectToleranceMm, pickDoorAt, pickRoomAt],
   );
 
   // Crash-proofing for drag handlers: if a geometry/commit throws mid-drag,
@@ -1325,6 +1445,8 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
 
   const selectedRoom = doc.rooms.find((r) => r.id === selectedId) ?? null;
   const selectedWall = doc.walls.find((w) => w.id === selectedId) ?? null;
+  const selectedSymbol = doc.symbols.find((s) => s.id === selectedId) ?? null;
+  const selectedLabel = doc.labels.find((l) => l.id === selectedId) ?? null;
   // 10px handles are fine under a mouse cursor but nearly impossible to
   // grab with a finger — on coarse pointers (touch screens) render them at
   // 24px so resize/reshape works on phones and tablets.
@@ -1420,6 +1542,158 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
         }
       />
     ));
+  };
+
+  // Corner resize handles for the selected piece of furniture. Rendered at
+  // the symbol's rotated corners; dragging one anchors the opposite corner
+  // in world space and rescales the footprint in the symbol's own frame, so
+  // resize behaves correctly even for rotated furniture.
+  const renderSymbolResizeHandles = (symbol: SymbolInstance) => {
+    const s = symbolResizeDraft?.id === symbol.id ? symbolResizeDraft : symbol;
+    const center = { x: s.x + s.w / 2, y: s.y + s.h / 2 };
+    // local corner (sign in x, sign in y) → world position
+    const corners: { sx: number; sy: number }[] = [
+      { sx: -1, sy: -1 },
+      { sx: 1, sy: -1 },
+      { sx: -1, sy: 1 },
+      { sx: 1, sy: 1 },
+    ];
+    return corners.map(({ sx, sy }, i) => {
+      const world = {
+        x: center.x + rotateVec({ x: (sx * s.w) / 2, y: (sy * s.h) / 2 }, s.rotationDeg).x,
+        y: center.y + rotateVec({ x: (sx * s.w) / 2, y: (sy * s.h) / 2 }, s.rotationDeg).y,
+      };
+      // Opposite corner stays put while this one is dragged.
+      const opp = {
+        x: center.x + rotateVec({ x: (-sx * s.w) / 2, y: (-sy * s.h) / 2 }, s.rotationDeg).x,
+        y: center.y + rotateVec({ x: (-sx * s.w) / 2, y: (-sy * s.h) / 2 }, s.rotationDeg).y,
+      };
+      return (
+        <Rect
+          key={`sym-handle-${i}`}
+          x={world.x - handleHalf}
+          y={world.y - handleHalf}
+          width={handleHalf * 2}
+          height={handleHalf * 2}
+          fill="#FFFFFF"
+          stroke={ACTION}
+          strokeWidth={2 / scale}
+          draggable
+          onDragMove={(e) =>
+            guardDrag('Resize furniture (move)', () => {
+              const px = e.target.x() + handleHalf;
+              const py = e.target.y() + handleHalf;
+              // Diagonal from the fixed opposite corner, in the symbol's frame.
+              const d = rotateVec({ x: px - opp.x, y: py - opp.y }, -symbol.rotationDeg);
+              const nw = Math.max(MIN_SYMBOL_MM, Math.abs(d.x));
+              const nh = Math.max(MIN_SYMBOL_MM, Math.abs(d.y));
+              // New centre = opposite corner + half the (signed) diagonal.
+              const half = rotateVec({ x: (sx * nw) / 2, y: (sy * nh) / 2 }, symbol.rotationDeg);
+              const nc = { x: opp.x + half.x, y: opp.y + half.y };
+              setSymbolResizeDraft({ ...symbol, w: nw, h: nh, x: nc.x - nw / 2, y: nc.y - nh / 2 });
+            })
+          }
+          onDragEnd={() =>
+            guardDrag('Resize furniture', () => {
+              const draft = symbolResizeDraft;
+              setSymbolResizeDraft(null);
+              if (draft && draft.id === symbol.id) {
+                commit(
+                  'Resize furniture',
+                  updateSymbol(doc, symbol.id, { x: draft.x, y: draft.y, w: draft.w, h: draft.h }),
+                );
+              }
+            })
+          }
+        />
+      );
+    });
+  };
+
+  // Smart default label positions (only for rooms the user hasn't manually
+  // repositioned). Recomputed when rooms/furniture/walls change.
+  const smartLabelOffsets = useMemo(() => {
+    const m = new Map<string, Point>();
+    for (const room of doc.rooms) {
+      if (room.labelOffset || room.type === 'Stairs') continue;
+      m.set(room.id, computeSmartLabelOffset(room, doc.symbols, doc.walls));
+    }
+    return m;
+  }, [doc.rooms, doc.symbols, doc.walls]);
+
+  const effectiveLabelOffset = (room: RoomRect): Point =>
+    room.labelOffset ?? smartLabelOffsets.get(room.id) ?? ZERO_POINT;
+
+  const roomLabelScale = (room: RoomRect): number =>
+    labelScaleDraft?.id === room.id ? labelScaleDraft.scale : (room.labelScale ?? 1);
+
+  // Handle at the corner of a room's name/area block; drag out/in to scale
+  // the label font. Its position lies on a fixed ray from the label centre,
+  // at a radius proportional to the current scale.
+  const LABEL_HANDLE_BASE = { x: 1150, y: 470 };
+  const LABEL_HANDLE_BASE_MAG = Math.hypot(LABEL_HANDLE_BASE.x, LABEL_HANDLE_BASE.y);
+
+  const renderRoomLabelHandle = (room: RoomRect) => {
+    const scaleVal = roomLabelScale(room);
+    const off = effectiveLabelOffset(room);
+    const center = { x: room.x + room.w / 2 + off.x, y: room.y + room.h / 2 + off.y };
+    const handle = { x: center.x + LABEL_HANDLE_BASE.x * scaleVal, y: center.y + LABEL_HANDLE_BASE.y * scaleVal };
+    return (
+      <Circle
+        x={handle.x}
+        y={handle.y}
+        radius={handleHalf}
+        fill="#FFFFFF"
+        stroke={ACTION}
+        strokeWidth={2 / scale}
+        draggable
+        onDragMove={(e) =>
+          guardDrag('Resize label (move)', () => {
+            const p = { x: e.target.x(), y: e.target.y() };
+            const ns = Math.max(0.5, Math.min(3, Math.hypot(p.x - center.x, p.y - center.y) / LABEL_HANDLE_BASE_MAG));
+            setLabelScaleDraft({ id: room.id, scale: ns });
+          })
+        }
+        onDragEnd={() =>
+          guardDrag('Resize label', () => {
+            const d = labelScaleDraft;
+            setLabelScaleDraft(null);
+            if (d && d.id === room.id) commit('Resize label', updateRoom(doc, room.id, { labelScale: d.scale }));
+          })
+        }
+      />
+    );
+  };
+
+  const renderTextLabelHandle = (label: TextLabel) => {
+    const scaleVal = labelScaleDraft?.id === label.id ? labelScaleDraft.scale : (label.scale ?? 1);
+    const center = { x: label.x, y: label.y + 110 * scaleVal };
+    const handle = { x: center.x + LABEL_HANDLE_BASE.x * scaleVal, y: center.y + LABEL_HANDLE_BASE.y * scaleVal };
+    return (
+      <Circle
+        x={handle.x}
+        y={handle.y}
+        radius={handleHalf}
+        fill="#FFFFFF"
+        stroke={ACTION}
+        strokeWidth={2 / scale}
+        draggable
+        onDragMove={(e) =>
+          guardDrag('Resize text label (move)', () => {
+            const p = { x: e.target.x(), y: e.target.y() };
+            const ns = Math.max(0.5, Math.min(3, Math.hypot(p.x - center.x, p.y - center.y) / LABEL_HANDLE_BASE_MAG));
+            setLabelScaleDraft({ id: label.id, scale: ns });
+          })
+        }
+        onDragEnd={() =>
+          guardDrag('Resize text label', () => {
+            const d = labelScaleDraft;
+            setLabelScaleDraft(null);
+            if (d && d.id === label.id) commit('Resize label', updateLabel(doc, label.id, { scale: d.scale }));
+          })
+        }
+      />
+    );
   };
 
   const rectDraftRect = rectDraft
@@ -1695,16 +1969,16 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
                      saved labelOffset is still honoured for position. The
                      halo keeps it readable over furniture. */
                   <Group
-                    x={r.labelOffset?.x ?? 0}
-                    y={r.labelOffset?.y ?? 0}
+                    x={effectiveLabelOffset(room).x}
+                    y={effectiveLabelOffset(room).y}
                     listening={false}
                   >
                     <Text
                       text={r.name}
                       width={r.w}
-                      y={r.h / 2 - 320}
+                      y={r.h / 2 - 320 * roomLabelScale(room)}
                       align="center"
-                      fontSize={260}
+                      fontSize={260 * roomLabelScale(room)}
                       fontFamily={SANS}
                       fontStyle="600"
                       fill={INK}
@@ -1716,9 +1990,9 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
                       <Text
                         text={`${formatAreaM2(roomAreaM2(r))} · ${r.ceilingHeightM.toFixed(2)}m`}
                         width={r.w}
-                        y={r.h / 2 + 60}
+                        y={r.h / 2 + 60 * roomLabelScale(room)}
                         align="center"
-                        fontSize={185}
+                        fontSize={185 * roomLabelScale(room)}
                         fontFamily={MONO}
                         fill={FAINT}
                         stroke="#FFFFFF"
@@ -1744,16 +2018,36 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
             // multi-selection group drag, previewed here via manualOffset.
             const off = manualOffset(w.id);
             const dw = { a: { x: w.a.x + off.x, y: w.a.y + off.y }, b: { x: w.b.x + off.x, y: w.b.y + off.y } };
-            return wallSegments({ ...w, ...dw }, openings).map((seg, i) => (
-              <Line
-                key={`${w.id}-${i}`}
-                points={[seg.a.x, seg.a.y, seg.b.x, seg.b.y]}
-                stroke={isSel ? ACTION : WALL}
-                strokeWidth={w.thickness}
-                lineCap="square"
-                listening={false}
-              />
-            ));
+            // Square caps overshoot the endpoint by half the stroke width —
+            // wanted at true wall ends (they fill the outer corners where
+            // walls meet) but wrong at an opening, where the cap then pokes
+            // half a wall-thickness into the door/window gap and sits proud
+            // of the frame. So pull each *jamb* end back by half-thickness;
+            // the square cap then lands exactly flush at the jamb. True wall
+            // ends (dw.a / dw.b) are left alone.
+            const segLenTotal = Math.hypot(dw.b.x - dw.a.x, dw.b.y - dw.a.y) || 1;
+            const dir = { x: (dw.b.x - dw.a.x) / segLenTotal, y: (dw.b.y - dw.a.y) / segLenTotal };
+            const half = w.thickness / 2;
+            const isWallEnd = (p: Point, q: Point) => Math.abs(p.x - q.x) < 1 && Math.abs(p.y - q.y) < 1;
+            return wallSegments({ ...w, ...dw }, openings).map((seg, i) => {
+              let a = seg.a;
+              let b = seg.b;
+              const segLen = Math.hypot(seg.b.x - seg.a.x, seg.b.y - seg.a.y);
+              if (segLen > w.thickness + 2) {
+                if (!isWallEnd(seg.a, dw.a)) a = { x: seg.a.x + dir.x * half, y: seg.a.y + dir.y * half };
+                if (!isWallEnd(seg.b, dw.b)) b = { x: seg.b.x - dir.x * half, y: seg.b.y - dir.y * half };
+              }
+              return (
+                <Line
+                  key={`${w.id}-${i}`}
+                  points={[a.x, a.y, b.x, b.y]}
+                  stroke={isSel ? ACTION : WALL}
+                  strokeWidth={w.thickness}
+                  lineCap="square"
+                  listening={false}
+                />
+              );
+            });
           })}
 
           {/* Persistent wall-length dimensions ("Tweaks" > Show dimensions),
@@ -1861,10 +2155,12 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
           {showFurniture &&
             doc.symbols.map((sym) => {
               const off = manualOffset(sym.id);
+              // Live resize preview takes priority over a move offset.
+              const base = symbolResizeDraft?.id === sym.id ? symbolResizeDraft : sym;
               return (
                 <SymbolNode
                   key={sym.id}
-                  sym={off.x || off.y ? { ...sym, x: sym.x + off.x, y: sym.y + off.y } : sym}
+                  sym={off.x || off.y ? { ...base, x: base.x + off.x, y: base.y + off.y } : base}
                   selected={selectedIds.includes(sym.id)}
                 />
               );
@@ -1874,18 +2170,19 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
               Stage-level geometric pipeline. `off` is the live preview. */}
           {doc.labels.map((label) => {
             const off = manualOffset(label.id);
+            const ls = (labelScaleDraft?.id === label.id ? labelScaleDraft.scale : label.scale) ?? 1;
             return (
               <Text
                 key={label.id}
                 x={label.x + off.x}
                 y={label.y + off.y}
                 text={label.text}
-                fontSize={220}
+                fontSize={220 * ls}
                 fontFamily={SANS}
                 fontStyle="600"
                 fill={selectedIds.includes(label.id) ? ACTION : INK}
                 align="center"
-                offsetX={label.text.length * 55}
+                offsetX={label.text.length * 55 * ls}
                 listening={false}
               />
             );
@@ -2094,6 +2391,13 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
 
           {/* Endpoint drag handles for the selected wall */}
           {selectedWall && tool === 'select' && renderWallEndHandles(selectedWall)}
+
+          {/* Corner resize handles for the selected furniture */}
+          {selectedSymbol && showFurniture && tool === 'select' && renderSymbolResizeHandles(selectedSymbol)}
+
+          {/* Font-size handle for the selected room's label / a text label */}
+          {selectedRoom && !selectedRoom.type.includes('Stairs') && tool === 'select' && renderRoomLabelHandle(selectedRoom)}
+          {selectedLabel && tool === 'select' && renderTextLabelHandle(selectedLabel)}
         </Layer>
       </Stage>
 

@@ -46,8 +46,11 @@ export interface RoomRect {
   stairDirection?: 'forward' | 'reversed';
   /** How far the name/area label has been dragged from the room's centre,
    *  mm — lets the label be moved off furniture placed mid-room.
-   *  Undefined = centred. */
+   *  Undefined = centred (with a smart auto-nudge off furniture/walls). */
   labelOffset?: Point;
+  /** Font scale for the name/area label, resized by its on-canvas handle.
+   *  Undefined = 1 (default size). */
+  labelScale?: number;
 }
 
 export interface TextLabel {
@@ -55,6 +58,8 @@ export interface TextLabel {
   x: number;
   y: number;
   text: string;
+  /** Font scale, resized by the label's on-canvas handle. Undefined = 1. */
+  scale?: number;
 }
 
 /** A door or window cut into a wall, positioned along it. */

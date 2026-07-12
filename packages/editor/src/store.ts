@@ -47,7 +47,7 @@ const DEFAULT_VIEW_PREFS: ViewPrefs = {
   showDimensions: false,
   showRoomLabels: true,
   showFurniture: true,
-  planMode: 'technical',
+  planMode: 'presentation',
 };
 
 function loadViewPrefs(): ViewPrefs {

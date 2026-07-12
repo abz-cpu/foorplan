@@ -1,7 +1,7 @@
 import polygonClipping from 'polygon-clipping';
-import { polygonAreaMm2, polygonPerimeterMm } from './geometry';
+import { polygonAreaMm2, polygonPerimeterMm, rectUnionAreaMm2 } from './geometry';
 import { wallNormal } from './openings';
-import type { FloorDoc, Point } from './types';
+import type { FloorDoc, Point, Wall } from './types';
 
 export interface FloorFootprint {
   /** area of the union of all rooms, m² */
@@ -38,6 +38,51 @@ function roomUnion(doc: FloorDoc) {
     ],
   ]);
   return polygonClipping.union(polys[0] as never, ...(polys.slice(1) as never[]));
+}
+
+/** A wall's axis-aligned footprint rectangle — the centreline segment's
+ *  bounding box grown by half the thickness on every side (square caps, so
+ *  corners where walls meet fill in). Accurate for axis-aligned walls
+ *  (virtually all plans); for a diagonal wall it's a slight over-estimate. */
+function wallRect(w: Wall): { x: number; y: number; w: number; h: number } {
+  const half = w.thickness / 2;
+  const x0 = Math.min(w.a.x, w.b.x) - half;
+  const y0 = Math.min(w.a.y, w.b.y) - half;
+  return {
+    x: x0,
+    y: y0,
+    w: Math.abs(w.b.x - w.a.x) + w.thickness,
+    h: Math.abs(w.b.y - w.a.y) + w.thickness,
+  };
+}
+
+/**
+ * Gross Internal Area of a floor in m² — measured to the INTERNAL face of
+ * the enclosing (external) walls and INCLUDING internal partition walls, per
+ * the RICS/RdSAP definition.
+ *
+ * Computed as (gross external footprint) − (external-wall footprint): the
+ * whole building outline out to the external walls' outer faces, minus the
+ * ring the external walls occupy, which leaves exactly the internal envelope
+ * (internal partitions sit inside it and are counted). Rooms explicitly
+ * excluded from GIA (includeInGia === false — e.g. an integral garage) are
+ * then subtracted.
+ *
+ * Falls back to the union of the included rooms when no enclosing walls have
+ * been classified yet (a partial sketch with no closed perimeter), so a
+ * work-in-progress plan still reports a sensible figure.
+ */
+export function floorGiaM2(doc: FloorDoc): number {
+  const externalIds = classifyExternalWalls(doc);
+  if (externalIds.size === 0) {
+    return rectUnionAreaMm2(doc.rooms.filter((r) => r.includeInGia)) / 1_000_000;
+  }
+  const allWallRects = doc.walls.map(wallRect);
+  const extWallRects = doc.walls.filter((w) => externalIds.has(w.id)).map(wallRect);
+  const grossExternal = rectUnionAreaMm2([...doc.rooms, ...allWallRects]);
+  const externalWallFootprint = rectUnionAreaMm2(extWallRects);
+  const excludedFootprint = rectUnionAreaMm2(doc.rooms.filter((r) => !r.includeInGia));
+  return Math.max(0, grossExternal - externalWallFootprint - excludedFootprint) / 1_000_000;
 }
 
 /** Union all room rectangles of a floor into its footprint measurements. */

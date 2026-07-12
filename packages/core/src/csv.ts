@@ -1,5 +1,5 @@
-import { floorGiaM2, roomAreaM2 } from './geometry';
-import { floorFootprint } from './measure';
+import { roomAreaM2 } from './geometry';
+import { floorFootprint, floorGiaM2 } from './measure';
 import { SURVEY_SCHEMA, type PropertySurvey } from './survey';
 import type { FloorDoc } from './types';
 

@@ -2,13 +2,13 @@ import { describe, expect, it } from 'vitest';
 import {
   docBounds,
   findRoomOverlaps,
-  floorGiaM2,
   polygonAreaMm2,
   polygonPerimeterMm,
   roomAreaM2,
   roomPerimeterM,
   wallLengthMm,
 } from '../src/geometry';
+import { floorGiaM2 } from '../src/measure';
 import { addRoom, emptyFloorDoc } from '../src/doc';
 import type { FloorDoc, RoomRect } from '../src/types';
 

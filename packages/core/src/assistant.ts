@@ -1,4 +1,5 @@
-import { floorGiaM2, roomAreaM2 } from './geometry';
+import { roomAreaM2 } from './geometry';
+import { floorGiaM2 } from './measure';
 import { formatAreaM2 } from './format';
 import type { FloorDoc, RoomRect, RoomType } from './types';
 

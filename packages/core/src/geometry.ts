@@ -62,17 +62,6 @@ export function rectUnionAreaMm2(rects: { x: number; y: number; w: number; h: nu
   return area;
 }
 
-/**
- * Gross internal area of a floor in m², honouring per-room include flags.
- * Uses the UNION of the included rooms, so if two rooms overlap (a drawing
- * mistake) the shared floor area is counted once — a plain sum would
- * double-count it and inflate the GIA. For a correctly drawn plan (rooms
- * inset from walls, never overlapping) union === sum, so nothing changes.
- */
-export function floorGiaM2(doc: FloorDoc): number {
-  return rectUnionAreaMm2(doc.rooms.filter((r) => r.includeInGia)) / 1_000_000;
-}
-
 export interface RoomOverlap {
   a: RoomRect;
   b: RoomRect;

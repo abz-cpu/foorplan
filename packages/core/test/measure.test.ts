@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { classifyExternalWalls, floorFootprint } from '../src/measure';
+import { classifyExternalWalls, floorFootprint, floorGiaM2 } from '../src/measure';
 import { buildRoomScheduleCsv } from '../src/csv';
-import { addWall, emptyFloorDoc } from '../src/doc';
+import { addRoom, addWall, emptyFloorDoc } from '../src/doc';
 import { detectRooms } from '../src/detect';
 import type { FloorDoc, RoomRect, Wall } from '../src/types';
 
@@ -135,5 +135,47 @@ describe('buildRoomScheduleCsv', () => {
     };
     const csv = buildRoomScheduleCsv('x', [{ name: 'GF', doc }]);
     expect(csv).toContain('"Kitchen, ""Diner"""');
+  });
+});
+
+describe('floorGiaM2 to internal wall faces', () => {
+  it('measures a 6x5m plan (200mm external walls) to ~27.84 m2, including the internal partition', () => {
+    let d = emptyFloorDoc();
+    const mk = (id: string, a: [number, number], b: [number, number], t: number): Wall => ({
+      id, a: { x: a[0], y: a[1] }, b: { x: b[0], y: b[1] }, thickness: t,
+    });
+    // 6x5 external perimeter (200mm) + one internal partition (100mm)
+    d = addWall(d, mk('top', [0, 0], [6000, 0], 200));
+    d = addWall(d, mk('right', [6000, 0], [6000, 5000], 200));
+    d = addWall(d, mk('bottom', [6000, 5000], [0, 5000], 200));
+    d = addWall(d, mk('left', [0, 5000], [0, 0], 200));
+    d = addWall(d, mk('mid', [3000, 0], [3000, 5000], 100));
+    // rooms inset to the internal faces (x 100..2950 / 3050..5900, y 100..4900)
+    d = addRoom(d, room('lr', 100, 100, 2850, 4800));
+    d = addRoom(d, room('br', 3050, 100, 2850, 4800));
+    // internal envelope = 5800 x 4800 = 27.84 m2 (partition included)
+    expect(floorGiaM2(d)).toBeCloseTo(27.84, 1);
+  });
+
+  it('subtracts a room explicitly excluded from GIA (e.g. integral garage)', () => {
+    let d = emptyFloorDoc();
+    const mk = (id: string, a: [number, number], b: [number, number], t: number): Wall => ({
+      id, a: { x: a[0], y: a[1] }, b: { x: b[0], y: b[1] }, thickness: t,
+    });
+    d = addWall(d, mk('top', [0, 0], [6000, 0], 200));
+    d = addWall(d, mk('right', [6000, 0], [6000, 5000], 200));
+    d = addWall(d, mk('bottom', [6000, 5000], [0, 5000], 200));
+    d = addWall(d, mk('left', [0, 5000], [0, 0], 200));
+    d = addRoom(d, room('living', 100, 100, 5800, 3000));
+    d = addRoom(d, room('garage', 100, 3100, 5800, 1800, { includeInGia: false })); // 10.44 m2 excluded
+    const full = 5800 * 4800 / 1e6; // 27.84
+    const garage = 5800 * 1800 / 1e6; // 10.44
+    expect(floorGiaM2(d)).toBeCloseTo(full - garage, 1);
+  });
+
+  it('falls back to room union when there is no enclosing wall loop', () => {
+    let d = emptyFloorDoc();
+    d = addRoom(d, room('a', 0, 0, 3000, 2000)); // 6 m2, no walls
+    expect(floorGiaM2(d)).toBeCloseTo(6, 5);
   });
 });

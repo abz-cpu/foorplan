@@ -21,6 +21,7 @@ import {
   addRoom,
   addSymbol,
   addWall,
+  autoClassifyWallThickness,
   clampOpeningOffset,
   DEFAULT_CEILING_HEIGHT_M,
   DEFAULT_DOOR_WIDTH_MM,
@@ -55,6 +56,7 @@ import {
   updateSymbol,
   updateWall,
   wallLengthMm,
+  wallsForRoom,
   wallNormal,
   wallSegments,
   type Opening,
@@ -131,6 +133,22 @@ function rotateVec(v: Point, deg: number): Point {
 
 /** Smallest furniture footprint a resize handle can shrink to, mm. */
 const MIN_SYMBOL_MM = 150;
+
+/** Fixed ray (room-label-local mm at scale 1) from a label's centre to its
+ *  font-size handle; the handle sits at centre + BASE * scale. */
+const LABEL_HANDLE_BASE = { x: 1150, y: 470 };
+const LABEL_HANDLE_BASE_MAG = Math.hypot(LABEL_HANDLE_BASE.x, LABEL_HANDLE_BASE.y);
+
+/** An in-progress grab of a resize/reshape handle. Handles are picked and
+ *  dragged geometrically (like entities), NOT via Konva hit detection —
+ *  Konva's pixel hit canvas is broken under Brave's farbling, which made
+ *  handle grabs land on the entity underneath instead ("resizing just
+ *  selects/moves it" / "resizing a room selects the wall"). */
+type HandleDrag =
+  | { kind: 'room-resize'; room: RoomRect; ox: number; oy: number }
+  | { kind: 'wall-end'; wall: Wall; end: 'a' | 'b' }
+  | { kind: 'symbol-resize'; symbol: SymbolInstance; sx: 1 | -1; sy: 1 | -1; opp: Point }
+  | { kind: 'label-scale'; entity: 'room' | 'text'; id: string; center: Point };
 
 /** Overlap area of two AABBs {x0,y0,x1,y1}. */
 function aabbOverlap(
@@ -394,6 +412,8 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
   const showRoomLabels = useEditorStore((s) => s.showRoomLabels);
   const showFurniture = useEditorStore((s) => s.showFurniture);
   const planMode = useEditorStore((s) => s.planMode);
+  const autoRoomWalls = useEditorStore((s) => s.autoRoomWalls);
+  const autoWallThickness = useEditorStore((s) => s.autoWallThickness);
   const select = useEditorStore((s) => s.select);
   const toggleSelect = useEditorStore((s) => s.toggleSelect);
   const selectMany = useEditorStore((s) => s.selectMany);
@@ -669,6 +689,20 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
     return p ? toWorld(p) : null;
   }, [toWorld]);
 
+  // World position from raw client coordinates — unlike pointerWorld()
+  // (Konva's last stage-local pointer, which goes stale the moment the
+  // cursor leaves the canvas), this stays correct outside the Stage, so a
+  // drag that strays past the canvas edge keeps tracking and can commit.
+  const worldFromClient = useCallback(
+    (client: Point): Point | null => {
+      const el = containerRef.current;
+      if (!el) return null;
+      const rect = el.getBoundingClientRect();
+      return toWorld({ x: client.x - rect.left, y: client.y - rect.top });
+    },
+    [toWorld],
+  );
+
   const snapEnd = useCallback(
     (raw: Point, start: Point | null): Point =>
       snapWallEnd(raw, start, {
@@ -819,9 +853,12 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
       console.warn('Drag aborted by guardDrag:', label, err);
       setWallEndDraft(null);
       setResizeDraft(null);
+      setSymbolResizeDraft(null);
+      setLabelScaleDraft(null);
       setMarqueeDraft(null);
       setManualDrag(null);
       manualDragRef.current = null;
+      handleDragRef.current = null;
       openingDrag.current = null;
       panDrag.current = null;
       try {
@@ -933,6 +970,93 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
     [doc],
   );
 
+  // 10px handles are fine under a mouse cursor but nearly impossible to
+  // grab with a finger — on coarse pointers (touch screens) render them at
+  // 24px so resize/reshape works on phones and tablets.
+  const handleHalf = (COARSE_POINTER ? 12 : 5) / scale;
+
+  // Smart default label positions (only for rooms the user hasn't manually
+  // repositioned). Recomputed when rooms/furniture/walls change.
+  const smartLabelOffsets = useMemo(() => {
+    const m = new Map<string, Point>();
+    for (const room of doc.rooms) {
+      if (room.labelOffset || room.type === 'Stairs') continue;
+      m.set(room.id, computeSmartLabelOffset(room, doc.symbols, doc.walls));
+    }
+    return m;
+  }, [doc.rooms, doc.symbols, doc.walls]);
+
+  const effectiveLabelOffset = (room: RoomRect): Point =>
+    room.labelOffset ?? smartLabelOffsets.get(room.id) ?? ZERO_POINT;
+
+  const roomLabelScale = (room: RoomRect): number =>
+    labelScaleDraft?.id === room.id ? labelScaleDraft.scale : (room.labelScale ?? 1);
+
+  const handleDragRef = useRef<HandleDrag | null>(null);
+
+  // Which resize/reshape handle (if any) of the selected entity is under
+  // the pointer. Checked BEFORE entity picking so a handle grab always
+  // beats whatever sits underneath it — a room's corner handle lying on a
+  // wall must start a resize, not select the wall.
+  const pickHandleAt = (p: Point): HandleDrag | null => {
+    if (!selectedId) return null;
+    const tol = Math.max(handleHalf * 2.4, 18 / scale);
+    const room = doc.rooms.find((r) => r.id === selectedId);
+    if (room) {
+      const corners = [
+        { cx: room.x, cy: room.y, ox: room.x + room.w, oy: room.y + room.h },
+        { cx: room.x + room.w, cy: room.y, ox: room.x, oy: room.y + room.h },
+        { cx: room.x, cy: room.y + room.h, ox: room.x + room.w, oy: room.y },
+        { cx: room.x + room.w, cy: room.y + room.h, ox: room.x, oy: room.y },
+      ];
+      for (const c of corners) {
+        if (Math.hypot(p.x - c.cx, p.y - c.cy) <= tol) {
+          return { kind: 'room-resize', room, ox: c.ox, oy: c.oy };
+        }
+      }
+      if (room.type !== 'Stairs') {
+        const s = room.labelScale ?? 1;
+        const off = effectiveLabelOffset(room);
+        const center = { x: room.x + room.w / 2 + off.x, y: room.y + room.h / 2 + off.y };
+        const hp = { x: center.x + LABEL_HANDLE_BASE.x * s, y: center.y + LABEL_HANDLE_BASE.y * s };
+        if (Math.hypot(p.x - hp.x, p.y - hp.y) <= tol) {
+          return { kind: 'label-scale', entity: 'room', id: room.id, center };
+        }
+      }
+      return null;
+    }
+    const wall = doc.walls.find((w) => w.id === selectedId);
+    if (wall) {
+      if (Math.hypot(p.x - wall.a.x, p.y - wall.a.y) <= tol) return { kind: 'wall-end', wall, end: 'a' };
+      if (Math.hypot(p.x - wall.b.x, p.y - wall.b.y) <= tol) return { kind: 'wall-end', wall, end: 'b' };
+      return null;
+    }
+    const symbol = doc.symbols.find((s) => s.id === selectedId);
+    if (symbol) {
+      const center = { x: symbol.x + symbol.w / 2, y: symbol.y + symbol.h / 2 };
+      for (const sx of [-1, 1] as const) {
+        for (const sy of [-1, 1] as const) {
+          const v = rotateVec({ x: (sx * symbol.w) / 2, y: (sy * symbol.h) / 2 }, symbol.rotationDeg);
+          if (Math.hypot(p.x - (center.x + v.x), p.y - (center.y + v.y)) <= tol) {
+            const ov = rotateVec({ x: (-sx * symbol.w) / 2, y: (-sy * symbol.h) / 2 }, symbol.rotationDeg);
+            return { kind: 'symbol-resize', symbol, sx, sy, opp: { x: center.x + ov.x, y: center.y + ov.y } };
+          }
+        }
+      }
+      return null;
+    }
+    const label = doc.labels.find((l) => l.id === selectedId);
+    if (label) {
+      const s = label.scale ?? 1;
+      const center = { x: label.x, y: label.y + 110 * s };
+      const hp = { x: center.x + LABEL_HANDLE_BASE.x * s, y: center.y + LABEL_HANDLE_BASE.y * s };
+      if (Math.hypot(p.x - hp.x, p.y - hp.y) <= tol) {
+        return { kind: 'label-scale', entity: 'text', id: label.id, center };
+      }
+    }
+    return null;
+  };
+
   /* ---- shared pointer logic (mouse + single touch) ---- */
 
   const pointerDown = (isStageTarget: boolean, screen: Point) => {
@@ -947,13 +1071,18 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
         panDrag.current = { pointer: screen, pan };
         return;
       }
-      // The resize/wall-endpoint handles are the only shapes that still
-      // listen (they're Konva-draggable). If one of them was grabbed,
-      // e.target isn't the stage — let Konva drive that drag and don't run
-      // geometric picking on top of it.
+      // Only the (unlocked) underlay image still listens/drags via Konva;
+      // if it was grabbed, e.target isn't the stage — let Konva drive it.
       if (!isStageTarget) return;
       const raw = pointerWorld();
       if (!raw) return;
+      // Resize/reshape handles first: a handle grab must beat the entity
+      // underneath it (a room's corner handle often lies ON a wall).
+      const grabbedHandle = pickHandleAt(raw);
+      if (grabbedHandle) {
+        handleDragRef.current = grabbedHandle;
+        return;
+      }
       // Geometric hit-test — independent of Konva's (Brave-broken) pixel
       // hit canvas. Picks the top-most entity under the cursor by the same
       // priority the context menu uses (symbol → label → opening → wall →
@@ -995,10 +1124,13 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
         setWallStart(pt);
         setHoverPt(pt);
       } else if (distance(wallStart, pt) >= 10) {
-        commit(
-          'Draw wall',
-          addWall(doc, { id: newId(), a: wallStart, b: pt, thickness: drawThickness }),
-        );
+        let next = addWall(doc, { id: newId(), a: wallStart, b: pt, thickness: drawThickness });
+        // Auto internal/external thickness: with rooms on the plan, a wall
+        // on the exposed boundary becomes 200mm and partitions 100mm as you
+        // draw — no re-typing afterwards. Custom thicknesses are preserved,
+        // and with no rooms yet nothing is touched.
+        if (autoWallThickness) next = autoClassifyWallThickness(next);
+        commit('Draw wall', next);
         setWallStart(pt);
         setHoverPt(pt);
       } else {
@@ -1087,8 +1219,53 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
       });
       return;
     }
+    if (handleDragRef.current) {
+      const h = handleDragRef.current;
+      const raw = worldFromClient(screen);
+      if (!raw) return;
+      guardDrag('Handle drag', () => {
+        if (h.kind === 'room-resize') {
+          const snapped = snapFree(raw);
+          let nx = snapped.x;
+          let ny = snapped.y;
+          if (Math.abs(nx - h.ox) < MIN_ROOM_MM) nx = h.ox + Math.sign(nx - h.ox || 1) * MIN_ROOM_MM;
+          if (Math.abs(ny - h.oy) < MIN_ROOM_MM) ny = h.oy + Math.sign(ny - h.oy || 1) * MIN_ROOM_MM;
+          setResizeDraft({
+            ...h.room,
+            x: Math.min(nx, h.ox),
+            y: Math.min(ny, h.oy),
+            w: Math.abs(nx - h.ox),
+            h: Math.abs(ny - h.oy),
+          });
+        } else if (h.kind === 'wall-end') {
+          const other = h.end === 'a' ? h.wall.b : h.wall.a;
+          const snapped = snapEndFree(raw, other);
+          if (distance(snapped, other) < 100) return; // refuse to collapse the wall
+          setWallEndDraft({
+            id: h.wall.id,
+            a: h.end === 'a' ? snapped : h.wall.a,
+            b: h.end === 'b' ? snapped : h.wall.b,
+          });
+        } else if (h.kind === 'symbol-resize') {
+          // Diagonal from the fixed opposite corner, in the symbol's frame.
+          const d = rotateVec({ x: raw.x - h.opp.x, y: raw.y - h.opp.y }, -h.symbol.rotationDeg);
+          const nw = Math.max(MIN_SYMBOL_MM, Math.abs(d.x));
+          const nh = Math.max(MIN_SYMBOL_MM, Math.abs(d.y));
+          const half = rotateVec({ x: (h.sx * nw) / 2, y: (h.sy * nh) / 2 }, h.symbol.rotationDeg);
+          const nc = { x: h.opp.x + half.x, y: h.opp.y + half.y };
+          setSymbolResizeDraft({ ...h.symbol, w: nw, h: nh, x: nc.x - nw / 2, y: nc.y - nh / 2 });
+        } else {
+          const ns = Math.max(
+            0.5,
+            Math.min(3, Math.hypot(raw.x - h.center.x, raw.y - h.center.y) / LABEL_HANDLE_BASE_MAG),
+          );
+          setLabelScaleDraft({ id: h.id, scale: ns });
+        }
+      });
+      return;
+    }
     if (manualDragRef.current) {
-      const raw = pointerWorld();
+      const raw = worldFromClient(screen);
       if (raw) {
         const md = manualDragRef.current;
         setManualDrag({
@@ -1099,12 +1276,12 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
       return;
     }
     if (marqueeDraft) {
-      const raw = pointerWorld();
+      const raw = worldFromClient(screen);
       if (raw) setMarqueeDraft({ a: marqueeDraft.a, b: raw });
       return;
     }
     if (openingDrag.current) {
-      const raw = pointerWorld();
+      const raw = worldFromClient(screen);
       const wall = findWall(doc, openingDrag.current.wallId);
       if (raw && wall) {
         setOpeningDraft({
@@ -1117,7 +1294,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
       return;
     }
     if (tool === 'wall') {
-      const raw = pointerWorld();
+      const raw = worldFromClient(screen);
       if (raw) {
         let pt = snapEnd(raw, wallStart);
         // Smart alignment: when the pending point lines up (within ~6px on
@@ -1145,13 +1322,13 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
         setHoverPt(pt);
       }
     } else if (tool === 'measure' && measureA) {
-      const raw = pointerWorld();
+      const raw = worldFromClient(screen);
       if (raw) setHoverPt(snapFree(raw));
     } else if (isDraftingTool(tool) && rectDraft) {
-      const raw = pointerWorld();
+      const raw = worldFromClient(screen);
       if (raw) setRectDraft({ ...rectDraft, b: snapFree(raw) });
     } else if (tool === 'door' || tool === 'window') {
-      const raw = pointerWorld();
+      const raw = worldFromClient(screen);
       if (raw) {
         const hit = nearestWall(doc, raw, wallHitToleranceMm);
         setOpeningHover(hit ? { wall: hit.wall, offsetMm: hit.offsetMm } : null);
@@ -1159,13 +1336,53 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
     }
   };
 
-  const pointerUp = () => {
+  const pointerUp = (client?: Point) => {
     panDrag.current = null;
+
+    if (handleDragRef.current) {
+      const h = handleDragRef.current;
+      handleDragRef.current = null;
+      guardDrag('Commit handle drag', () => {
+        if (h.kind === 'room-resize') {
+          const draft = resizeDraft;
+          setResizeDraft(null);
+          if (draft && draft.id === h.room.id) {
+            commit('Resize room', updateRoom(doc, h.room.id, { x: draft.x, y: draft.y, w: draft.w, h: draft.h }));
+          }
+        } else if (h.kind === 'wall-end') {
+          const draft = wallEndDraft;
+          setWallEndDraft(null);
+          if (draft && draft.id === h.wall.id) {
+            commit('Reshape wall', updateWall(doc, h.wall.id, h.end === 'a' ? { a: draft.a } : { b: draft.b }));
+          }
+        } else if (h.kind === 'symbol-resize') {
+          const draft = symbolResizeDraft;
+          setSymbolResizeDraft(null);
+          if (draft && draft.id === h.symbol.id) {
+            commit(
+              'Resize furniture',
+              updateSymbol(doc, h.symbol.id, { x: draft.x, y: draft.y, w: draft.w, h: draft.h }),
+            );
+          }
+        } else {
+          const draft = labelScaleDraft;
+          setLabelScaleDraft(null);
+          if (draft && draft.id === h.id) {
+            if (h.entity === 'room') {
+              commit('Resize label', updateRoom(doc, h.id, { labelScale: draft.scale }));
+            } else {
+              commit('Resize label', updateLabel(doc, h.id, { scale: draft.scale }));
+            }
+          }
+        }
+      });
+      return;
+    }
 
     if (manualDragRef.current) {
       const md = manualDragRef.current;
       manualDragRef.current = null;
-      const raw = pointerWorld();
+      const raw = client ? worldFromClient(client) : pointerWorld();
       const delta = raw ? { x: raw.x - md.startWorld.x, y: raw.y - md.startWorld.y } : { x: 0, y: 0 };
       setManualDrag(null);
       // Below the threshold it was a click, not a drag — selection already
@@ -1235,12 +1452,57 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
           ceilingHeightM: DEFAULT_CEILING_HEIGHT_M,
           includeInGia: !stairs,
         };
-        commit(stairs ? 'Add stairs' : 'Add room', addRoom(doc, room));
+        let next = addRoom(doc, room);
+        // A drawn room auto-encloses itself: walls appear along any edge
+        // that doesn't already have one (a shared wall with the neighbour
+        // is reused, not doubled), then thicknesses are classified so the
+        // boundary comes out external and partitions internal.
+        if (!stairs && autoRoomWalls) {
+          for (const wall of wallsForRoom(doc, room)) next = addWall(next, wall);
+          if (autoWallThickness) next = autoClassifyWallThickness(next);
+        }
+        commit(stairs ? 'Add stairs' : 'Add room', next);
         select(room.id);
       }
       setRectDraft(null);
     }
   };
+
+  // Konva only delivers mouse events while the pointer is over the Stage,
+  // so a drag that strays past the canvas edge used to go dead: no more
+  // move updates and — worse — the mouseup was lost, leaving the drag
+  // armed and the gesture uncommitted. (Konva-draggable shapes attached
+  // their own window listeners, which is why handles never used to have
+  // this problem — the geometric pipeline needs the same.) While any drag
+  // is active, window-level listeners take over the moment the pointer is
+  // outside the canvas; inside it, the Stage handlers drive as usual.
+  useEffect(() => {
+    const dragActive = () =>
+      !!handleDragRef.current ||
+      !!manualDragRef.current ||
+      !!openingDrag.current ||
+      !!panDrag.current ||
+      !!marqueeDraft ||
+      !!rectDraft;
+    const outsideCanvas = (e: MouseEvent) => {
+      const el = containerRef.current;
+      if (!el) return false;
+      const r = el.getBoundingClientRect();
+      return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+    };
+    const onWinMove = (e: MouseEvent) => {
+      if (dragActive() && outsideCanvas(e)) pointerMove({ x: e.clientX, y: e.clientY });
+    };
+    const onWinUp = (e: MouseEvent) => {
+      if (dragActive() && outsideCanvas(e)) pointerUp({ x: e.clientX, y: e.clientY });
+    };
+    window.addEventListener('mousemove', onWinMove);
+    window.addEventListener('mouseup', onWinUp);
+    return () => {
+      window.removeEventListener('mousemove', onWinMove);
+      window.removeEventListener('mouseup', onWinUp);
+    };
+  });
 
   /* ---- mouse events ---- */
 
@@ -1447,18 +1709,17 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
   const selectedWall = doc.walls.find((w) => w.id === selectedId) ?? null;
   const selectedSymbol = doc.symbols.find((s) => s.id === selectedId) ?? null;
   const selectedLabel = doc.labels.find((l) => l.id === selectedId) ?? null;
-  // 10px handles are fine under a mouse cursor but nearly impossible to
-  // grab with a finger — on coarse pointers (touch screens) render them at
-  // 24px so resize/reshape works on phones and tablets.
-  const handleHalf = (COARSE_POINTER ? 12 : 5) / scale;
+  /* All handles below are pure visuals (listening={false}): grabbing and
+     dragging them is driven by pickHandleAt + the shared pointer pipeline,
+     never by Konva hit detection. */
 
   const renderResizeHandles = (room: RoomRect) => {
     const r = resizeDraft?.id === room.id ? resizeDraft : room;
     const corners = [
-      { cx: r.x, cy: r.y, ox: r.x + r.w, oy: r.y + r.h },
-      { cx: r.x + r.w, cy: r.y, ox: r.x, oy: r.y + r.h },
-      { cx: r.x, cy: r.y + r.h, ox: r.x + r.w, oy: r.y },
-      { cx: r.x + r.w, cy: r.y + r.h, ox: r.x, oy: r.y },
+      { cx: r.x, cy: r.y },
+      { cx: r.x + r.w, cy: r.y },
+      { cx: r.x, cy: r.y + r.h },
+      { cx: r.x + r.w, cy: r.y + r.h },
     ];
     return corners.map((c, i) => (
       <Rect
@@ -1470,197 +1731,64 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
         fill="#FFFFFF"
         stroke={ACTION}
         strokeWidth={2 / scale}
-        draggable
-        onDragMove={(e) => {
-          const px = e.target.x() + handleHalf;
-          const py = e.target.y() + handleHalf;
-          const snapped = snapFree({ x: px, y: py });
-          let nx = snapped.x;
-          let ny = snapped.y;
-          if (Math.abs(nx - c.ox) < MIN_ROOM_MM) nx = c.ox + Math.sign(nx - c.ox || 1) * MIN_ROOM_MM;
-          if (Math.abs(ny - c.oy) < MIN_ROOM_MM) ny = c.oy + Math.sign(ny - c.oy || 1) * MIN_ROOM_MM;
-          setResizeDraft({
-            ...room,
-            x: Math.min(nx, c.ox),
-            y: Math.min(ny, c.oy),
-            w: Math.abs(nx - c.ox),
-            h: Math.abs(ny - c.oy),
-          });
-        }}
-        onDragEnd={(e) => {
-          const draft = resizeDraft;
-          setResizeDraft(null);
-          if (draft) {
-            e.target.position({ x: c.cx - handleHalf, y: c.cy - handleHalf });
-            commit(
-              'Resize room',
-              updateRoom(doc, room.id, { x: draft.x, y: draft.y, w: draft.w, h: draft.h }),
-            );
-          }
-        }}
+        listening={false}
       />
     ));
   };
 
   const renderWallEndHandles = (wall: Wall) => {
     const w = wallEndDraft?.id === wall.id ? wallEndDraft : wall;
-    const ends: { key: 'a' | 'b'; point: Point; other: Point }[] = [
-      { key: 'a', point: w.a, other: w.b },
-      { key: 'b', point: w.b, other: w.a },
-    ];
-    return ends.map(({ key, point, other }) => (
+    return (['a', 'b'] as const).map((key) => (
       <Circle
         key={`wall-handle-${key}`}
-        x={point.x}
-        y={point.y}
+        x={w[key].x}
+        y={w[key].y}
         radius={handleHalf}
         fill="#FFFFFF"
         stroke={ACTION}
         strokeWidth={2 / scale}
-        draggable
-        onDragMove={(e) =>
-          guardDrag('Reshape wall (move)', () => {
-            const raw = { x: e.target.x(), y: e.target.y() };
-            const snapped = snapEndFree(raw, other);
-            if (distance(snapped, other) < 100) return; // refuse to collapse the wall to near-zero length
-            e.target.position(snapped);
-            setWallEndDraft({
-              id: wall.id,
-              a: key === 'a' ? snapped : wall.a,
-              b: key === 'b' ? snapped : wall.b,
-            });
-          })
-        }
-        onDragEnd={() =>
-          guardDrag('Reshape wall', () => {
-            const draft = wallEndDraft;
-            setWallEndDraft(null);
-            if (draft && draft.id === wall.id) {
-              commit('Reshape wall', updateWall(doc, wall.id, key === 'a' ? { a: draft.a } : { b: draft.b }));
-            }
-          })
-        }
+        listening={false}
       />
     ));
   };
 
-  // Corner resize handles for the selected piece of furniture. Rendered at
-  // the symbol's rotated corners; dragging one anchors the opposite corner
-  // in world space and rescales the footprint in the symbol's own frame, so
-  // resize behaves correctly even for rotated furniture.
+  // Corner handles at the selected furniture's rotated corners.
   const renderSymbolResizeHandles = (symbol: SymbolInstance) => {
     const s = symbolResizeDraft?.id === symbol.id ? symbolResizeDraft : symbol;
     const center = { x: s.x + s.w / 2, y: s.y + s.h / 2 };
-    // local corner (sign in x, sign in y) → world position
-    const corners: { sx: number; sy: number }[] = [
-      { sx: -1, sy: -1 },
-      { sx: 1, sy: -1 },
-      { sx: -1, sy: 1 },
-      { sx: 1, sy: 1 },
-    ];
-    return corners.map(({ sx, sy }, i) => {
-      const world = {
-        x: center.x + rotateVec({ x: (sx * s.w) / 2, y: (sy * s.h) / 2 }, s.rotationDeg).x,
-        y: center.y + rotateVec({ x: (sx * s.w) / 2, y: (sy * s.h) / 2 }, s.rotationDeg).y,
-      };
-      // Opposite corner stays put while this one is dragged.
-      const opp = {
-        x: center.x + rotateVec({ x: (-sx * s.w) / 2, y: (-sy * s.h) / 2 }, s.rotationDeg).x,
-        y: center.y + rotateVec({ x: (-sx * s.w) / 2, y: (-sy * s.h) / 2 }, s.rotationDeg).y,
-      };
-      return (
-        <Rect
-          key={`sym-handle-${i}`}
-          x={world.x - handleHalf}
-          y={world.y - handleHalf}
-          width={handleHalf * 2}
-          height={handleHalf * 2}
-          fill="#FFFFFF"
-          stroke={ACTION}
-          strokeWidth={2 / scale}
-          draggable
-          onDragMove={(e) =>
-            guardDrag('Resize furniture (move)', () => {
-              const px = e.target.x() + handleHalf;
-              const py = e.target.y() + handleHalf;
-              // Diagonal from the fixed opposite corner, in the symbol's frame.
-              const d = rotateVec({ x: px - opp.x, y: py - opp.y }, -symbol.rotationDeg);
-              const nw = Math.max(MIN_SYMBOL_MM, Math.abs(d.x));
-              const nh = Math.max(MIN_SYMBOL_MM, Math.abs(d.y));
-              // New centre = opposite corner + half the (signed) diagonal.
-              const half = rotateVec({ x: (sx * nw) / 2, y: (sy * nh) / 2 }, symbol.rotationDeg);
-              const nc = { x: opp.x + half.x, y: opp.y + half.y };
-              setSymbolResizeDraft({ ...symbol, w: nw, h: nh, x: nc.x - nw / 2, y: nc.y - nh / 2 });
-            })
-          }
-          onDragEnd={() =>
-            guardDrag('Resize furniture', () => {
-              const draft = symbolResizeDraft;
-              setSymbolResizeDraft(null);
-              if (draft && draft.id === symbol.id) {
-                commit(
-                  'Resize furniture',
-                  updateSymbol(doc, symbol.id, { x: draft.x, y: draft.y, w: draft.w, h: draft.h }),
-                );
-              }
-            })
-          }
-        />
-      );
-    });
+    return ([-1, 1] as const).flatMap((sx) =>
+      ([-1, 1] as const).map((sy) => {
+        const v = rotateVec({ x: (sx * s.w) / 2, y: (sy * s.h) / 2 }, s.rotationDeg);
+        return (
+          <Rect
+            key={`sym-handle-${sx},${sy}`}
+            x={center.x + v.x - handleHalf}
+            y={center.y + v.y - handleHalf}
+            width={handleHalf * 2}
+            height={handleHalf * 2}
+            fill="#FFFFFF"
+            stroke={ACTION}
+            strokeWidth={2 / scale}
+            listening={false}
+          />
+        );
+      }),
+    );
   };
-
-  // Smart default label positions (only for rooms the user hasn't manually
-  // repositioned). Recomputed when rooms/furniture/walls change.
-  const smartLabelOffsets = useMemo(() => {
-    const m = new Map<string, Point>();
-    for (const room of doc.rooms) {
-      if (room.labelOffset || room.type === 'Stairs') continue;
-      m.set(room.id, computeSmartLabelOffset(room, doc.symbols, doc.walls));
-    }
-    return m;
-  }, [doc.rooms, doc.symbols, doc.walls]);
-
-  const effectiveLabelOffset = (room: RoomRect): Point =>
-    room.labelOffset ?? smartLabelOffsets.get(room.id) ?? ZERO_POINT;
-
-  const roomLabelScale = (room: RoomRect): number =>
-    labelScaleDraft?.id === room.id ? labelScaleDraft.scale : (room.labelScale ?? 1);
-
-  // Handle at the corner of a room's name/area block; drag out/in to scale
-  // the label font. Its position lies on a fixed ray from the label centre,
-  // at a radius proportional to the current scale.
-  const LABEL_HANDLE_BASE = { x: 1150, y: 470 };
-  const LABEL_HANDLE_BASE_MAG = Math.hypot(LABEL_HANDLE_BASE.x, LABEL_HANDLE_BASE.y);
 
   const renderRoomLabelHandle = (room: RoomRect) => {
     const scaleVal = roomLabelScale(room);
     const off = effectiveLabelOffset(room);
     const center = { x: room.x + room.w / 2 + off.x, y: room.y + room.h / 2 + off.y };
-    const handle = { x: center.x + LABEL_HANDLE_BASE.x * scaleVal, y: center.y + LABEL_HANDLE_BASE.y * scaleVal };
     return (
       <Circle
-        x={handle.x}
-        y={handle.y}
+        x={center.x + LABEL_HANDLE_BASE.x * scaleVal}
+        y={center.y + LABEL_HANDLE_BASE.y * scaleVal}
         radius={handleHalf}
         fill="#FFFFFF"
         stroke={ACTION}
         strokeWidth={2 / scale}
-        draggable
-        onDragMove={(e) =>
-          guardDrag('Resize label (move)', () => {
-            const p = { x: e.target.x(), y: e.target.y() };
-            const ns = Math.max(0.5, Math.min(3, Math.hypot(p.x - center.x, p.y - center.y) / LABEL_HANDLE_BASE_MAG));
-            setLabelScaleDraft({ id: room.id, scale: ns });
-          })
-        }
-        onDragEnd={() =>
-          guardDrag('Resize label', () => {
-            const d = labelScaleDraft;
-            setLabelScaleDraft(null);
-            if (d && d.id === room.id) commit('Resize label', updateRoom(doc, room.id, { labelScale: d.scale }));
-          })
-        }
+        listening={false}
       />
     );
   };
@@ -1668,30 +1796,15 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
   const renderTextLabelHandle = (label: TextLabel) => {
     const scaleVal = labelScaleDraft?.id === label.id ? labelScaleDraft.scale : (label.scale ?? 1);
     const center = { x: label.x, y: label.y + 110 * scaleVal };
-    const handle = { x: center.x + LABEL_HANDLE_BASE.x * scaleVal, y: center.y + LABEL_HANDLE_BASE.y * scaleVal };
     return (
       <Circle
-        x={handle.x}
-        y={handle.y}
+        x={center.x + LABEL_HANDLE_BASE.x * scaleVal}
+        y={center.y + LABEL_HANDLE_BASE.y * scaleVal}
         radius={handleHalf}
         fill="#FFFFFF"
         stroke={ACTION}
         strokeWidth={2 / scale}
-        draggable
-        onDragMove={(e) =>
-          guardDrag('Resize text label (move)', () => {
-            const p = { x: e.target.x(), y: e.target.y() };
-            const ns = Math.max(0.5, Math.min(3, Math.hypot(p.x - center.x, p.y - center.y) / LABEL_HANDLE_BASE_MAG));
-            setLabelScaleDraft({ id: label.id, scale: ns });
-          })
-        }
-        onDragEnd={() =>
-          guardDrag('Resize text label', () => {
-            const d = labelScaleDraft;
-            setLabelScaleDraft(null);
-            if (d && d.id === label.id) commit('Resize label', updateLabel(doc, label.id, { scale: d.scale }));
-          })
-        }
+        listening={false}
       />
     );
   };
@@ -1879,7 +1992,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
         y={pan.y}
         onMouseDown={onMouseDown}
         onMouseMove={onMouseMove}
-        onMouseUp={pointerUp}
+        onMouseUp={(e) => pointerUp({ x: e.evt.clientX, y: e.evt.clientY })}
         onWheel={onWheel}
         onContextMenu={(e) => {
           e.evt.preventDefault();

@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import {
   applyAutoWallThickness,
+  autoClassifyWallThickness,
   DEFAULT_WALL_THICKNESS_MM,
   deleteEntities,
   deleteEntity,
@@ -127,6 +128,74 @@ const textInputClass =
 const blurOnEnter = (e: React.KeyboardEvent<HTMLInputElement>) =>
   e.key === 'Enter' && (e.target as HTMLInputElement).blur();
 
+/** mm input with − / + stepper buttons — one tap nudges the value by
+ *  `step`, or type an exact number. Commits clamped to [min, max]. */
+function SizeStepper({
+  label,
+  value,
+  step,
+  min,
+  max,
+  onCommit,
+}: {
+  label: string;
+  value: number;
+  step: number;
+  min: number;
+  max: number;
+  onCommit: (mm: number) => void;
+}) {
+  const [text, setText] = useState(String(Math.round(value)));
+  useEffect(() => setText(String(Math.round(value))), [value]);
+  const commitVal = (v: number) => {
+    if (!Number.isFinite(v)) {
+      setText(String(Math.round(value)));
+      return;
+    }
+    const clamped = Math.min(max, Math.max(min, Math.round(v)));
+    setText(String(clamped));
+    if (clamped !== Math.round(value)) onCommit(clamped);
+  };
+  const stepBtn =
+    'flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-[9px] border border-input bg-white text-[15px] font-semibold text-ink-mid hover:bg-shell disabled:cursor-default disabled:opacity-40';
+  return (
+    <div>
+      <label className="mb-1 block text-[11px] font-medium text-ink-faint">{label}</label>
+      <div className="flex items-center gap-1.5">
+        <button
+          type="button"
+          className={stepBtn}
+          aria-label={`Decrease ${label}`}
+          disabled={value <= min}
+          onClick={() => commitVal(value - step)}
+        >
+          −
+        </button>
+        <div className="relative flex-1">
+          <input
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onBlur={() => commitVal(Number.parseFloat(text))}
+            onKeyDown={blurOnEnter}
+            inputMode="numeric"
+            className={numberInputClass}
+          />
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-ink-ghost">mm</span>
+        </div>
+        <button
+          type="button"
+          className={stepBtn}
+          aria-label={`Increase ${label}`}
+          disabled={value >= max}
+          onClick={() => commitVal(value + step)}
+        >
+          +
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function RoomPanel({
   onDownloadCsv,
   onDownloadEpcCsv,
@@ -151,6 +220,7 @@ export function RoomPanel({
   const commit = useEditorStore((s) => s.commit);
   const select = useEditorStore((s) => s.select);
   const setDetectPreview = useEditorStore((s) => s.setDetectPreview);
+  const autoWallThickness = useEditorStore((s) => s.autoWallThickness);
   const toast = useToast();
 
   const [tab, setTab] = useState<'props' | 'assistant'>(initialTab);
@@ -172,7 +242,6 @@ export function RoomPanel({
   const [ceiling, setCeiling] = useState('');
   const [wallLen, setWallLen] = useState('');
   const [wallThickness, setWallThickness] = useState('');
-  const [openingWidth, setOpeningWidth] = useState('');
   const [labelText, setLabelText] = useState('');
 
   // Clear the detect-rooms preview if the panel unmounts mid-hover
@@ -189,9 +258,6 @@ export function RoomPanel({
   useEffect(() => {
     setWallThickness(wall ? String(wall.thickness) : '');
   }, [wall?.id, wall?.thickness, wall]);
-  useEffect(() => {
-    setOpeningWidth(opening ? String(Math.round(opening.widthMm)) : '');
-  }, [opening?.id, opening?.widthMm, opening]);
   useEffect(() => {
     setLabelText(label?.text ?? '');
   }, [label?.id, label?.text, label]);
@@ -231,13 +297,6 @@ export function RoomPanel({
       setWallThickness(String(wall.thickness));
     }
   };
-  const commitOpeningWidth = () => {
-    if (!opening) return;
-    const v = Number.parseFloat(openingWidth);
-    if (Number.isFinite(v) && v >= 300 && v <= 5000 && v !== opening.widthMm) {
-      commit('Set opening width', updateOpening(doc, opening.id, { widthMm: v }));
-    } else setOpeningWidth(String(Math.round(opening.widthMm)));
-  };
   const commitLabelText = () => {
     if (label && labelText.trim() && labelText.trim() !== label.text) {
       commit('Edit label', updateLabel(doc, label.id, { text: labelText.trim() }));
@@ -265,6 +324,9 @@ export function RoomPanel({
         next = updateRoom(next, s.roomId, { name: s.name, type: s.type });
       }
     }
+    // Rooms just appeared, so walls become classifiable — boundary walls
+    // turn external, partitions internal (custom thicknesses untouched).
+    if (autoWallThickness) next = autoClassifyWallThickness(next);
     commit('Detect rooms', next);
     toast(`${found.length} room${found.length === 1 ? '' : 's'} detected and named`);
   };
@@ -575,20 +637,14 @@ export function RoomPanel({
           ) : opening ? (
             <div>
               <SectionLabel>{opening.kind === 'door' ? 'SELECTED DOOR' : 'SELECTED WINDOW'}</SectionLabel>
-              <label className="mb-1.5 block text-xs font-semibold text-ink-mid">Width</label>
-              <div className="relative">
-                <input
-                  value={openingWidth}
-                  onChange={(e) => setOpeningWidth(e.target.value)}
-                  onBlur={commitOpeningWidth}
-                  onKeyDown={blurOnEnter}
-                  inputMode="numeric"
-                  className={numberInputClass}
-                />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-ink-ghost">
-                  mm
-                </span>
-              </div>
+              <SizeStepper
+                label="Width"
+                value={opening.widthMm}
+                step={25}
+                min={300}
+                max={5000}
+                onCommit={(mm) => commit('Set opening width', updateOpening(doc, opening.id, { widthMm: mm }))}
+              />
               {openingWall && (
                 <div className="mt-3 grid grid-cols-2 gap-2">
                   <StatTile label="On wall" value={formatMmAsM(wallLengthMm(openingWall))} />
@@ -638,9 +694,23 @@ export function RoomPanel({
             <div>
               <SectionLabel>SELECTED FURNITURE</SectionLabel>
               <div className="mb-3 text-[13.5px] font-semibold">{SYMBOL_DEFS[symbol.kind].name}</div>
-              <div className="grid grid-cols-2 gap-2">
-                <StatTile label="Width" value={formatMmAsM(symbol.w)} />
-                <StatTile label="Depth" value={formatMmAsM(symbol.h)} />
+              <div className="flex flex-col gap-2.5">
+                <SizeStepper
+                  label="Width"
+                  value={symbol.w}
+                  step={50}
+                  min={150}
+                  max={10000}
+                  onCommit={(mm) => commit('Resize furniture', updateSymbol(doc, symbol.id, { w: mm }))}
+                />
+                <SizeStepper
+                  label="Depth"
+                  value={symbol.h}
+                  step={50}
+                  min={150}
+                  max={10000}
+                  onCommit={(mm) => commit('Resize furniture', updateSymbol(doc, symbol.id, { h: mm }))}
+                />
               </div>
               <div className="mt-3.5 flex flex-col gap-2">
                 <PanelButton

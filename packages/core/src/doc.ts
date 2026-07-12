@@ -6,6 +6,7 @@ import {
   EXTERNAL_WALL_THICKNESS_MM,
   type FloorDoc,
   type Opening,
+  type Point,
   type RoomRect,
   type TextLabel,
   type Underlay,
@@ -87,6 +88,79 @@ export function applyAutoWallThickness(doc: FloorDoc): FloorDoc {
       thickness: externalIds.has(w.id) ? EXTERNAL_WALL_THICKNESS_MM : DEFAULT_WALL_THICKNESS_MM,
     })),
   };
+}
+
+/**
+ * Continuous variant of applyAutoWallThickness, safe to run after every
+ * wall/room edit: only walls still at one of the two stock thicknesses are
+ * reclassified, so a custom per-wall value (e.g. a typed 150mm) is never
+ * stomped. With no rooms drawn yet classification has nothing to sample
+ * against, so the doc is returned untouched rather than everything
+ * collapsing to "internal".
+ */
+export function autoClassifyWallThickness(doc: FloorDoc): FloorDoc {
+  if (doc.rooms.length === 0 || doc.walls.length === 0) return doc;
+  const externalIds = classifyExternalWalls(doc);
+  let changed = false;
+  const walls = doc.walls.map((w) => {
+    if (w.thickness !== DEFAULT_WALL_THICKNESS_MM && w.thickness !== EXTERNAL_WALL_THICKNESS_MM) return w;
+    const want = externalIds.has(w.id) ? EXTERNAL_WALL_THICKNESS_MM : DEFAULT_WALL_THICKNESS_MM;
+    if (w.thickness === want) return w;
+    changed = true;
+    return { ...w, thickness: want };
+  });
+  return changed ? { ...doc, walls } : doc;
+}
+
+/**
+ * The walls a freshly drawn room needs so it's enclosed like a real room —
+ * one per rectangle edge, skipping any edge an existing wall already runs
+ * along (drawing a room against an existing wall must not double it up).
+ *
+ * Wall centrelines sit half a thickness OUTSIDE the room edge, matching the
+ * convention everywhere else (rooms are inset from wall centrelines by half
+ * the wall's thickness, so GIA excludes the wall body).
+ */
+export function wallsForRoom(
+  doc: FloorDoc,
+  room: RoomRect,
+  thickness = DEFAULT_WALL_THICKNESS_MM,
+): Wall[] {
+  const half = thickness / 2;
+  const x0 = room.x - half;
+  const y0 = room.y - half;
+  const x1 = room.x + room.w + half;
+  const y1 = room.y + room.h + half;
+  // Generous perpendicular band: catches a shared wall whether the new room
+  // was snapped to the neighbouring room's edge, the wall's centreline, or
+  // the wall's far face.
+  const coverTol = 220;
+  const edges: { a: Point; b: Point; horizontal: boolean }[] = [
+    { a: { x: x0, y: y0 }, b: { x: x1, y: y0 }, horizontal: true },
+    { a: { x: x1, y: y0 }, b: { x: x1, y: y1 }, horizontal: false },
+    { a: { x: x1, y: y1 }, b: { x: x0, y: y1 }, horizontal: true },
+    { a: { x: x0, y: y1 }, b: { x: x0, y: y0 }, horizontal: false },
+  ];
+  const out: Wall[] = [];
+  for (const edge of edges) {
+    const lo = Math.min(edge.horizontal ? edge.a.x : edge.a.y, edge.horizontal ? edge.b.x : edge.b.y);
+    const hi = Math.max(edge.horizontal ? edge.a.x : edge.a.y, edge.horizontal ? edge.b.x : edge.b.y);
+    const fixed = edge.horizontal ? edge.a.y : edge.a.x;
+    const len = hi - lo;
+    let covered = 0;
+    for (const w of doc.walls) {
+      const wallHorizontal = Math.abs(w.a.y - w.b.y) <= Math.abs(w.a.x - w.b.x);
+      if (wallHorizontal !== edge.horizontal) continue;
+      const wallFixed = edge.horizontal ? (w.a.y + w.b.y) / 2 : (w.a.x + w.b.x) / 2;
+      if (Math.abs(wallFixed - fixed) > coverTol) continue;
+      const wLo = Math.min(edge.horizontal ? w.a.x : w.a.y, edge.horizontal ? w.b.x : w.b.y);
+      const wHi = Math.max(edge.horizontal ? w.a.x : w.a.y, edge.horizontal ? w.b.x : w.b.y);
+      covered += Math.max(0, Math.min(hi, wHi) - Math.max(lo, wLo));
+    }
+    if (covered >= len * 0.6) continue;
+    out.push({ id: newId(), a: edge.a, b: edge.b, thickness });
+  }
+  return out;
 }
 
 export function addOpening(doc: FloorDoc, opening: Opening): FloorDoc {

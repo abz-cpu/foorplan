@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   addRoom,
   addWall,
+  autoClassifyWallThickness,
   copyPerimeterWalls,
   deleteEntities,
   deleteEntity,
@@ -11,6 +12,7 @@ import {
   setNorthAngle,
   updateRoom,
   wallEndpoints,
+  wallsForRoom,
 } from '../src/doc';
 import { detectRooms } from '../src/detect';
 import { docToThumbnailSvg } from '../src/thumbnail';
@@ -133,5 +135,61 @@ describe('docToThumbnailSvg', () => {
   it('renders an empty svg for an empty doc', () => {
     const svg = docToThumbnailSvg(emptyFloorDoc());
     expect(svg).not.toContain('<line');
+  });
+});
+
+describe('wallsForRoom', () => {
+  it('creates four walls around a room drawn in empty space, centrelines half-thickness outside', () => {
+    const r: RoomRect = { ...room, x: 1000, y: 1000, w: 3000, h: 2000 };
+    const walls = wallsForRoom(emptyFloorDoc(), r);
+    expect(walls).toHaveLength(4);
+    const top = walls.find((w) => w.a.y === w.b.y && w.a.y < 1000);
+    expect(top?.a.y).toBe(950); // 1000 - 100/2
+    const xs = walls.flatMap((w) => [w.a.x, w.b.x]);
+    expect(Math.min(...xs)).toBe(950);
+    expect(Math.max(...xs)).toBe(4050);
+  });
+
+  it('skips edges already covered by an existing wall (adjacent rooms share one wall)', () => {
+    // Existing room 0..3000 with a wall along its right edge at x=3050
+    const shared: Wall = { id: 'ws', a: { x: 3050, y: -50 }, b: { x: 3050, y: 2050 }, thickness: 100 };
+    const d = addWall(emptyFloorDoc(), shared);
+    // New room drawn to the right, snapped against the wall
+    const r: RoomRect = { ...room, id: 'r2', x: 3100, y: 0, w: 2000, h: 2000 };
+    const walls = wallsForRoom(d, r);
+    expect(walls).toHaveLength(3); // left edge covered by the shared wall
+    expect(walls.every((w) => Math.abs((w.a.x + w.b.x) / 2 - 3050) > 220 || w.a.y === w.b.y)).toBe(true);
+  });
+});
+
+describe('autoClassifyWallThickness', () => {
+  it('does nothing with no rooms to sample against', () => {
+    const d = addWall(emptyFloorDoc(), { ...wall, thickness: 200 });
+    expect(autoClassifyWallThickness(d).walls[0].thickness).toBe(200);
+  });
+
+  it('classifies boundary walls external and partitions internal, preserving custom values', () => {
+    // Two rooms side by side sharing a partition at x=3000
+    let d = emptyFloorDoc();
+    const t = 100;
+    const mk = (id: string, a: [number, number], b: [number, number], thickness = t): Wall => ({
+      id, a: { x: a[0], y: a[1] }, b: { x: b[0], y: b[1] }, thickness,
+    });
+    d = addWall(d, mk('top', [0, 0], [6000, 0]));
+    d = addWall(d, mk('bottom', [0, 4000], [6000, 4000]));
+    d = addWall(d, mk('left', [0, 0], [0, 4000]));
+    d = addWall(d, mk('right', [6000, 0], [6000, 4000]));
+    d = addWall(d, mk('mid', [3000, 0], [3000, 4000]));
+    d = addWall(d, mk('custom', [1500, 0], [1500, 4000], 150)); // user-typed custom
+    d = addRoom(d, { ...room, id: 'ra', x: 50, y: 50, w: 2900, h: 3900 });
+    d = addRoom(d, { ...room, id: 'rb', x: 3050, y: 50, w: 2900, h: 3900 });
+    const out = autoClassifyWallThickness(d);
+    const th = (id: string) => out.walls.find((w) => w.id === id)?.thickness;
+    expect(th('top')).toBe(200);
+    expect(th('left')).toBe(200);
+    expect(th('right')).toBe(200);
+    expect(th('bottom')).toBe(200);
+    expect(th('mid')).toBe(100);
+    expect(th('custom')).toBe(150); // untouched
   });
 });

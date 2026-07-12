@@ -39,6 +39,11 @@ interface ViewPrefs {
   showRoomLabels: boolean;
   showFurniture: boolean;
   planMode: PlanMode;
+  /** Drawing a room auto-creates walls along its uncovered edges. */
+  autoRoomWalls: boolean;
+  /** New/changed walls are auto-classified internal (100mm) vs external
+   *  (200mm) after each wall/room draw; custom thicknesses are preserved. */
+  autoWallThickness: boolean;
 }
 
 const VIEW_PREFS_KEY = 'floorplan:viewPrefs';
@@ -48,6 +53,8 @@ const DEFAULT_VIEW_PREFS: ViewPrefs = {
   showRoomLabels: true,
   showFurniture: true,
   planMode: 'presentation',
+  autoRoomWalls: true,
+  autoWallThickness: true,
 };
 
 function loadViewPrefs(): ViewPrefs {
@@ -84,6 +91,8 @@ function pickViewPrefs(state: ViewPrefs): ViewPrefs {
     showRoomLabels: state.showRoomLabels,
     showFurniture: state.showFurniture,
     planMode: state.planMode,
+    autoRoomWalls: state.autoRoomWalls,
+    autoWallThickness: state.autoWallThickness,
   };
 }
 
@@ -112,6 +121,8 @@ interface EditorState {
   showRoomLabels: boolean;
   showFurniture: boolean;
   planMode: PlanMode;
+  autoRoomWalls: boolean;
+  autoWallThickness: boolean;
   /** True while the "Detect rooms from walls" button is hovered — the
    *  canvas previews the enclosed areas that would become rooms. */
   detectPreview: boolean;
@@ -141,6 +152,8 @@ interface EditorState {
   toggleShowRoomLabels(): void;
   toggleShowFurniture(): void;
   setPlanMode(mode: PlanMode): void;
+  toggleAutoRoomWalls(): void;
+  toggleAutoWallThickness(): void;
   setDetectPreview(on: boolean): void;
 }
 
@@ -342,6 +355,18 @@ export const useEditorStore = create<EditorState>((set, get) => {
     setPlanMode(planMode) {
       set({ planMode });
       saveViewPrefs(pickViewPrefs({ ...get(), planMode }));
+    },
+
+    toggleAutoRoomWalls() {
+      const autoRoomWalls = !get().autoRoomWalls;
+      set({ autoRoomWalls });
+      saveViewPrefs(pickViewPrefs({ ...get(), autoRoomWalls }));
+    },
+
+    toggleAutoWallThickness() {
+      const autoWallThickness = !get().autoWallThickness;
+      set({ autoWallThickness });
+      saveViewPrefs(pickViewPrefs({ ...get(), autoWallThickness }));
     },
 
     setDetectPreview(detectPreview) {

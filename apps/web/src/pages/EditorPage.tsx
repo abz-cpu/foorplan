@@ -120,6 +120,10 @@ export default function EditorPage() {
   const toggleShowRoomLabels = useEditorStore((s) => s.toggleShowRoomLabels);
   const showFurniture = useEditorStore((s) => s.showFurniture);
   const toggleShowFurniture = useEditorStore((s) => s.toggleShowFurniture);
+  const autoRoomWalls = useEditorStore((s) => s.autoRoomWalls);
+  const toggleAutoRoomWalls = useEditorStore((s) => s.toggleAutoRoomWalls);
+  const autoWallThickness = useEditorStore((s) => s.autoWallThickness);
+  const toggleAutoWallThickness = useEditorStore((s) => s.toggleAutoWallThickness);
   const planMode = useEditorStore((s) => s.planMode);
   const setPlanMode = useEditorStore((s) => s.setPlanMode);
   const saveState = useEditorStore((s) => s.saveState);
@@ -715,6 +719,21 @@ export default function EditorPage() {
                       <span className="text-[13px] font-medium">Furniture symbols</span>
                       <Toggle dark checked={showFurniture} onChange={toggleShowFurniture} title="Furniture symbols" />
                     </div>
+
+                    <div className="mt-4 border-t border-white/10 pt-3 text-[11px] font-semibold tracking-[0.07em] text-white/50">
+                      DRAWING
+                    </div>
+                    <div className="mt-3 flex items-center justify-between">
+                      <span className="text-[13px] font-medium">Auto walls around rooms</span>
+                      <Toggle dark checked={autoRoomWalls} onChange={toggleAutoRoomWalls} title="Auto walls around rooms" />
+                    </div>
+                    <div className="mt-3 flex items-center justify-between">
+                      <span className="text-[13px] font-medium">Auto wall thickness</span>
+                      <Toggle dark checked={autoWallThickness} onChange={toggleAutoWallThickness} title="Auto wall thickness" />
+                    </div>
+                    <p className="mt-2 text-[11.5px] leading-snug text-white/50">
+                      Drawn rooms get enclosed automatically; boundary walls come out external (200mm), partitions internal (100mm).
+                    </p>
                   </div>
                 </>
               )}

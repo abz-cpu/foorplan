@@ -220,9 +220,13 @@ export function buildFloorSheet(doc: FloorDoc, opts: SheetOptions): Sheet {
 
     /* Scale bar (bottom-left of content box) */
     if (opts.showMeasurements) {
-      // Include small increments (0.5m/1m) so tight/large-scale plans get a
-      // sensibly short scale bar instead of always defaulting to metres.
-      const niceWorldMm = [500, 1000, 2000, 5000].reverse().find((l) => l * scale <= cw / 3) ?? 500;
+      // Prefer the SMALLEST round reference length that still draws a readable
+      // bar (≥ ~10mm on paper) — a compact 0.5 m rule on a typical plan, not
+      // the oversized 2 m bar the old "largest that fits" rule produced.
+      const MIN_BAR_MM = 10;
+      const candidates = [500, 1000, 2000, 5000, 10000];
+      const niceWorldMm =
+        candidates.find((l) => l * scale >= MIN_BAR_MM) ?? candidates[candidates.length - 1];
       const barLen = niceWorldMm * scale;
       const bx = cx0 + 2;
       const by = cy0 + ch - 4;

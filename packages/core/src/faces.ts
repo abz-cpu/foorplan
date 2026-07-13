@@ -251,6 +251,49 @@ export function insetPolygon(points: Point[], d: number): Point[] {
   return out;
 }
 
+/**
+ * Like insetPolygon, but edge i (points[i] → points[i+1]) is offset inward by
+ * its own distance dists[i]. Used so a detected room is inset to each
+ * bounding wall's INNER face — a thick external wall pulls its edge in
+ * further than a thin partition, leaving no white gap between the room fill
+ * and the wall. Falls back to the input if the result degenerates.
+ */
+export function insetPolygonVariable(points: Point[], dists: number[]): Point[] {
+  const n = points.length;
+  if (n < 3) return points;
+  const sign = signedArea(points) > 0 ? 1 : -1; // +1 = CCW, interior on the left
+  const lines: { px: number; py: number; dx: number; dy: number }[] = [];
+  for (let i = 0; i < n; i++) {
+    const a = points[i];
+    const b = points[(i + 1) % n];
+    let ex = b.x - a.x;
+    let ey = b.y - a.y;
+    const len = Math.hypot(ex, ey) || 1;
+    ex /= len;
+    ey /= len;
+    const nx = -ey * sign; // inward normal
+    const ny = ex * sign;
+    const d = dists[i] ?? 0;
+    lines.push({ px: a.x + nx * d, py: a.y + ny * d, dx: ex, dy: ey });
+  }
+  const out: Point[] = [];
+  for (let i = 0; i < n; i++) {
+    const l0 = lines[(i - 1 + n) % n];
+    const l1 = lines[i];
+    const denom = l0.dx * l1.dy - l0.dy * l1.dx;
+    if (Math.abs(denom) < 1e-9) {
+      out.push({ x: l1.px, y: l1.py });
+      continue;
+    }
+    const t = ((l1.px - l0.px) * l1.dy - (l1.py - l0.py) * l1.dx) / denom;
+    out.push({ x: l0.px + l0.dx * t, y: l0.py + l0.dy * t });
+  }
+  if (Math.abs(signedArea(out)) < 1000 || Math.sign(signedArea(out)) !== Math.sign(signedArea(points))) {
+    return points;
+  }
+  return out;
+}
+
 /** Axis-aligned bounding box of a ring. */
 export function ringBounds(ring: Point[]): { x: number; y: number; w: number; h: number } {
   const xs = ring.map((p) => p.x);

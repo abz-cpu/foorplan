@@ -1091,8 +1091,9 @@ export function RoomPanel({
                     onMouseLeave={() => setDetectPreview(false)}
                   />
                   <p className="text-[11px] leading-relaxed text-ink-ghost">
-                    L-shaped or other non-rectangular rooms: draw the walls around the shape, then
-                    detect — it's covered by a few rectangles sharing one name.
+                    Each closed loop of walls becomes one room, following bays and L/T/U shapes to
+                    the inner wall face. Prefer to draw it directly? Pick the Room tool and click the
+                    corners (Enter to finish).
                   </p>
                   <PanelButton
                     icon={<ListChecks size={13} />}

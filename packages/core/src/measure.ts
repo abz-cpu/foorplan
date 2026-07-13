@@ -1,7 +1,8 @@
 import polygonClipping from 'polygon-clipping';
 import { polygonAreaMm2, polygonPerimeterMm, rectUnionAreaMm2, roomPolygon } from './geometry';
+import { pointInPolygon } from './faces';
 import { wallNormal } from './openings';
-import type { FloorDoc, Point, Wall } from './types';
+import type { FloorDoc, Point, RoomRect, Wall } from './types';
 
 export interface FloorFootprint {
   /** area of the union of all rooms, m² */
@@ -96,16 +97,40 @@ export function floorFootprint(doc: FloorDoc): FloorFootprint {
   return { areaM2: areaMm2 / 1e6, exposedPerimeterM: perimeterMm / 1000 };
 }
 
+/** Shortest distance (mm) from p to the boundary of a polygon ring. */
+function distToRing(p: Point, ring: Point[]): number {
+  let best = Infinity;
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i];
+    const b = ring[(i + 1) % ring.length];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len2 = dx * dx + dy * dy || 1;
+    let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2;
+    t = Math.max(0, Math.min(1, t));
+    best = Math.min(best, Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy)));
+  }
+  return best;
+}
+
+function pointNearRoom(room: RoomRect, p: Point, toleranceMm: number): boolean {
+  // Non-rectangular (L/T/U/bay) rooms must be tested against their real
+  // outline: their bounding box spills over neighbouring rooms and walls, so
+  // a bbox test used to flag an adjacent room's external wall as internal.
+  if (room.polygon && room.polygon.length >= 3) {
+    return pointInPolygon(p, room.polygon) || distToRing(p, room.polygon) <= toleranceMm;
+  }
+  return (
+    p.x >= room.x - toleranceMm &&
+    p.x <= room.x + room.w + toleranceMm &&
+    p.y >= room.y - toleranceMm &&
+    p.y <= room.y + room.h + toleranceMm
+  );
+}
+
 function pointNearAnyRoom(doc: FloorDoc, p: Point, toleranceMm: number): boolean {
   for (const r of doc.rooms) {
-    if (
-      p.x >= r.x - toleranceMm &&
-      p.x <= r.x + r.w + toleranceMm &&
-      p.y >= r.y - toleranceMm &&
-      p.y <= r.y + r.h + toleranceMm
-    ) {
-      return true;
-    }
+    if (pointNearRoom(r, p, toleranceMm)) return true;
   }
   return false;
 }

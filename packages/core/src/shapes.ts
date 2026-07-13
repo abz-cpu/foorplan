@@ -339,10 +339,41 @@ function labelShapes(label: TextLabel): Shape[] {
   ];
 }
 
-function dimensionShapes(doc: FloorDoc): Shape[] {
-  const bounds = docBounds(doc);
-  if (!bounds) return [];
-  const { minX, minY, maxX, maxY } = bounds;
+/** Group walls into connected structures: two walls join when an endpoint of
+ *  one touches the other's endpoint or lies on its span (a T-junction). A
+ *  physically detached wing then falls into its own group, so it gets its own
+ *  overall dimensions instead of one line spanning the empty gap between it
+ *  and the main building. */
+function wallComponents(walls: Wall[], eps = 80): Wall[][] {
+  const parent = walls.map((_, i) => i);
+  const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  const nearSeg = (p: Point, a: Point, b: Point): boolean => {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len2 = dx * dx + dy * dy || 1;
+    let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy)) <= eps;
+  };
+  const touch = (wi: Wall, wj: Wall): boolean =>
+    nearSeg(wi.a, wj.a, wj.b) ||
+    nearSeg(wi.b, wj.a, wj.b) ||
+    nearSeg(wj.a, wi.a, wi.b) ||
+    nearSeg(wj.b, wi.a, wi.b);
+  for (let i = 0; i < walls.length; i++) {
+    for (let j = i + 1; j < walls.length; j++) {
+      if (touch(walls[i], walls[j])) parent[find(i)] = find(j);
+    }
+  }
+  const groups = new Map<number, Wall[]>();
+  walls.forEach((w, i) => {
+    const r = find(i);
+    (groups.get(r) ?? groups.set(r, []).get(r)!).push(w);
+  });
+  return [...groups.values()];
+}
+
+function boundsDimensionShapes(minX: number, minY: number, maxX: number, maxY: number): Shape[] {
   const shapes: Shape[] = [];
   const tick = 180;
   const gap = 320;
@@ -384,6 +415,42 @@ function dimensionShapes(doc: FloorDoc): Shape[] {
     },
   );
   return shapes;
+}
+
+function dimensionShapes(doc: FloorDoc): Shape[] {
+  // One set of overall dimensions per detached wall structure — a separate
+  // wing measures on its own, never joined to the main block by a single
+  // spanning line.
+  const components = wallComponents(doc.walls).filter((g) => g.length > 0);
+  const rings = components
+    .map((walls) => {
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      for (const w of walls) {
+        for (const p of [w.a, w.b]) {
+          if (p.x < minX) minX = p.x;
+          if (p.y < minY) minY = p.y;
+          if (p.x > maxX) maxX = p.x;
+          if (p.y > maxY) maxY = p.y;
+        }
+      }
+      return { minX, minY, maxX, maxY };
+    })
+    // Skip slivers (a single stray wall) that would just clutter the sheet.
+    .filter((b) => maxSpan(b) > 400);
+
+  if (rings.length === 0) {
+    const bounds = docBounds(doc);
+    if (!bounds) return [];
+    return boundsDimensionShapes(bounds.minX, bounds.minY, bounds.maxX, bounds.maxY);
+  }
+  return rings.flatMap((b) => boundsDimensionShapes(b.minX, b.minY, b.maxX, b.maxY));
+}
+
+function maxSpan(b: { minX: number; minY: number; maxX: number; maxY: number }): number {
+  return Math.max(b.maxX - b.minX, b.maxY - b.minY);
 }
 
 /** Flatten a floor document into ordered drawing primitives (world mm). */

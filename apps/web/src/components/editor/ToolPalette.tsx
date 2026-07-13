@@ -23,7 +23,7 @@ export const TOOL_HINTS: Record<Tool, string> = {
   select: 'Select — tap anything to edit it, drag empty space to box-select, hold Space to pan',
   pan: 'Pan — drag anywhere to move around the canvas',
   wall: 'Wall — click to place points; hold Shift for straight, X to flip internal/external',
-  room: 'Room — drag a rectangle to add a room',
+  room: 'Room — drag a rectangle, or click corners for an L/T/U shape (Enter to finish)',
   door: 'Door — click a wall to place, drag with Select to slide',
   window: 'Window — click a wall to place, drag with Select to slide',
   stairs: 'Stairs — drag a rectangle to place a flight',

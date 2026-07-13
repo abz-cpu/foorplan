@@ -226,6 +226,43 @@ export function wallsForRoom(
   return out;
 }
 
+/**
+ * The walls a freshly drawn *shaped* (L/T/U or any polygon) room needs so it's
+ * enclosed — one along each outline edge, in any orientation, skipping edges
+ * an existing wall already runs along. The wall centreline follows the drawn
+ * edge (the boundary the user clicked), which keeps arbitrary polygons simple.
+ */
+export function wallsForPolygon(
+  doc: FloorDoc,
+  ring: Point[],
+  thickness = DEFAULT_WALL_THICKNESS_MM,
+): Wall[] {
+  const coverTol = 160; // perpendicular slack to treat an existing wall as covering an edge
+  const out: Wall[] = [];
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i];
+    const b = ring[(i + 1) % ring.length];
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    if (len < 1) continue;
+    const ux = (b.x - a.x) / len;
+    const uy = (b.y - a.y) / len;
+    const proj = (p: Point) => (p.x - a.x) * ux + (p.y - a.y) * uy;
+    const perp = (p: Point) => Math.abs((p.x - a.x) * -uy + (p.y - a.y) * ux);
+    let covered = 0;
+    for (const w of doc.walls) {
+      if (perp(w.a) > coverTol || perp(w.b) > coverTol) continue; // not collinear with this edge
+      const pa = proj(w.a);
+      const pb = proj(w.b);
+      const lo = Math.max(0, Math.min(pa, pb));
+      const hi = Math.min(len, Math.max(pa, pb));
+      covered += Math.max(0, hi - lo);
+    }
+    if (covered >= len * 0.6) continue;
+    out.push({ id: newId(), a: { ...a }, b: { ...b }, thickness });
+  }
+  return out;
+}
+
 export function addOpening(doc: FloorDoc, opening: Opening): FloorDoc {
   return { ...doc, openings: [...doc.openings, opening] };
 }

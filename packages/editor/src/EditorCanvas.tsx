@@ -45,6 +45,7 @@ import {
   openingJambs,
   parseLengthToMm,
   pointAlongWall,
+  ringBounds,
   roomAreaM2,
   ROOM_TYPES,
   ROOM_ZONE_COLORS,
@@ -59,6 +60,7 @@ import {
   updateWall,
   wallLengthMm,
   wallsForRoom,
+  wallsForPolygon,
   wallNormal,
   wallSegments,
   type Opening,
@@ -431,6 +433,11 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
   const [wallStart, setWallStart] = useState<Point | null>(null);
   const [hoverPt, setHoverPt] = useState<Point | null>(null);
   const [rectDraft, setRectDraft] = useState<{ a: Point; b: Point; stairs: boolean } | null>(null);
+  // Vertices of a shaped (L/T/U/polygon) room being clicked out with the Room
+  // tool; null when not in polygon mode. The down-screen point distinguishes a
+  // click (place a vertex) from a drag (draw a quick rectangle).
+  const [polyDraft, setPolyDraft] = useState<Point[] | null>(null);
+  const roomDownScreen = useRef<Point | null>(null);
   const [resizeDraft, setResizeDraft] = useState<RoomRect | null>(null);
   const [symbolResizeDraft, setSymbolResizeDraft] = useState<SymbolInstance | null>(null);
   const [labelScaleDraft, setLabelScaleDraft] = useState<{ id: string; scale: number } | null>(null);
@@ -655,6 +662,8 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
     setWallStart(null);
     setHoverPt(null);
     setRectDraft(null);
+    setPolyDraft(null);
+    roomDownScreen.current = null;
     setResizeDraft(null);
     setOpeningHover(null);
     setOpeningDraft(null);
@@ -1202,6 +1211,13 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
         setHoverPt(pt);
       }
     } else if (isDraftingTool(tool)) {
+      roomDownScreen.current = screen;
+      // Room tool with a polygon already in progress: each subsequent click
+      // places a vertex (handled on pointer-up), so don't arm a rectangle.
+      if (tool === 'room' && polyDraft) {
+        setHoverPt(snapFree(raw));
+        return;
+      }
       const a = snapFree(raw);
       setRectDraft({ a, b: a, stairs: tool === 'stairs' });
     } else if (tool === 'door' || tool === 'window') {
@@ -1399,9 +1415,12 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
     } else if (tool === 'measure' && measureA) {
       const raw = worldFromClient(screen);
       if (raw) setHoverPt(snapFree(raw));
-    } else if (isDraftingTool(tool) && rectDraft) {
+    } else if (isDraftingTool(tool)) {
       const raw = worldFromClient(screen);
-      if (raw) setRectDraft({ ...rectDraft, b: snapFree(raw) });
+      if (raw) {
+        if (tool === 'room' && polyDraft) setHoverPt(snapFree(raw));
+        else if (rectDraft) setRectDraft({ ...rectDraft, b: snapFree(raw) });
+      }
     } else if (tool === 'door' || tool === 'window') {
       const raw = worldFromClient(screen);
       if (raw) {
@@ -1410,6 +1429,63 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
       }
     }
   };
+
+  // Turn a clicked-out polygon into a shaped room (walls + thickness like a
+  // drawn rectangle). A 4-point axis-aligned outline collapses back to a plain
+  // rectangle so it still gets W/L steppers.
+  const finishPolyRoom = useCallback(
+    (pts: Point[]) => {
+      setPolyDraft(null);
+      setHoverPt(null);
+      roomDownScreen.current = null;
+      if (pts.length < 3) return;
+      const b = ringBounds(pts);
+      if (b.w < MIN_ROOM_MM || b.h < MIN_ROOM_MM) return;
+      const isRect =
+        pts.length === 4 &&
+        pts.every((p, i) => {
+          const q = pts[(i + 1) % 4];
+          return Math.abs(p.x - q.x) < 2 || Math.abs(p.y - q.y) < 2;
+        });
+      const room: RoomRect = {
+        id: newId(),
+        x: b.x,
+        y: b.y,
+        w: b.w,
+        h: b.h,
+        ...(isRect ? {} : { polygon: pts }),
+        name: `Room ${doc.rooms.length + 1}`,
+        type: 'Other',
+        ceilingHeightM: DEFAULT_CEILING_HEIGHT_M,
+        includeInGia: true,
+      };
+      let next = addRoom(doc, room);
+      if (autoRoomWalls) {
+        for (const wall of wallsForPolygon(doc, pts)) next = addWall(next, wall);
+        if (autoWallThickness) next = autoClassifyWallThickness(next);
+      }
+      commit('Add room', next);
+      select(room.id);
+    },
+    [doc, autoRoomWalls, autoWallThickness, commit, select],
+  );
+
+  /* Polygon room: Enter finishes the outline, Backspace removes the last
+     vertex placed. */
+  useEffect(() => {
+    if (!polyDraft) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (polyDraft.length >= 3) finishPolyRoom(polyDraft);
+      } else if (e.key === 'Backspace' || e.key === 'Delete') {
+        e.preventDefault();
+        setPolyDraft(polyDraft.length <= 1 ? null : polyDraft.slice(0, -1));
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [polyDraft, finishPolyRoom]);
 
   const pointerUp = (client?: Point) => {
     panDrag.current = null;
@@ -1526,37 +1602,69 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
     }
     openingDrag.current = null;
 
-    if (isDraftingTool(tool) && rectDraft) {
-      const x = Math.min(rectDraft.a.x, rectDraft.b.x);
-      const y = Math.min(rectDraft.a.y, rectDraft.b.y);
-      const w = Math.abs(rectDraft.b.x - rectDraft.a.x);
-      const h = Math.abs(rectDraft.b.y - rectDraft.a.y);
-      if (w >= MIN_ROOM_MM && h >= MIN_ROOM_MM) {
-        const stairs = rectDraft.stairs;
-        const room: RoomRect = {
-          id: newId(),
-          x,
-          y,
-          w,
-          h,
-          name: stairs ? 'Stairs' : `Room ${doc.rooms.length + 1}`,
-          type: stairs ? 'Stairs' : 'Other',
-          ceilingHeightM: DEFAULT_CEILING_HEIGHT_M,
-          includeInGia: !stairs,
-        };
-        let next = addRoom(doc, room);
-        // A drawn room auto-encloses itself: walls appear along any edge
-        // that doesn't already have one (a shared wall with the neighbour
-        // is reused, not doubled), then thicknesses are classified so the
-        // boundary comes out external and partitions internal.
-        if (!stairs && autoRoomWalls) {
-          for (const wall of wallsForRoom(doc, room)) next = addWall(next, wall);
-          if (autoWallThickness) next = autoClassifyWallThickness(next);
+    if (isDraftingTool(tool)) {
+      const downScreen = roomDownScreen.current;
+      roomDownScreen.current = null;
+      const movedPx = downScreen && client ? Math.hypot(client.x - downScreen.x, client.y - downScreen.y) : 999;
+
+      // Room tool, clicking (not dragging): build a shaped room vertex by
+      // vertex. A drag still draws a quick rectangle; stairs are always a rect.
+      if (tool === 'room' && (polyDraft || movedPx < 6)) {
+        setRectDraft(null);
+        const upWorld = client ? worldFromClient(client) : pointerWorld();
+        if (!upWorld) return;
+        const pt = snapFree(upWorld);
+        if (!polyDraft) {
+          setPolyDraft([pt]);
+          setHoverPt(pt);
+          return;
         }
-        commit(stairs ? 'Add stairs' : 'Add room', next);
-        select(room.id);
+        // Click on/near the first vertex closes the outline.
+        const first = polyDraft[0];
+        if (polyDraft.length >= 3 && Math.hypot((pt.x - first.x) * scale, (pt.y - first.y) * scale) < 12) {
+          finishPolyRoom(polyDraft);
+          return;
+        }
+        // Ignore a repeat click on the last vertex (would be a zero-length edge).
+        const last = polyDraft[polyDraft.length - 1];
+        if (Math.hypot((pt.x - last.x) * scale, (pt.y - last.y) * scale) < 3) return;
+        setPolyDraft([...polyDraft, pt]);
+        setHoverPt(pt);
+        return;
       }
-      setRectDraft(null);
+
+      if (rectDraft) {
+        const x = Math.min(rectDraft.a.x, rectDraft.b.x);
+        const y = Math.min(rectDraft.a.y, rectDraft.b.y);
+        const w = Math.abs(rectDraft.b.x - rectDraft.a.x);
+        const h = Math.abs(rectDraft.b.y - rectDraft.a.y);
+        if (w >= MIN_ROOM_MM && h >= MIN_ROOM_MM) {
+          const stairs = rectDraft.stairs;
+          const room: RoomRect = {
+            id: newId(),
+            x,
+            y,
+            w,
+            h,
+            name: stairs ? 'Stairs' : `Room ${doc.rooms.length + 1}`,
+            type: stairs ? 'Stairs' : 'Other',
+            ceilingHeightM: DEFAULT_CEILING_HEIGHT_M,
+            includeInGia: !stairs,
+          };
+          let next = addRoom(doc, room);
+          // A drawn room auto-encloses itself: walls appear along any edge
+          // that doesn't already have one (a shared wall with the neighbour
+          // is reused, not doubled), then thicknesses are classified so the
+          // boundary comes out external and partitions internal.
+          if (!stairs && autoRoomWalls) {
+            for (const wall of wallsForRoom(doc, room)) next = addWall(next, wall);
+            if (autoWallThickness) next = autoClassifyWallThickness(next);
+          }
+          commit(stairs ? 'Add stairs' : 'Add room', next);
+          select(room.id);
+        }
+        setRectDraft(null);
+      }
     }
   };
 
@@ -2614,6 +2722,33 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
                   padding={80}
                 />
               </Label>
+            </>
+          )}
+
+          {/* Shaped-room (L/T/U/polygon) draft preview */}
+          {tool === 'room' && polyDraft && polyDraft.length > 0 && (
+            <>
+              <Line
+                points={[...polyDraft, ...(hoverPt ? [hoverPt] : [])].flatMap((p) => [p.x, p.y])}
+                closed={polyDraft.length + (hoverPt ? 1 : 0) >= 3}
+                fill={polyDraft.length >= 2 ? SELECT_FILL : undefined}
+                stroke={ACTION}
+                strokeWidth={26}
+                dash={[120, 80]}
+                listening={false}
+              />
+              {polyDraft.map((p, i) => (
+                <Circle
+                  key={i}
+                  x={p.x}
+                  y={p.y}
+                  radius={i === 0 ? 130 : 90}
+                  fill={i === 0 ? ACTION : '#FFFFFF'}
+                  stroke={ACTION}
+                  strokeWidth={26}
+                  listening={false}
+                />
+              ))}
             </>
           )}
 

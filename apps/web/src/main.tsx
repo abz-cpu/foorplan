@@ -12,9 +12,11 @@ import '@fontsource/ibm-plex-mono/400.css';
 import '@fontsource/ibm-plex-mono/500.css';
 import App from './App';
 import { installAndroidBackButtonHandler } from './lib/nativeBackButton';
+import { setupPwaAutoUpdate } from './lib/pwa';
 import './index.css';
 
 installAndroidBackButtonHandler();
+setupPwaAutoUpdate();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

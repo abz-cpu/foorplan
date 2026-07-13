@@ -7,6 +7,9 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      // We register the worker ourselves (src/lib/pwa.ts) so we can poll for
+      // updates; disable the auto-injected registration to avoid doubling up.
+      injectRegister: false,
       includeAssets: ['icon.svg'],
       manifest: {
         name: 'L&D Energy — Floor Plan Studio',
@@ -24,6 +27,11 @@ export default defineConfig({
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,woff2,ttf}'],
         navigateFallback: '/index.html',
+        // Take control and drop stale precaches as soon as a new build's
+        // worker activates, so refreshed tabs stop serving the old bundle.
+        cleanupOutdatedCaches: true,
+        clientsClaim: true,
+        skipWaiting: true,
       },
     }),
   ],

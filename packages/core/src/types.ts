@@ -51,6 +51,11 @@ export interface RoomRect {
   /** Font scale for the name/area label, resized by its on-canvas handle.
    *  Undefined = 1 (default size). */
   labelScale?: number;
+  /** Non-rectangular rooms (bays, chamfers, L/T/U shapes) carry their exact
+   *  outline here, in absolute mm. When present it's the room's true shape
+   *  and x/y/w/h are its bounding box (kept for selection fallback and
+   *  back-compat). Undefined = a plain rectangle described by x/y/w/h. */
+  polygon?: Point[];
 }
 
 export interface TextLabel {

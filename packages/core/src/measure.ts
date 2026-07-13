@@ -1,5 +1,5 @@
 import polygonClipping from 'polygon-clipping';
-import { polygonAreaMm2, polygonPerimeterMm, rectUnionAreaMm2 } from './geometry';
+import { polygonAreaMm2, polygonPerimeterMm, rectUnionAreaMm2, roomPolygon } from './geometry';
 import { wallNormal } from './openings';
 import type { FloorDoc, Point, Wall } from './types';
 
@@ -30,12 +30,7 @@ function ringToPoints(ring: [number, number][]): Point[] {
 function roomUnion(doc: FloorDoc) {
   if (doc.rooms.length === 0) return [];
   const polys: [number, number][][][] = doc.rooms.map((r) => [
-    [
-      [r.x, r.y],
-      [r.x + r.w, r.y],
-      [r.x + r.w, r.y + r.h],
-      [r.x, r.y + r.h],
-    ],
+    roomPolygon(r).map((p) => [p.x, p.y] as [number, number]),
   ]);
   return polygonClipping.union(polys[0] as never, ...(polys.slice(1) as never[]));
 }

@@ -33,11 +33,25 @@ export function polygonPerimeterMm(points: Point[]): number {
   return sum;
 }
 
+/** A room's outline in absolute mm — its polygon if non-rectangular, else
+ *  the four corners of its x/y/w/h rectangle. */
+export function roomPolygon(room: RoomRect): Point[] {
+  if (room.polygon && room.polygon.length >= 3) return room.polygon;
+  return [
+    { x: room.x, y: room.y },
+    { x: room.x + room.w, y: room.y },
+    { x: room.x + room.w, y: room.y + room.h },
+    { x: room.x, y: room.y + room.h },
+  ];
+}
+
 export function roomAreaM2(room: RoomRect): number {
+  if (room.polygon && room.polygon.length >= 3) return polygonAreaMm2(room.polygon) / 1_000_000;
   return mmToM(room.w) * mmToM(room.h);
 }
 
 export function roomPerimeterM(room: RoomRect): number {
+  if (room.polygon && room.polygon.length >= 3) return polygonPerimeterMm(room.polygon) / 1000;
   return 2 * (mmToM(room.w) + mmToM(room.h));
 }
 

@@ -50,8 +50,10 @@ export function shapesToSvg(shapes: Shape[], widthMm: number, heightMm: number):
       }
       case 'polyline': {
         const pts = s.points.map((p) => `${n(p.x)},${n(p.y)}`).join(' ');
+        const tag = s.closed ? 'polygon' : 'polyline';
+        const fill = s.fill ? s.fill : 'none';
         parts.push(
-          `<polyline points="${pts}" fill="none" stroke="${s.stroke}" stroke-width="${n(s.width)}" stroke-linejoin="round"/>`,
+          `<${tag} points="${pts}" fill="${fill}" stroke="${s.stroke}" stroke-width="${n(s.width)}" stroke-linejoin="round"/>`,
         );
         break;
       }

@@ -739,24 +739,31 @@ export function RoomPanel({
 
               <div>
                 <SectionLabel>DIMENSIONS</SectionLabel>
-                <div className="flex flex-col gap-2.5">
-                  <SizeStepper
-                    label="Width"
-                    value={room.w}
-                    step={100}
-                    min={MIN_ROOM_MM_UI}
-                    max={100000}
-                    onCommit={(mm) => commit('Set room width', updateRoom(doc, room.id, { w: mm }))}
-                  />
-                  <SizeStepper
-                    label="Length"
-                    value={room.h}
-                    step={100}
-                    min={MIN_ROOM_MM_UI}
-                    max={100000}
-                    onCommit={(mm) => commit('Set room length', updateRoom(doc, room.id, { h: mm }))}
-                  />
-                </div>
+                {room.polygon ? (
+                  <p className="mb-2 text-[11.5px] leading-relaxed text-ink-faint">
+                    This is a shaped room — its outline follows the walls around it. Move or edit
+                    those walls to change its shape.
+                  </p>
+                ) : (
+                  <div className="flex flex-col gap-2.5">
+                    <SizeStepper
+                      label="Width"
+                      value={room.w}
+                      step={100}
+                      min={MIN_ROOM_MM_UI}
+                      max={100000}
+                      onCommit={(mm) => commit('Set room width', updateRoom(doc, room.id, { w: mm }))}
+                    />
+                    <SizeStepper
+                      label="Length"
+                      value={room.h}
+                      step={100}
+                      min={MIN_ROOM_MM_UI}
+                      max={100000}
+                      onCommit={(mm) => commit('Set room length', updateRoom(doc, room.id, { h: mm }))}
+                    />
+                  </div>
+                )}
                 <div className="mt-2 grid grid-cols-2 gap-2">
                   <StatTile label="Floor area" value={formatAreaM2(roomAreaM2(room), 2)} accent />
                   <StatTile label="Perimeter" value={`${roomPerimeterM(room).toFixed(1)} m`} />

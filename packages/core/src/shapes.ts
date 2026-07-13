@@ -41,7 +41,15 @@ export type Shape =
       stroke: string;
       width: number;
     }
-  | { kind: 'polyline'; points: Point[]; stroke: string; width: number }
+  | {
+      kind: 'polyline';
+      points: Point[];
+      stroke: string;
+      width: number;
+      /** filled closed polygon when set (rooms with a non-rect outline) */
+      fill?: string;
+      closed?: boolean;
+    }
   | {
       kind: 'text';
       x: number;
@@ -102,18 +110,12 @@ export const ROOM_ZONE_COLORS: Record<RoomType, { fill: string; edge: string }> 
 
 function roomShapes(room: RoomRect, showLabels: boolean, planMode: 'technical' | 'presentation'): Shape[] {
   const zone = planMode === 'presentation' ? ROOM_ZONE_COLORS[room.type] : null;
-  const shapes: Shape[] = [
-    {
-      kind: 'rect',
-      x: room.x,
-      y: room.y,
-      w: room.w,
-      h: room.h,
-      fill: zone?.fill ?? '#FFFFFF',
-      stroke: zone?.edge ?? ROOM_EDGE,
-      strokeWidth: 18,
-    },
-  ];
+  const fill = zone?.fill ?? '#FFFFFF';
+  const edge = zone?.edge ?? ROOM_EDGE;
+  const shapes: Shape[] =
+    room.polygon && room.polygon.length >= 3
+      ? [{ kind: 'polyline', points: room.polygon, stroke: edge, width: 18, fill, closed: true }]
+      : [{ kind: 'rect', x: room.x, y: room.y, w: room.w, h: room.h, fill, stroke: edge, strokeWidth: 18 }];
 
   if (room.type === 'Stairs') {
     // Treads across the short axis, direction arrow along the long axis.

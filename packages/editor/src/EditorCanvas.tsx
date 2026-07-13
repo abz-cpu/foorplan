@@ -41,6 +41,7 @@ import {
   nearestOffsetOnWall,
   nearestWall,
   newId,
+  pointInPolygon,
   openingJambs,
   parseLengthToMm,
   pointAlongWall,
@@ -782,8 +783,12 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
       let bestArea = Infinity;
       for (const room of doc.rooms) {
         const r = resizeDraft?.id === room.id ? resizeDraft : room;
-        if (p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h) {
-          const area = r.w * r.h;
+        const inside =
+          r.polygon && r.polygon.length >= 3
+            ? pointInPolygon(p, r.polygon)
+            : p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
+        if (inside) {
+          const area = roomAreaM2(r); // smallest-area-wins so nested rooms select
           if (area < bestArea) {
             bestArea = area;
             best = room;
@@ -1037,12 +1042,16 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
     const tol = Math.max(handleHalf * 2.4, 18 / scale);
     const room = doc.rooms.find((r) => r.id === selectedId);
     if (room) {
-      const corners = [
-        { cx: room.x, cy: room.y, ox: room.x + room.w, oy: room.y + room.h },
-        { cx: room.x + room.w, cy: room.y, ox: room.x, oy: room.y + room.h },
-        { cx: room.x, cy: room.y + room.h, ox: room.x + room.w, oy: room.y },
-        { cx: room.x + room.w, cy: room.y + room.h, ox: room.x, oy: room.y },
-      ];
+      // Non-rectangular rooms are shaped by their walls, not a bbox resize —
+      // no corner handles (they'd distort the polygon).
+      const corners = room.polygon
+        ? []
+        : [
+            { cx: room.x, cy: room.y, ox: room.x + room.w, oy: room.y + room.h },
+            { cx: room.x + room.w, cy: room.y, ox: room.x, oy: room.y + room.h },
+            { cx: room.x, cy: room.y + room.h, ox: room.x + room.w, oy: room.y },
+            { cx: room.x + room.w, cy: room.y + room.h, ox: room.x, oy: room.y },
+          ];
       for (const c of corners) {
         if (Math.hypot(p.x - c.cx, p.y - c.cy) <= tol) {
           return { kind: 'room-resize', room, ox: c.ox, oy: c.oy };
@@ -1734,7 +1743,15 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
         }
         const room = doc.rooms.find((r) => r.id === id);
         if (room) {
-          commit('Move room', updateRoom(doc, id, { x: room.x + dx, y: room.y + dy }));
+          commit(
+            'Move room',
+            updateRoom(doc, id, {
+              x: room.x + dx,
+              y: room.y + dy,
+              // Polygon outline is absolute, so translate it too.
+              ...(room.polygon ? { polygon: room.polygon.map((p) => ({ x: p.x + dx, y: p.y + dy })) } : {}),
+            }),
+          );
           return;
         }
         const label = doc.labels.find((l) => l.id === id);
@@ -1761,7 +1778,11 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
       for (const id of ids) {
         const room = next.rooms.find((r) => r.id === id);
         if (room) {
-          next = updateRoom(next, id, { x: room.x + dx, y: room.y + dy });
+          next = updateRoom(next, id, {
+            x: room.x + dx,
+            y: room.y + dy,
+            ...(room.polygon ? { polygon: room.polygon.map((p) => ({ x: p.x + dx, y: p.y + dy })) } : {}),
+          });
           continue;
         }
         const wall = next.walls.find((w) => w.id === id);
@@ -2147,14 +2168,29 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
                 y={r.y + off.y}
                 listening={false}
               >
-                <Rect
-                  width={r.w}
-                  height={r.h}
-                  fill={isSel ? SELECT_FILL : (zone?.fill ?? '#FFFFFF')}
-                  stroke={isSel ? ACTION : overlapping ? WARN : (zone?.edge ?? ROOM_EDGE)}
-                  strokeWidth={isSel ? 34 : overlapping ? 28 : 18}
-                  dash={isSel ? [110, 75] : overlapping ? [140, 90] : undefined}
-                />
+                {r.polygon && r.polygon.length >= 3 ? (
+                  // Non-rectangular room (bay/chamfer/L-shape): draw its exact
+                  // outline, points relative to the group origin (r.x, r.y).
+                  <Line
+                    points={r.polygon.flatMap((p) => [p.x - r.x, p.y - r.y])}
+                    closed
+                    fill={isSel ? SELECT_FILL : (zone?.fill ?? '#FFFFFF')}
+                    stroke={isSel ? ACTION : overlapping ? WARN : (zone?.edge ?? ROOM_EDGE)}
+                    strokeWidth={isSel ? 34 : overlapping ? 28 : 18}
+                    dash={isSel ? [110, 75] : overlapping ? [140, 90] : undefined}
+                    lineJoin="round"
+                    listening={false}
+                  />
+                ) : (
+                  <Rect
+                    width={r.w}
+                    height={r.h}
+                    fill={isSel ? SELECT_FILL : (zone?.fill ?? '#FFFFFF')}
+                    stroke={isSel ? ACTION : overlapping ? WARN : (zone?.edge ?? ROOM_EDGE)}
+                    strokeWidth={isSel ? 34 : overlapping ? 28 : 18}
+                    dash={isSel ? [110, 75] : overlapping ? [140, 90] : undefined}
+                  />
+                )}
                 {stairs ? (
                   <StairsTreads room={r} />
                 ) : (
@@ -2582,7 +2618,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
           )}
 
           {/* Resize handles for the selected room */}
-          {selectedRoom && tool === 'select' && renderResizeHandles(selectedRoom)}
+          {selectedRoom && !selectedRoom.polygon && tool === 'select' && renderResizeHandles(selectedRoom)}
 
           {/* Endpoint drag handles for the selected wall */}
           {selectedWall && tool === 'select' && renderWallEndHandles(selectedWall)}

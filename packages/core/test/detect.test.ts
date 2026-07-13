@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { detectRooms } from '../src/detect';
+import { pointInPolygon } from '../src/faces';
 import { suggestRoomNames, generateDescription } from '../src/assistant';
 import { addRoom, addWall, emptyFloorDoc } from '../src/doc';
 import type { FloorDoc, RoomRect, Wall } from '../src/types';
@@ -51,7 +52,7 @@ describe('detectRooms', () => {
     expect(detectRooms(doc)).toHaveLength(0);
   });
 
-  it('decomposes an L-shaped enclosure into a small set of rectangles sharing one name', () => {
+  it('detects an L-shaped enclosure as a single polygon room', () => {
     // Full left column (0-5000 wide, full 0-6000 height) plus a bottom-right
     // band (5000-8000 wide, 3000-6000 height) — the top-right 3000x3000
     // corner is left open, carving an L out of the overall 8000x6000 box.
@@ -64,24 +65,13 @@ describe('detectRooms', () => {
     doc = addWall(doc, wall('l', 0, 6000, 0, 0));
 
     const rooms = detectRooms(doc);
-    expect(rooms).toHaveLength(2);
-    expect(rooms[0].name).toBe(rooms[1].name); // both pieces of the same logical room
-    expect(rooms.every((r) => r.type === 'Other')).toBe(true);
+    expect(rooms).toHaveLength(1); // one room, one polygon — not decomposed
+    expect(rooms[0].polygon).toBeDefined();
+    expect(rooms[0].polygon!.length).toBe(6); // an L has six corners
+    expect(rooms[0].type).toBe('Other');
 
-    const totalAreaM2 = rooms.reduce((sum, r) => sum + (r.w * r.h) / 1e6, 0);
-    // True L-shape area is 39m²; decomposing into independent rects applies
-    // the wall inset along the artificial split line too, so the total is a
-    // little under that — bounded, and always a conservative undercount.
-    expect(totalAreaM2).toBeGreaterThan(34);
-    expect(totalAreaM2).toBeLessThan(39);
-
-    // The open top-right notch must never be detected as a room.
-    const notchCenter = { x: 6500, y: 1500 };
-    const coversNotch = rooms.some(
-      (r) =>
-        notchCenter.x > r.x && notchCenter.x < r.x + r.w && notchCenter.y > r.y && notchCenter.y < r.y + r.h,
-    );
-    expect(coversNotch).toBe(false);
+    // The open top-right notch must never be inside the detected room.
+    expect(pointInPolygon({ x: 6500, y: 1500 }, rooms[0].polygon!)).toBe(false);
   });
 
   it('skips cells already containing a room', () => {

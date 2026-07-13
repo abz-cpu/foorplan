@@ -13,6 +13,7 @@ export * from './survey';
 export * from './shapes';
 export * from './symbols';
 export * from './detect';
+export * from './faces';
 export * from './assistant';
 export * from './length';
 export * from './demo';

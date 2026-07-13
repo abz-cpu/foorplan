@@ -100,14 +100,15 @@ export async function shapesToPdfBytes(
         break;
       }
       case 'polyline': {
-        const d = s.points
-          .map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x * PT_PER_MM} ${p.y * PT_PER_MM}`)
-          .join(' ');
+        const d =
+          s.points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x * PT_PER_MM} ${p.y * PT_PER_MM}`).join(' ') +
+          (s.closed ? ' Z' : '');
         page.drawSvgPath(d, {
           x: 0,
           y: H,
           borderColor: hexToRgb(s.stroke),
           borderWidth: s.width * PT_PER_MM,
+          ...(s.fill ? { color: hexToRgb(s.fill) } : {}),
         });
         break;
       }

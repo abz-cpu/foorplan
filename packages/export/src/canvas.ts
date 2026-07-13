@@ -83,11 +83,16 @@ export async function drawShapesToCanvas(
         ctx.stroke();
         break;
       case 'polyline':
-        ctx.strokeStyle = s.stroke;
-        ctx.lineWidth = s.width;
         ctx.lineJoin = 'round';
         ctx.beginPath();
         s.points.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
+        if (s.closed) ctx.closePath();
+        if (s.fill) {
+          ctx.fillStyle = s.fill;
+          ctx.fill();
+        }
+        ctx.strokeStyle = s.stroke;
+        ctx.lineWidth = s.width;
         ctx.stroke();
         break;
       case 'text': {

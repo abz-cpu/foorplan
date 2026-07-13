@@ -220,7 +220,9 @@ export function buildFloorSheet(doc: FloorDoc, opts: SheetOptions): Sheet {
 
     /* Scale bar (bottom-left of content box) */
     if (opts.showMeasurements) {
-      const niceWorldMm = [1000, 2000, 5000].reverse().find((l) => l * scale <= cw / 3) ?? 1000;
+      // Include small increments (0.5m/1m) so tight/large-scale plans get a
+      // sensibly short scale bar instead of always defaulting to metres.
+      const niceWorldMm = [500, 1000, 2000, 5000].reverse().find((l) => l * scale <= cw / 3) ?? 500;
       const barLen = niceWorldMm * scale;
       const bx = cx0 + 2;
       const by = cy0 + ch - 4;
@@ -232,7 +234,7 @@ export function buildFloorSheet(doc: FloorDoc, opts: SheetOptions): Sheet {
           kind: 'text',
           x: bx + barLen / 2,
           y: by - 2.2,
-          text: `${niceWorldMm / 1000} m`,
+          text: `${niceWorldMm >= 1000 ? niceWorldMm / 1000 : (niceWorldMm / 1000).toFixed(1)} m`,
           size: 2.6,
           color: '#4A5D57',
           font: 'mono',

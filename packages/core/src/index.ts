@@ -11,6 +11,7 @@ export * from './measure';
 export * from './csv';
 export * from './survey';
 export * from './shapes';
+export * from './labels';
 export * from './symbols';
 export * from './detect';
 export * from './faces';

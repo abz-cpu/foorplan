@@ -1,10 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { addRoom, addWall, emptyFloorDoc, wallsForPolygon } from '../src/doc';
 import { detectRooms } from '../src/detect';
-import { insetPolygonVariable } from '../src/faces';
+import {
+  differenceRectilinear,
+  insetPolygonVariable,
+  pointInPolygon,
+  ringsOverlap,
+  unionRectilinear,
+} from '../src/faces';
 import { classifyExternalWalls } from '../src/measure';
 import { polygonAreaMm2 } from '../src/geometry';
 import { docToShapes, type Shape } from '../src/shapes';
+import { smartRoomLabelOffset } from '../src/labels';
+import type { SymbolInstance } from '../src/symbols';
 import type { FloorDoc, Point, RoomRect, Wall } from '../src/types';
 
 const wall = (id: string, x1: number, y1: number, x2: number, y2: number, thickness = 100): Wall => ({
@@ -147,6 +155,94 @@ describe('overall dimensions — per detached structure', () => {
     const doc: FloorDoc = { ...emptyFloorDoc(), walls: [...box('a', 0, 0), ...box('b', 20000, 0)] };
     const shapes = docToShapes(doc, { showDims: true, showLabels: false });
     expect(monoLabels(shapes)).toHaveLength(4); // two structures → two pairs
+  });
+});
+
+describe('unionRectilinear / ringsOverlap', () => {
+  it('merges two overlapping rectangles into a 6-corner L', () => {
+    const a = rect(0, 0, 4000, 2000); // wide bottom
+    const b = rect(0, 0, 2000, 4000); // tall left
+    expect(ringsOverlap(a, b)).toBe(true);
+    const rings = unionRectilinear([a, b]);
+    expect(rings).toHaveLength(1);
+    expect(rings[0].length).toBe(6); // an L
+    // 8,000,000 + 8,000,000 − 4,000,000 overlap = 12,000,000 mm²
+    expect(polygonAreaMm2(rings[0])).toBeCloseTo(12_000_000, 0);
+  });
+
+  it('reports no overlap for separated rectangles', () => {
+    expect(ringsOverlap(rect(0, 0, 1000, 1000), rect(3000, 0, 1000, 1000))).toBe(false);
+  });
+
+  it('unions a rectangle onto an existing L (T/U build-up)', () => {
+    const lshape: Point[] = [
+      { x: 0, y: 0 },
+      { x: 4000, y: 0 },
+      { x: 4000, y: 2000 },
+      { x: 2000, y: 2000 },
+      { x: 2000, y: 4000 },
+      { x: 0, y: 4000 },
+    ];
+    const addOn = rect(3000, 2000, 1000, 2000); // fills toward a U/rectangle-ish
+    const rings = unionRectilinear([lshape, addOn]);
+    expect(rings).toHaveLength(1);
+    expect(polygonAreaMm2(rings[0])).toBeCloseTo(polygonAreaMm2(lshape) + 1000 * 2000, 0);
+  });
+});
+
+describe('differenceRectilinear — carve a room around others', () => {
+  it('subtracts a covered room, leaving an L that fits around it', () => {
+    const drawn = rect(0, 0, 4000, 4000); // 16 m²
+    const existing = rect(2000, 2000, 2000, 2000); // 4 m² in the bottom-right
+    const pieces = differenceRectilinear(drawn, [existing]);
+    expect(pieces).toHaveLength(1);
+    expect(pieces[0].length).toBe(6); // an L
+    expect(polygonAreaMm2(pieces[0])).toBeCloseTo(16_000_000 - 4_000_000, 0);
+    // the carved-out corner is not part of the new room
+    expect(pointInPolygon({ x: 3000, y: 3000 }, pieces[0])).toBe(false);
+  });
+
+  it('returns nothing when the drawn rectangle is fully covered', () => {
+    const drawn = rect(1000, 1000, 1000, 1000);
+    const existing = rect(0, 0, 4000, 4000);
+    expect(differenceRectilinear(drawn, [existing])).toHaveLength(0);
+  });
+
+  it('leaves a plain rectangle when nothing is subtracted', () => {
+    const drawn = rect(0, 0, 3000, 2000);
+    const pieces = differenceRectilinear(drawn, []);
+    expect(pieces).toHaveLength(1);
+    expect(pieces[0].length).toBe(4);
+    expect(polygonAreaMm2(pieces[0])).toBeCloseTo(6_000_000, 0);
+  });
+});
+
+describe('export room label matches canvas smart placement', () => {
+  it('places the exported name label at the smart (furniture-dodging) offset', () => {
+    const room: RoomRect = {
+      id: 'r',
+      x: 0,
+      y: 0,
+      w: 4000,
+      h: 4000,
+      name: 'Bedroom',
+      type: 'Bedroom',
+      ceilingHeightM: 2.4,
+      includeInGia: true,
+    };
+    // A bed dead-centre pushes the smart label off the middle.
+    const bed: SymbolInstance = { id: 'b', kind: 'bed-double', x: 1200, y: 1400, w: 1600, h: 1200, rotationDeg: 0 };
+    const doc: FloorDoc = { ...emptyFloorDoc(), rooms: [room], symbols: [bed] };
+
+    const offset = smartRoomLabelOffset(room, [bed], []);
+    expect(offset.y).not.toBe(0); // the bed actually shifted the label
+
+    const shapes = docToShapes(doc, { showDims: false, showLabels: true });
+    const nameText = shapes.find((s): s is Extract<Shape, { kind: 'text' }> => s.kind === 'text' && s.text === 'Bedroom');
+    expect(nameText).toBeDefined();
+    // Export label sits at room-centre + smart offset (− 60 for the name line),
+    // i.e. the same place the canvas draws it — no longer stamped dead-centre.
+    expect(nameText!.y).toBeCloseTo(room.y + room.h / 2 + offset.y - 60, 3);
   });
 });
 

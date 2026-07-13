@@ -220,10 +220,11 @@ export function buildFloorSheet(doc: FloorDoc, opts: SheetOptions): Sheet {
 
     /* Scale bar (bottom-left of content box) */
     if (opts.showMeasurements) {
-      // Prefer the SMALLEST round reference length that still draws a readable
-      // bar (≥ ~10mm on paper) — a compact 0.5 m rule on a typical plan, not
-      // the oversized 2 m bar the old "largest that fits" rule produced.
-      const MIN_BAR_MM = 10;
+      // Prefer the SMALLEST round reference length (0.5 m wherever it's drawable
+      // at all) instead of the oversized bar the old "largest that fits" rule
+      // produced. The low floor keeps 0.5 m even on a spread-out plan that's
+      // scaled right down; it only steps up when 0.5 m would be a sub-4mm sliver.
+      const MIN_BAR_MM = 4;
       const candidates = [500, 1000, 2000, 5000, 10000];
       const niceWorldMm =
         candidates.find((l) => l * scale >= MIN_BAR_MM) ?? candidates[candidates.length - 1];

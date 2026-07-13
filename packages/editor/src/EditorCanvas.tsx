@@ -45,8 +45,12 @@ import {
   openingJambs,
   parseLengthToMm,
   pointAlongWall,
+  differenceRectilinear,
   ringBounds,
+  ringsOverlap,
   roomAreaM2,
+  roomPolygon,
+  smartRoomLabelOffset,
   ROOM_TYPES,
   ROOM_ZONE_COLORS,
   snapPointToGrid,
@@ -156,57 +160,6 @@ type HandleDrag =
   | { kind: 'label-scale'; entity: 'room' | 'text'; id: string; center: Point };
 
 /** Overlap area of two AABBs {x0,y0,x1,y1}. */
-function aabbOverlap(
-  a: { x0: number; y0: number; x1: number; y1: number },
-  b: { x0: number; y0: number; x1: number; y1: number },
-): number {
-  const ox = Math.max(0, Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0));
-  const oy = Math.max(0, Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0));
-  return ox * oy;
-}
-
-/**
- * A room's default label position (room-local offset from centre) when the
- * user hasn't dragged it. Nudges the name/area block off any furniture or
- * internal wall sitting mid-room, instead of stamping it dead-centre over a
- * bed or partition. Furniture footprints and thin wall strips become
- * obstacle boxes; the label box is scored against them at a few vertical
- * positions and the clearest one nearest the centre wins.
- */
-function computeSmartLabelOffset(room: RoomRect, symbols: SymbolInstance[], walls: Wall[]): Point {
-  const halfW = Math.min(room.w * 0.45, 1600);
-  const halfH = 420;
-  const obstacles: { x0: number; y0: number; x1: number; y1: number }[] = [];
-  for (const s of symbols) {
-    if (s.x + s.w < room.x || s.x > room.x + room.w || s.y + s.h < room.y || s.y > room.y + room.h) continue;
-    obstacles.push({ x0: s.x - room.x, y0: s.y - room.y, x1: s.x + s.w - room.x, y1: s.y + s.h - room.y });
-  }
-  for (const w of walls) {
-    const t = w.thickness / 2 + 60;
-    obstacles.push({
-      x0: Math.min(w.a.x, w.b.x) - t - room.x,
-      y0: Math.min(w.a.y, w.b.y) - t - room.y,
-      x1: Math.max(w.a.x, w.b.x) + t - room.x,
-      y1: Math.max(w.a.y, w.b.y) + t - room.y,
-    });
-  }
-  if (obstacles.length === 0) return { x: 0, y: 0 };
-  const cx = room.w / 2;
-  const candidates = [room.h / 2, room.h * 0.74, room.h * 0.26, room.h * 0.86, room.h * 0.14];
-  let best = { x: 0, y: 0 };
-  let bestScore = Infinity;
-  for (const cy of candidates) {
-    const box = { x0: cx - halfW, y0: cy - halfH, x1: cx + halfW, y1: cy + halfH };
-    let score = Math.abs(cy - room.h / 2) * 0.02; // tie-break toward centre
-    for (const o of obstacles) score += aabbOverlap(box, o);
-    if (score < bestScore) {
-      bestScore = score;
-      best = { x: 0, y: cy - room.h / 2 };
-    }
-  }
-  return best;
-}
-
 /** Furniture symbol rendered from its unit-box primitives inside a rotatable group. */
 function SymbolNode({ sym, selected }: { sym: SymbolInstance; selected: boolean }) {
   const def = SYMBOL_DEFS[sym.kind];
@@ -1018,7 +971,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
     const m = new Map<string, Point>();
     for (const room of doc.rooms) {
       if (room.labelOffset || room.type === 'Stairs') continue;
-      m.set(room.id, computeSmartLabelOffset(room, doc.symbols, doc.walls));
+      m.set(room.id, smartRoomLabelOffset(room, doc.symbols, doc.walls));
     }
     return m;
   }, [doc.rooms, doc.symbols, doc.walls]);
@@ -1603,13 +1556,15 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
     openingDrag.current = null;
 
     if (isDraftingTool(tool)) {
-      const downScreen = roomDownScreen.current;
       roomDownScreen.current = null;
-      const movedPx = downScreen && client ? Math.hypot(client.x - downScreen.x, client.y - downScreen.y) : 999;
+      const dw = rectDraft ? Math.abs(rectDraft.b.x - rectDraft.a.x) : 0;
+      const dh = rectDraft ? Math.abs(rectDraft.b.y - rectDraft.a.y) : 0;
+      const bigDrag = dw >= MIN_ROOM_MM && dh >= MIN_ROOM_MM;
 
-      // Room tool, clicking (not dragging): build a shaped room vertex by
-      // vertex. A drag still draws a quick rectangle; stairs are always a rect.
-      if (tool === 'room' && (polyDraft || movedPx < 6)) {
+      // Room tool with a click or too-small drag: build a shaped room vertex by
+      // vertex. A drag big enough to be a room draws a rectangle below; stairs
+      // are always a rectangle.
+      if (tool === 'room' && (polyDraft || !bigDrag)) {
         setRectDraft(null);
         const upWorld = client ? worldFromClient(client) : pointerWorld();
         if (!upWorld) return;
@@ -1621,7 +1576,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
         }
         // Click on/near the first vertex closes the outline.
         const first = polyDraft[0];
-        if (polyDraft.length >= 3 && Math.hypot((pt.x - first.x) * scale, (pt.y - first.y) * scale) < 12) {
+        if (polyDraft.length >= 3 && Math.hypot((pt.x - first.x) * scale, (pt.y - first.y) * scale) < 14) {
           finishPolyRoom(polyDraft);
           return;
         }
@@ -1633,38 +1588,86 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
         return;
       }
 
-      if (rectDraft) {
+      if (rectDraft && bigDrag) {
         const x = Math.min(rectDraft.a.x, rectDraft.b.x);
         const y = Math.min(rectDraft.a.y, rectDraft.b.y);
-        const w = Math.abs(rectDraft.b.x - rectDraft.a.x);
-        const h = Math.abs(rectDraft.b.y - rectDraft.a.y);
-        if (w >= MIN_ROOM_MM && h >= MIN_ROOM_MM) {
-          const stairs = rectDraft.stairs;
+        const w = dw;
+        const h = dh;
+        const stairs = rectDraft.stairs;
+        setRectDraft(null);
+
+        // A room dragged over existing rooms is carved to fit AROUND them
+        // (drawn rectangle minus those rooms), so it never overlaps and honours
+        // the walls already dividing the space — the drag-based way to get an
+        // L/T/U. Stairs are exempt (they sit inside a room by design).
+        const drawnRing: Point[] = [
+          { x, y },
+          { x: x + w, y },
+          { x: x + w, y: y + h },
+          { x, y: y + h },
+        ];
+        const overlapped = stairs
+          ? []
+          : doc.rooms.filter((r) => r.type !== 'Stairs' && ringsOverlap(roomPolygon(r), drawnRing));
+        if (overlapped.length > 0) {
+          const piece = differenceRectilinear(drawnRing, overlapped.map(roomPolygon))[0];
+          const bb = piece ? ringBounds(piece) : null;
+          // Fully covered, or only a sliver survives — nothing worth adding.
+          if (!piece || !bb || bb.w < MIN_ROOM_MM || bb.h < MIN_ROOM_MM) return;
+          const isRect =
+            piece.length === 4 &&
+            piece.every((p, i) => {
+              const q = piece[(i + 1) % 4];
+              return Math.abs(p.x - q.x) < 2 || Math.abs(p.y - q.y) < 2;
+            });
           const room: RoomRect = {
             id: newId(),
-            x,
-            y,
-            w,
-            h,
-            name: stairs ? 'Stairs' : `Room ${doc.rooms.length + 1}`,
-            type: stairs ? 'Stairs' : 'Other',
+            x: bb.x,
+            y: bb.y,
+            w: bb.w,
+            h: bb.h,
+            ...(isRect ? {} : { polygon: piece }),
+            name: `Room ${doc.rooms.length + 1}`,
+            type: 'Other',
             ceilingHeightM: DEFAULT_CEILING_HEIGHT_M,
-            includeInGia: !stairs,
+            includeInGia: true,
           };
           let next = addRoom(doc, room);
-          // A drawn room auto-encloses itself: walls appear along any edge
-          // that doesn't already have one (a shared wall with the neighbour
-          // is reused, not doubled), then thicknesses are classified so the
-          // boundary comes out external and partitions internal.
-          if (!stairs && autoRoomWalls) {
-            for (const wall of wallsForRoom(doc, room)) next = addWall(next, wall);
+          if (autoRoomWalls) {
+            for (const wall of wallsForPolygon(next, piece)) next = addWall(next, wall);
             if (autoWallThickness) next = autoClassifyWallThickness(next);
           }
-          commit(stairs ? 'Add stairs' : 'Add room', next);
+          commit('Add room', next);
           select(room.id);
+          return;
         }
-        setRectDraft(null);
+
+        // Plain new room / stairs.
+        const room: RoomRect = {
+          id: newId(),
+          x,
+          y,
+          w,
+          h,
+          name: stairs ? 'Stairs' : `Room ${doc.rooms.length + 1}`,
+          type: stairs ? 'Stairs' : 'Other',
+          ceilingHeightM: DEFAULT_CEILING_HEIGHT_M,
+          includeInGia: !stairs,
+        };
+        let next = addRoom(doc, room);
+        // A drawn room auto-encloses itself: walls appear along any edge that
+        // doesn't already have one (a shared wall with the neighbour is reused,
+        // not doubled), then thicknesses are classified so the boundary comes
+        // out external and partitions internal.
+        if (!stairs && autoRoomWalls) {
+          for (const wall of wallsForRoom(doc, room)) next = addWall(next, wall);
+          if (autoWallThickness) next = autoClassifyWallThickness(next);
+        }
+        commit(stairs ? 'Add stairs' : 'Add room', next);
+        select(room.id);
+        return;
       }
+      setRectDraft(null);
     }
   };
 

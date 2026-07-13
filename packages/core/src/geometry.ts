@@ -1,3 +1,4 @@
+import { ringsOverlapAreaMm2 } from './faces';
 import type { FloorDoc, Point, RoomRect, Wall } from './types';
 
 export function distance(a: Point, b: Point): number {
@@ -95,9 +96,10 @@ export function findRoomOverlaps(doc: FloorDoc): RoomOverlap[] {
     for (let j = i + 1; j < rooms.length; j++) {
       const a = rooms[i];
       const b = rooms[j];
-      const ox = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
-      const oy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
-      if (ox > 50 && oy > 50) out.push({ a, b, areaM2: (ox * oy) / 1_000_000 });
+      // Compare the true outlines, not bounding boxes: an L/T/U room's bbox
+      // spills over its neighbours even when the shapes tile perfectly.
+      const areaMm2 = ringsOverlapAreaMm2(roomPolygon(a), roomPolygon(b));
+      if (areaMm2 > 50 * 50) out.push({ a, b, areaM2: areaMm2 / 1_000_000 });
     }
   }
   return out;

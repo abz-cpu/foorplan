@@ -303,6 +303,137 @@ export function ringBounds(ring: Point[]): { x: number; y: number; w: number; h:
   return { x: minX, y: minY, w: Math.max(...xs) - minX, h: Math.max(...ys) - minY };
 }
 
+/** Area (mm²) shared by two rectilinear rings (0 when they only touch). */
+export function ringsOverlapAreaMm2(a: Point[], b: Point[]): number {
+  if (a.length < 3 || b.length < 3) return 0;
+  const xs = [...new Set([...a, ...b].map((p) => p.x))].sort((s, t) => s - t);
+  const ys = [...new Set([...a, ...b].map((p) => p.y))].sort((s, t) => s - t);
+  let area = 0;
+  for (let i = 0; i < xs.length - 1; i++) {
+    const cx = (xs[i] + xs[i + 1]) / 2;
+    for (let j = 0; j < ys.length - 1; j++) {
+      const cy = (ys[j] + ys[j + 1]) / 2;
+      if (pointInPolygon({ x: cx, y: cy }, a) && pointInPolygon({ x: cx, y: cy }, b)) {
+        area += (xs[i + 1] - xs[i]) * (ys[j + 1] - ys[j]);
+      }
+    }
+  }
+  return area;
+}
+
+/** True when two rectilinear rings share any interior area. */
+export function ringsOverlap(a: Point[], b: Point[]): boolean {
+  return ringsOverlapAreaMm2(a, b) > 0;
+}
+
+function simplifyRectilinear(pts: Point[]): Point[] {
+  const n = pts.length;
+  const out: Point[] = [];
+  for (let i = 0; i < n; i++) {
+    const prev = pts[(i - 1 + n) % n];
+    const cur = pts[i];
+    const next = pts[(i + 1) % n];
+    const collinear =
+      (Math.abs(prev.x - cur.x) < 1e-6 && Math.abs(cur.x - next.x) < 1e-6) ||
+      (Math.abs(prev.y - cur.y) < 1e-6 && Math.abs(cur.y - next.y) < 1e-6);
+    if (!collinear) out.push(cur);
+  }
+  return out;
+}
+
+function gridCoords(rings: Point[][]): { xs: number[]; ys: number[] } {
+  const xs = [...new Set(rings.flatMap((r) => r.map((p) => p.x)))].sort((a, b) => a - b);
+  const ys = [...new Set(rings.flatMap((r) => r.map((p) => p.y)))].sort((a, b) => a - b);
+  return { xs, ys };
+}
+
+/**
+ * Trace the boundary rings of a filled region over a coordinate-compression
+ * grid. `filled(i,j)` says whether cell (i,j) — spanning [xs[i],xs[i+1]] ×
+ * [ys[j],ys[j+1]] — is inside the region; every grid edge between a filled and
+ * an empty cell is emitted (filled side on the left), the edges are stitched
+ * into closed rings, collinear points dropped, and rings returned largest-area
+ * first (normalised CCW).
+ */
+function traceRectilinear(xs: number[], ys: number[], filled: (i: number, j: number) => boolean): Point[][] {
+  const ni = xs.length - 1;
+  const nj = ys.length - 1;
+  if (ni < 1 || nj < 1) return [];
+  const on = (i: number, j: number) => i >= 0 && i < ni && j >= 0 && j < nj && filled(i, j);
+
+  type E = { ax: number; ay: number; bx: number; by: number };
+  const edges: E[] = [];
+  for (let i = 0; i < ni; i++) {
+    for (let j = 0; j < nj; j++) {
+      if (!filled(i, j)) continue;
+      const x0 = xs[i];
+      const x1 = xs[i + 1];
+      const y0 = ys[j];
+      const y1 = ys[j + 1];
+      if (!on(i - 1, j)) edges.push({ ax: x0, ay: y0, bx: x0, by: y1 }); // left edge, downward
+      if (!on(i + 1, j)) edges.push({ ax: x1, ay: y1, bx: x1, by: y0 }); // right edge, upward
+      if (!on(i, j - 1)) edges.push({ ax: x1, ay: y0, bx: x0, by: y0 }); // top edge, leftward
+      if (!on(i, j + 1)) edges.push({ ax: x0, ay: y1, bx: x1, by: y1 }); // bottom edge, rightward
+    }
+  }
+
+  const vkey = (x: number, y: number) => `${x},${y}`;
+  const byStart = new Map<string, E[]>();
+  for (const e of edges) {
+    const k = vkey(e.ax, e.ay);
+    (byStart.get(k) ?? byStart.set(k, []).get(k)!).push(e);
+  }
+  const used = new Set<E>();
+  const out: Point[][] = [];
+  for (const start of edges) {
+    if (used.has(start)) continue;
+    const pts: Point[] = [];
+    let e: E | undefined = start;
+    let guard = 0;
+    while (e && !used.has(e) && guard++ < 1e6) {
+      used.add(e);
+      pts.push({ x: e.ax, y: e.ay });
+      const cont = byStart.get(vkey(e.bx, e.by));
+      e = cont?.find((c) => !used.has(c));
+    }
+    if (pts.length >= 4) {
+      const ring = simplifyRectilinear(pts);
+      if (ring.length >= 4) out.push(signedArea(ring) < 0 ? ring.reverse() : ring);
+    }
+  }
+  return out.sort((a, b) => Math.abs(signedArea(b)) - Math.abs(signedArea(a)));
+}
+
+/**
+ * Boundary of the UNION of axis-aligned rectilinear polygons, as one or more
+ * rings (mm), largest-area first.
+ */
+export function unionRectilinear(rings: Point[][]): Point[][] {
+  const polys = rings.filter((r) => r.length >= 3);
+  if (polys.length === 0) return [];
+  const { xs, ys } = gridCoords(polys);
+  return traceRectilinear(xs, ys, (i, j) => {
+    const c = { x: (xs[i] + xs[i + 1]) / 2, y: (ys[j] + ys[j + 1]) / 2 };
+    return polys.some((r) => pointInPolygon(c, r));
+  });
+}
+
+/**
+ * Boundary rings of `outer` with every ring in `holes` removed (rectangle −
+ * rooms), largest-area first. A room drawn over existing rooms uses this so it
+ * fits AROUND them — an L/T/U that respects the walls between — instead of
+ * overlapping. Rectilinear shapes only.
+ */
+export function differenceRectilinear(outer: Point[], holes: Point[][]): Point[][] {
+  if (outer.length < 3) return [];
+  const hs = holes.filter((h) => h.length >= 3);
+  const { xs, ys } = gridCoords([outer, ...hs]);
+  return traceRectilinear(xs, ys, (i, j) => {
+    const c = { x: (xs[i] + xs[i + 1]) / 2, y: (ys[j] + ys[j + 1]) / 2 };
+    return pointInPolygon(c, outer) && !hs.some((h) => pointInPolygon(c, h));
+  });
+}
+
 /** Point-in-polygon (ray casting). */
 export function pointInPolygon(p: Point, ring: Point[]): boolean {
   let inside = false;

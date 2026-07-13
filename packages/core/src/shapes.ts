@@ -1,4 +1,5 @@
 import { docBounds, roomAreaM2 } from './geometry';
+import { resolveRoomLabelOffset } from './labels';
 import { doorSwingGeometry, openingJambs, wallNormal, wallSegments } from './openings';
 import { formatAreaM2, formatMmAsM } from './format';
 import { SYMBOL_DEFS, type SymbolInstance } from './symbols';
@@ -108,7 +109,12 @@ export const ROOM_ZONE_COLORS: Record<RoomType, { fill: string; edge: string }> 
   Other: { fill: '#EDEDED', edge: '#C6C6C6' },
 };
 
-function roomShapes(room: RoomRect, showLabels: boolean, planMode: 'technical' | 'presentation'): Shape[] {
+function roomShapes(
+  room: RoomRect,
+  showLabels: boolean,
+  planMode: 'technical' | 'presentation',
+  labelOffset: Point = { x: 0, y: 0 },
+): Shape[] {
   const zone = planMode === 'presentation' ? ROOM_ZONE_COLORS[room.type] : null;
   const fill = zone?.fill ?? '#FFFFFF';
   const edge = zone?.edge ?? ROOM_EDGE;
@@ -184,9 +190,10 @@ function roomShapes(room: RoomRect, showLabels: boolean, planMode: 'technical' |
   }
 
   if (showLabels) {
-    // Honour a dragged label position so the export matches the canvas.
-    const cx = room.x + room.w / 2 + (room.labelOffset?.x ?? 0);
-    const cy = room.y + room.h / 2 + (room.labelOffset?.y ?? 0);
+    // Use the same resolved label position (dragged, else smart auto-placement)
+    // the editor canvas uses, so the export matches what was on screen.
+    const cx = room.x + room.w / 2 + labelOffset.x;
+    const cy = room.y + room.h / 2 + labelOffset.y;
     shapes.push({
       kind: 'text',
       x: cx,
@@ -462,7 +469,10 @@ export function docToShapes(doc: FloorDoc, options: DocShapesOptions = {}): Shap
   // hallway) always draws on top instead of being covered by — or
   // covering the label of — the bigger room it sits inside.
   const roomsByAreaDesc = [...doc.rooms].sort((a, b) => b.w * b.h - a.w * a.h);
-  for (const room of roomsByAreaDesc) shapes.push(...roomShapes(room, showLabels, planMode));
+  for (const room of roomsByAreaDesc) {
+    const labelOffset = resolveRoomLabelOffset(room, doc.symbols, doc.walls);
+    shapes.push(...roomShapes(room, showLabels, planMode, labelOffset));
+  }
 
   for (const wall of doc.walls) {
     for (const seg of wallSegments(wall, doc.openings)) {

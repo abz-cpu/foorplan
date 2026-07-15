@@ -2,7 +2,7 @@
 export const BASE_PX_PER_MM = 0.06;
 
 /** Snap grid, mm. */
-export const GRID_MM = 100;
+export const GRID_MM = 50;
 
 /** Visible dot-grid spacing, mm. */
 export const DISPLAY_GRID_MM = 500;

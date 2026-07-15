@@ -37,6 +37,9 @@ const GROUPS: { title: string; rows: ShortcutRow[] }[] = [
     title: 'Editing',
     rows: [
       { keys: ['Delete'], label: 'Delete selection' },
+      { keys: ['Ctrl', 'A'], label: 'Select the whole plan' },
+      { keys: ['Ctrl', 'C'], label: 'Copy selection' },
+      { keys: ['Ctrl', 'V'], label: 'Paste — here or on another floor' },
       { keys: ['↑↓←→'], label: 'Nudge selection' },
       { keys: ['Shift', 'Click'], label: 'Add/remove from selection' },
       { keys: ['Double-click'], label: 'Rename a room' },

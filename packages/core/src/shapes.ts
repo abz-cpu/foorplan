@@ -1,7 +1,8 @@
 import { docBounds, roomAreaM2 } from './geometry';
 import { resolveRoomLabelOffset } from './labels';
-import { doorSwingGeometry, openingJambs, wallNormal, wallSegments } from './openings';
-import { formatArea, formatMmAsM, type AreaUnits } from './format';
+import { doorSwingGeometry, openingJambs, wallNormal } from './openings';
+import { wallBodyQuads } from './walljoin';
+import { formatArea, formatDims, formatMmAsM, type AreaUnits } from './format';
 import { SYMBOL_DEFS, type SymbolInstance } from './symbols';
 import type { FloorDoc, Opening, Point, RoomRect, RoomType, TextLabel, Wall } from './types';
 
@@ -101,11 +102,17 @@ const DIM_LINE = '#7C9A90';
  *  editor canvas and every export backend so they can never drift apart. */
 export const ROOM_ZONE_COLORS: Record<RoomType, { fill: string; edge: string }> = {
   'Living Room': { fill: '#E4EEE8', edge: '#9DBFAC' },
+  Lounge: { fill: '#DCEDDA', edge: '#8FBC8A' },
   'Kitchen / Diner': { fill: '#FBEED9', edge: '#E0B871' },
+  'Dining Room': { fill: '#F9E3D0', edge: '#DBA377' },
   Bedroom: { fill: '#E3EAF7', edge: '#9FB4DE' },
   Bathroom: { fill: '#DFF1F0', edge: '#8FC9C5' },
   WC: { fill: '#E8F1EF', edge: '#A9CAC4' },
   Hallway: { fill: '#EEECE6', edge: '#C3BCAC' },
+  Study: { fill: '#EDE7F4', edge: '#B49FD3' },
+  Conservatory: { fill: '#E4F2E0', edge: '#9CC694' },
+  Garage: { fill: '#E6E8EA', edge: '#ABB3B9' },
+  Porch: { fill: '#F2EEE3', edge: '#CDBF9E' },
   Stairs: { fill: '#EAE3F2', edge: '#B9A4D1' },
   Utility: { fill: '#F0E8E1', edge: '#CBAF98' },
   Other: { fill: '#EDEDED', edge: '#C6C6C6' },
@@ -197,12 +204,17 @@ function roomShapes(
     // the editor canvas uses, so the export matches what was on screen.
     const cx = room.x + room.w / 2 + labelOffset.x;
     const cy = room.y + room.h / 2 + labelOffset.y;
+    const areaText = formatArea(roomAreaM2(room), areaUnits);
+    const dimsText = formatDims(room.w, room.h);
+    // Shrink the label block to fit small rooms (a porch, a WC) instead of
+    // spilling over their walls into the neighbouring space.
+    const k = roomLabelShrink(room, [room.name, areaText, dimsText]);
     shapes.push({
       kind: 'text',
       x: cx,
-      y: cy - 60,
+      y: cy - 130 * k,
       text: room.name,
-      size: 260,
+      size: 260 * k,
       color: INK,
       font: 'sans',
       weight: 600,
@@ -211,15 +223,36 @@ function roomShapes(
     shapes.push({
       kind: 'text',
       x: cx,
-      y: cy + 240,
-      text: formatArea(roomAreaM2(room), areaUnits),
-      size: 185,
+      y: cy + 155 * k,
+      text: areaText,
+      size: 185 * k,
+      color: FAINT,
+      font: 'mono',
+      align: 'center',
+    });
+    // Width × length under the area — agents quote both on listings.
+    shapes.push({
+      kind: 'text',
+      x: cx,
+      y: cy + 395 * k,
+      text: dimsText,
+      size: 160 * k,
       color: FAINT,
       font: 'mono',
       align: 'center',
     });
   }
   return shapes;
+}
+
+/** Scale factor (≤1) that fits a room's label block inside its width — the
+ *  same rule the canvas uses, so editor and export agree. */
+export function roomLabelShrink(room: RoomRect, lines: string[]): number {
+  const longest = Math.max(...lines.map((l) => l.length), 1);
+  const textWidthMm = longest * 150; // ~monospace advance at base size
+  const fitW = (room.w * 0.92) / textWidthMm;
+  const fitH = (room.h * 0.9) / 900; // three lines ≈ 900mm tall at base size
+  return Math.max(0.4, Math.min(1, fitW, fitH)) * (room.labelScale ?? 1);
 }
 
 function openingShapes(wall: Wall, opening: Opening): Shape[] {
@@ -478,17 +511,10 @@ export function docToShapes(doc: FloorDoc, options: DocShapesOptions = {}): Shap
   }
 
   for (const wall of doc.walls) {
-    for (const seg of wallSegments(wall, doc.openings)) {
-      shapes.push({
-        kind: 'line',
-        x1: seg.a.x,
-        y1: seg.a.y,
-        x2: seg.b.x,
-        y2: seg.b.y,
-        stroke: WALL,
-        width: wall.thickness,
-        cap: 'square',
-      });
+    for (const quad of wallBodyQuads(wall, doc.walls, doc.openings)) {
+      // Filled mitred quad — joins cleanly at any angle, unlike a stroked
+      // centreline whose square cap pokes out at non-90° joints.
+      shapes.push({ kind: 'polyline', points: quad, stroke: WALL, width: 8, fill: WALL, closed: true });
     }
   }
 

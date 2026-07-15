@@ -240,9 +240,10 @@ describe('export room label matches canvas smart placement', () => {
     const shapes = docToShapes(doc, { showDims: false, showLabels: true });
     const nameText = shapes.find((s): s is Extract<Shape, { kind: 'text' }> => s.kind === 'text' && s.text === 'Bedroom');
     expect(nameText).toBeDefined();
-    // Export label sits at room-centre + smart offset (− 60 for the name line),
-    // i.e. the same place the canvas draws it — no longer stamped dead-centre.
-    expect(nameText!.y).toBeCloseTo(room.y + room.h / 2 + offset.y - 60, 3);
+    // Export label sits at room-centre + smart offset (name line offset scales
+    // with the R18 shrink factor k) — the same place the canvas draws it.
+    const k = nameText!.size / 260;
+    expect(nameText!.y).toBeCloseTo(room.y + room.h / 2 + offset.y - 130 * k, 3);
   });
 });
 

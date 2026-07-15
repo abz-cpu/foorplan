@@ -50,6 +50,8 @@ import {
   ringBounds,
   ringsOverlap,
   roomAreaM2,
+  roomLabelShrink,
+  roomTypeLabel,
   roomPolygon,
   smartRoomLabelOffset,
   ROOM_TYPES,
@@ -63,11 +65,11 @@ import {
   updateRoom,
   updateSymbol,
   updateWall,
+  wallBodyQuads,
   wallLengthMm,
   wallsForRoom,
   wallsForPolygon,
   wallNormal,
-  wallSegments,
   type Opening,
   type Point,
   type RoomRect,
@@ -161,7 +163,8 @@ type HandleDrag =
   | { kind: 'wall-end'; wall: Wall; end: 'a' | 'b' }
   | { kind: 'symbol-resize'; symbol: SymbolInstance; sx: 1 | -1; sy: 1 | -1; opp: Point }
   | { kind: 'symbol-rotate'; symbol: SymbolInstance }
-  | { kind: 'label-scale'; entity: 'room' | 'text'; id: string; center: Point };
+  | { kind: 'label-scale'; entity: 'room' | 'text'; id: string; center: Point }
+  | { kind: 'room-label-move'; room: RoomRect; startWorld: Point; origin: Point };
 
 /** Overlap area of two AABBs {x0,y0,x1,y1}. */
 /** Furniture symbol rendered from its unit-box primitives inside a rotatable group. */
@@ -402,6 +405,8 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
   // Live rotation preview while the furniture rotate handle is dragged.
   const [symbolRotateDraft, setSymbolRotateDraft] = useState<{ id: string; deg: number } | null>(null);
   const [labelScaleDraft, setLabelScaleDraft] = useState<{ id: string; scale: number } | null>(null);
+  // Live preview while a room's name/area label block is being dragged.
+  const [labelMoveDraft, setLabelMoveDraft] = useState<{ id: string; off: Point } | null>(null);
   const [wallEndDraft, setWallEndDraft] = useState<{ id: string; a: Point; b: Point } | null>(null);
   const [openingHover, setOpeningHover] = useState<{ wall: Wall; offsetMm: number } | null>(null);
   const [openingDraft, setOpeningDraft] = useState<{ id: string; offsetMm: number } | null>(null);
@@ -1007,8 +1012,10 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
     return ids;
   }, [doc]);
 
-  const effectiveLabelOffset = (room: RoomRect): Point =>
-    room.labelOffset ?? smartLabelOffsets.get(room.id) ?? ZERO_POINT;
+  const effectiveLabelOffset = (room: RoomRect): Point => {
+    if (labelMoveDraft?.id === room.id) return labelMoveDraft.off;
+    return room.labelOffset ?? smartLabelOffsets.get(room.id) ?? ZERO_POINT;
+  };
 
   const roomLabelScale = (room: RoomRect): number =>
     labelScaleDraft?.id === room.id ? labelScaleDraft.scale : (room.labelScale ?? 1);
@@ -1046,6 +1053,13 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
         const hp = { x: center.x + LABEL_HANDLE_BASE.x * s, y: center.y + LABEL_HANDLE_BASE.y * s };
         if (Math.hypot(p.x - hp.x, p.y - hp.y) <= tol) {
           return { kind: 'label-scale', entity: 'room', id: room.id, center };
+        }
+        // Grabbing the label text itself moves it freely — anywhere the user
+        // likes, even outside the room (a leader-style label for tiny rooms).
+        const halfW = Math.min(room.w * 0.5, 1400) * s;
+        const halfH = 450 * s;
+        if (Math.abs(p.x - center.x) <= halfW && Math.abs(p.y - center.y) <= halfH) {
+          return { kind: 'room-label-move', room, startWorld: p, origin: off };
         }
       }
       return null;
@@ -1308,6 +1322,11 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
           const half = rotateVec({ x: (h.sx * nw) / 2, y: (h.sy * nh) / 2 }, h.symbol.rotationDeg);
           const nc = { x: h.opp.x + half.x, y: h.opp.y + half.y };
           setSymbolResizeDraft({ ...h.symbol, w: nw, h: nh, x: nc.x - nw / 2, y: nc.y - nh / 2 });
+        } else if (h.kind === 'room-label-move') {
+          setLabelMoveDraft({
+            id: h.room.id,
+            off: { x: h.origin.x + (raw.x - h.startWorld.x), y: h.origin.y + (raw.y - h.startWorld.y) },
+          });
         } else if (h.kind === 'symbol-rotate') {
           // Angle from the symbol centre to the pointer; the handle sits at
           // the top edge, so straight up = 0°. Snap to 15° steps — hold
@@ -1508,6 +1527,12 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
           setSymbolRotateDraft(null);
           if (draft && draft.id === h.symbol.id && draft.deg !== h.symbol.rotationDeg) {
             commit('Rotate furniture', updateSymbol(doc, h.symbol.id, { rotationDeg: draft.deg }));
+          }
+        } else if (h.kind === 'room-label-move') {
+          const draft = labelMoveDraft;
+          setLabelMoveDraft(null);
+          if (draft && draft.id === h.room.id) {
+            commit('Move label', updateRoom(doc, h.room.id, { labelOffset: draft.off }));
           }
         } else {
           const draft = labelScaleDraft;
@@ -2401,39 +2426,48 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
                      room — selection/drag is entirely geometric now. Any
                      saved labelOffset is still honoured for position. The
                      halo keeps it readable over furniture. */
-                  <Group
-                    x={effectiveLabelOffset(room).x}
-                    y={effectiveLabelOffset(room).y}
-                    listening={false}
-                  >
-                    <Text
-                      text={r.name}
-                      width={r.w}
-                      y={r.h / 2 - 320 * roomLabelScale(room)}
-                      align="center"
-                      fontSize={260 * roomLabelScale(room)}
-                      fontFamily={SANS}
-                      fontStyle="600"
-                      fill={INK}
-                      stroke="#FFFFFF"
-                      strokeWidth={30}
-                      fillAfterStrokeEnabled
-                    />
-                    {showRoomLabels && (
-                      <Text
-                        text={formatArea(roomAreaM2(r), areaUnits)}
-                        width={r.w}
-                        y={r.h / 2 + 60 * roomLabelScale(room)}
-                        align="center"
-                        fontSize={185 * roomLabelScale(room)}
-                        fontFamily={MONO}
-                        fill={FAINT}
-                        stroke="#FFFFFF"
-                        strokeWidth={26}
-                        fillAfterStrokeEnabled
-                      />
-                    )}
-                  </Group>
+                  (() => {
+                    const areaText = formatArea(roomAreaM2(r), areaUnits);
+                    // Same fit rule the export uses: shrink to sit inside a
+                    // small room (porch, WC) instead of leaking over walls.
+                    const fit = roomLabelShrink({ ...r, labelScale: 1 }, [r.name, areaText]);
+                    const ls = roomLabelScale(room) * fit;
+                    return (
+                      <Group
+                        x={effectiveLabelOffset(room).x}
+                        y={effectiveLabelOffset(room).y}
+                        listening={false}
+                      >
+                        <Text
+                          text={r.name}
+                          width={r.w}
+                          y={r.h / 2 - 320 * ls}
+                          align="center"
+                          fontSize={260 * ls}
+                          fontFamily={SANS}
+                          fontStyle="600"
+                          fill={INK}
+                          stroke="#FFFFFF"
+                          strokeWidth={30 * fit}
+                          fillAfterStrokeEnabled
+                        />
+                        {showRoomLabels && (
+                          <Text
+                            text={areaText}
+                            width={r.w}
+                            y={r.h / 2 + 60 * ls}
+                            align="center"
+                            fontSize={185 * ls}
+                            fontFamily={MONO}
+                            fill={FAINT}
+                            stroke="#FFFFFF"
+                            strokeWidth={26 * fit}
+                            fillAfterStrokeEnabled
+                          />
+                        )}
+                      </Group>
+                    );
+                  })()
                 )}
               </Group>
             );
@@ -2458,29 +2492,25 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
             // of the frame. So pull each *jamb* end back by half-thickness;
             // the square cap then lands exactly flush at the jamb. True wall
             // ends (dw.a / dw.b) are left alone.
-            const segLenTotal = Math.hypot(dw.b.x - dw.a.x, dw.b.y - dw.a.y) || 1;
-            const dir = { x: (dw.b.x - dw.a.x) / segLenTotal, y: (dw.b.y - dw.a.y) / segLenTotal };
-            const half = w.thickness / 2;
-            const isWallEnd = (p: Point, q: Point) => Math.abs(p.x - q.x) < 1 && Math.abs(p.y - q.y) < 1;
-            return wallSegments({ ...w, ...dw }, openings).map((seg, i) => {
-              let a = seg.a;
-              let b = seg.b;
-              const segLen = Math.hypot(seg.b.x - seg.a.x, seg.b.y - seg.a.y);
-              if (segLen > w.thickness + 2) {
-                if (!isWallEnd(seg.a, dw.a)) a = { x: seg.a.x + dir.x * half, y: seg.a.y + dir.y * half };
-                if (!isWallEnd(seg.b, dw.b)) b = { x: seg.b.x - dir.x * half, y: seg.b.y - dir.y * half };
-              }
-              return (
-                <Line
-                  key={`${w.id}-${i}`}
-                  points={[a.x, a.y, b.x, b.y]}
-                  stroke={isSel ? ACTION : WALL}
-                  strokeWidth={w.thickness}
-                  lineCap="square"
-                  listening={false}
-                />
-              );
+            // Mitred wall bodies (core walljoin): quads meet cleanly at ANY
+            // joint angle instead of a square cap poking out at 45° joins.
+            const liveWalls = doc.walls.map((ow) => {
+              const base = wallEndDraft?.id === ow.id ? { ...ow, a: wallEndDraft.a, b: wallEndDraft.b } : ow;
+              const o2 = manualOffset(ow.id);
+              return o2.x || o2.y
+                ? { ...base, a: { x: base.a.x + o2.x, y: base.a.y + o2.y }, b: { x: base.b.x + o2.x, y: base.b.y + o2.y } }
+                : base;
             });
+            const liveW = { ...w, ...dw };
+            return wallBodyQuads(liveW, liveWalls, openings).map((quad, i) => (
+              <Line
+                key={`${w.id}-${i}`}
+                points={quad.flatMap((p) => [p.x, p.y])}
+                closed
+                fill={isSel ? ACTION : WALL}
+                listening={false}
+              />
+            ));
           })}
 
           {/* Persistent wall-length dimensions ("Tweaks" > Show dimensions),
@@ -2491,24 +2521,34 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
               that used to sit over the wall joints. */}
           {showDimensions &&
             doc.walls.map((w) => {
+              const len = wallLengthMm(w);
+              // Sub-40cm stubs (porch steps, jamb returns) can't fit a
+              // readable label — their neighbours' labels tell the story.
+              if (len < 400) return null;
               const mid = { x: (w.a.x + w.b.x) / 2, y: (w.a.y + w.b.y) / 2 };
               const n = wallNormal(w);
-              const offset = w.thickness / 2 + 320;
+              // Short walls get a smaller label pushed further out so
+              // clustered runs (bay steps) stop overlapping each other.
+              const short = len < 1100;
+              const fontSize = short ? 118 : 155;
+              const offset = w.thickness / 2 + (short ? 430 : 320);
               let angle = (Math.atan2(w.b.y - w.a.y, w.b.x - w.a.x) * 180) / Math.PI;
               if (angle > 90) angle -= 180;
               else if (angle <= -90) angle += 180;
+              const overridden = w.displayLengthMm !== undefined;
               return (
                 <Text
                   key={`dim-${w.id}`}
                   x={mid.x + n.x * offset}
                   y={mid.y + n.y * offset}
                   rotation={angle}
-                  text={formatMmAsM(wallLengthMm(w))}
+                  text={formatMmAsM(w.displayLengthMm ?? len)}
                   width={1600}
                   align="center"
                   offsetX={800}
                   offsetY={80}
-                  fontSize={155}
+                  fontSize={fontSize}
+                  fontStyle={overridden ? 'italic' : 'normal'}
                   fontFamily={MONO}
                   fill={INK}
                   stroke="#FBFDFC"
@@ -2935,7 +2975,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
                     flex: 'none',
                   }}
                 />
-                <span style={{ fontSize: 11.5, fontWeight: 600, color: INK }}>{type}</span>
+                <span style={{ fontSize: 11.5, fontWeight: 600, color: INK }}>{roomTypeLabel(type)}</span>
               </div>
             ))}
           </div>

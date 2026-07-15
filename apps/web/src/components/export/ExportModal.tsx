@@ -73,6 +73,21 @@ export function ExportModal({
   const [orientation, setOrientation] = useState<Orientation>('portrait');
   const [measurements, setMeasurements] = useState(true);
   const [disclaimer, setDisclaimer] = useState(true);
+  const [showScaleBar, setShowScaleBar] = useState<boolean>(
+    () => localStorage.getItem('floorplan:export:scaleBar') !== '0',
+  );
+  const [compass, setCompass] = useState<'arrow' | 'nsew' | 'eight' | 'none'>(() => {
+    const v = localStorage.getItem('floorplan:export:compass');
+    return v === 'nsew' || v === 'eight' || v === 'none' ? v : 'arrow';
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem('floorplan:export:scaleBar', showScaleBar ? '1' : '0');
+      localStorage.setItem('floorplan:export:compass', compass);
+    } catch {
+      /* private browsing — preferences just don't persist */
+    }
+  }, [showScaleBar, compass]);
   const [planMode, setPlanMode] = useState<'technical' | 'presentation'>(initialPlanMode);
   const [phase, setPhase] = useState<'idle' | 'working' | 'done'>('idle');
   const [brand, setBrand] = useState(() => loadBrandProfile());
@@ -116,8 +131,10 @@ export function ExportModal({
         planMode,
         brand,
         areaUnits,
+        showScaleBar,
+        compass,
       }),
-    [doc, address, floorName, paper, orientation, measurements, disclaimer, planMode, brand, areaUnits],
+    [doc, address, floorName, paper, orientation, measurements, disclaimer, planMode, brand, areaUnits, showScaleBar, compass],
   );
   const previewSvg = useMemo(
     () => shapesToSvg(sheet.shapes, sheet.widthMm, sheet.heightMm),
@@ -280,6 +297,34 @@ export function ExportModal({
               <div className="mb-0.5 text-xs font-semibold text-ink-mid">Options</div>
               <Toggle label="Include measurements" checked={measurements} onChange={setMeasurements} />
               <Toggle label="Include disclaimer" checked={disclaimer} onChange={setDisclaimer} />
+              <Toggle label="Scale bar (0.5 m)" checked={showScaleBar} onChange={setShowScaleBar} />
+            </div>
+
+            <div>
+              <div className="mb-1.5 text-xs font-semibold text-ink-mid">Compass</div>
+              <div className="flex gap-1">
+                {(
+                  [
+                    ['arrow', 'N only'],
+                    ['nsew', 'N S E W'],
+                    ['eight', '8-point'],
+                    ['none', 'Off'],
+                  ] as const
+                ).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setCompass(value)}
+                    className={`h-8 flex-1 cursor-pointer rounded-lg border text-[11px] font-semibold ${
+                      compass === value
+                        ? 'border-action bg-action-soft text-brand'
+                        : 'border-input bg-white text-ink-faint hover:bg-shell'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div>

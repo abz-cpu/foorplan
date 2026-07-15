@@ -74,6 +74,7 @@ export function scaleDoc(doc: FloorDoc, factor: number, origin: Point = { x: 0, 
       y: origin.y + (r.y - origin.y) * factor,
       w: r.w * factor,
       h: r.h * factor,
+      polygon: r.polygon?.map(sp),
       labelOffset: r.labelOffset ? { x: r.labelOffset.x * factor, y: r.labelOffset.y * factor } : r.labelOffset,
     })),
     openings: doc.openings.map((o) => ({ ...o, offsetMm: o.offsetMm * factor, widthMm: o.widthMm * factor })),
@@ -85,6 +86,57 @@ export function scaleDoc(doc: FloorDoc, factor: number, origin: Point = { x: 0, 
       h: s.h * factor,
     })),
     labels: doc.labels.map((l) => ({ ...l, x: origin.x + (l.x - origin.x) * factor, y: origin.y + (l.y - origin.y) * factor })),
+  };
+}
+
+/**
+ * Scale the plan along each axis independently (fx horizontal, fy vertical) —
+ * calibrating a traced sketch whose two axes are off by different amounts.
+ * Wall thickness is untouched; each opening keeps its position/width as a
+ * PROPORTION of its (rescaled) wall so doors stay put.
+ */
+export function scaleDocAxis(
+  doc: FloorDoc,
+  fx: number,
+  fy: number,
+  origin: Point = { x: 0, y: 0 },
+): FloorDoc {
+  if (!Number.isFinite(fx) || fx <= 0 || !Number.isFinite(fy) || fy <= 0) return doc;
+  const sp = (p: Point): Point => ({
+    x: origin.x + (p.x - origin.x) * fx,
+    y: origin.y + (p.y - origin.y) * fy,
+  });
+  const oldLen = new Map(doc.walls.map((w) => [w.id, Math.hypot(w.b.x - w.a.x, w.b.y - w.a.y) || 1]));
+  const walls = doc.walls.map((w) => ({ ...w, a: sp(w.a), b: sp(w.b) }));
+  const newLen = new Map(walls.map((w) => [w.id, Math.hypot(w.b.x - w.a.x, w.b.y - w.a.y) || 1]));
+  return {
+    ...doc,
+    walls,
+    rooms: doc.rooms.map((r) => ({
+      ...r,
+      x: origin.x + (r.x - origin.x) * fx,
+      y: origin.y + (r.y - origin.y) * fy,
+      w: r.w * fx,
+      h: r.h * fy,
+      polygon: r.polygon?.map(sp),
+      labelOffset: r.labelOffset ? { x: r.labelOffset.x * fx, y: r.labelOffset.y * fy } : r.labelOffset,
+    })),
+    openings: doc.openings.map((o) => {
+      const ratio = (newLen.get(o.wallId) ?? 1) / (oldLen.get(o.wallId) ?? 1);
+      return { ...o, offsetMm: o.offsetMm * ratio, widthMm: o.widthMm * ratio };
+    }),
+    symbols: doc.symbols.map((s) => ({
+      ...s,
+      x: origin.x + (s.x - origin.x) * fx,
+      y: origin.y + (s.y - origin.y) * fy,
+      w: s.w * fx,
+      h: s.h * fy,
+    })),
+    labels: doc.labels.map((l) => ({
+      ...l,
+      x: origin.x + (l.x - origin.x) * fx,
+      y: origin.y + (l.y - origin.y) * fy,
+    })),
   };
 }
 

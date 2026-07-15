@@ -26,10 +26,16 @@ import {
   buildRoomScheduleCsv,
   copyPerimeterWalls,
   deleteEntities,
+  newId,
   normalizeDoc,
   type FloorDoc,
+  type Opening,
   type PropertySurvey,
   type PropertyStatus,
+  type RoomRect,
+  type SymbolInstance,
+  type TextLabel,
+  type Wall,
 } from '@floorplan/core';
 import type { FloorRecord, PropertyRecord } from '@floorplan/data';
 import { BASE_PX_PER_MM, EditorCanvas, useEditorStore, ZOOM_STEP } from '@floorplan/editor';
@@ -43,6 +49,70 @@ import { repos } from '../lib/repos';
 import { useIsMobile } from '../lib/useIsMobile';
 
 const FLOOR_NAMES = ['Ground Floor', 'First Floor', 'Second Floor', 'Third Floor'];
+
+/** In-session plan clipboard — module scope so a copy survives switching
+ *  floor tabs or opening another property (paste a whole storey anywhere). */
+let planClipboard: {
+  walls: Wall[];
+  openings: Opening[];
+  rooms: RoomRect[];
+  symbols: SymbolInstance[];
+  labels: TextLabel[];
+} | null = null;
+
+function copySelectionToClipboard(doc: FloorDoc, ids: string[]): number {
+  const idSet = new Set(ids);
+  const walls = doc.walls.filter((w) => idSet.has(w.id));
+  const wallIds = new Set(walls.map((w) => w.id));
+  const clip = {
+    walls: structuredClone(walls),
+    // Doors/windows ride along with their wall.
+    openings: structuredClone(doc.openings.filter((o) => wallIds.has(o.wallId))),
+    rooms: structuredClone(doc.rooms.filter((r) => idSet.has(r.id))),
+    symbols: structuredClone(doc.symbols.filter((sym) => idSet.has(sym.id))),
+    labels: structuredClone(doc.labels.filter((l) => idSet.has(l.id))),
+  };
+  const count = clip.walls.length + clip.rooms.length + clip.symbols.length + clip.labels.length;
+  if (count > 0) planClipboard = clip;
+  return count;
+}
+
+/** Paste the clipboard into `doc` offset by (dx,dy), with fresh ids. Returns
+ *  the new doc and the pasted ids (for selecting them). */
+function pasteClipboard(doc: FloorDoc, dx: number, dy: number): { doc: FloorDoc; ids: string[] } | null {
+  if (!planClipboard) return null;
+  const c = planClipboard;
+  const wallIdMap = new Map(c.walls.map((w) => [w.id, newId()]));
+  const walls = c.walls.map((w) => ({
+    ...w,
+    id: wallIdMap.get(w.id)!,
+    a: { x: w.a.x + dx, y: w.a.y + dy },
+    b: { x: w.b.x + dx, y: w.b.y + dy },
+  }));
+  const openings = c.openings.map((o) => ({ ...o, id: newId(), wallId: wallIdMap.get(o.wallId)! }));
+  const rooms = c.rooms.map((r) => ({
+    ...r,
+    id: newId(),
+    x: r.x + dx,
+    y: r.y + dy,
+    polygon: r.polygon?.map((p) => ({ x: p.x + dx, y: p.y + dy })),
+  }));
+  const symbols = c.symbols.map((sym) => ({ ...sym, id: newId(), x: sym.x + dx, y: sym.y + dy }));
+  const labels = c.labels.map((l) => ({ ...l, id: newId(), x: l.x + dx, y: l.y + dy }));
+  const ids = [...walls, ...rooms, ...symbols, ...labels].map((e) => e.id);
+  if (ids.length === 0) return null;
+  return {
+    doc: {
+      ...doc,
+      walls: [...doc.walls, ...walls],
+      openings: [...doc.openings, ...openings],
+      rooms: [...doc.rooms, ...rooms],
+      symbols: [...doc.symbols, ...symbols],
+      labels: [...doc.labels, ...labels],
+    },
+    ids,
+  };
+}
 const EDITOR_WELCOME_SEEN_KEY = 'floorplan:seenEditorWelcome';
 
 /** Shown one at a time to new users, capped by a localStorage counter. */
@@ -319,6 +389,36 @@ export default function EditorPage() {
         return;
       }
       const store = useEditorStore.getState();
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'a') {
+        // Select the whole plan — copy/paste or group-drag it as one.
+        e.preventDefault();
+        const all = [
+          ...store.doc.walls.map((w) => w.id),
+          ...store.doc.rooms.map((r) => r.id),
+          ...store.doc.symbols.map((sym) => sym.id),
+          ...store.doc.labels.map((l) => l.id),
+        ];
+        if (all.length > 0) store.selectMany(all);
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'c') {
+        const n = copySelectionToClipboard(store.doc, store.selectedIds);
+        if (n > 0) {
+          e.preventDefault();
+          toast(`Copied ${n} item${n === 1 ? '' : 's'} — Ctrl+V pastes here or on another floor`);
+        }
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'v') {
+        const pasted = pasteClipboard(store.doc, 600, 600);
+        if (pasted) {
+          e.preventDefault();
+          store.commit('Paste', pasted.doc);
+          store.selectMany(pasted.ids);
+          toast('Pasted — drag to position');
+        }
+        return;
+      }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault();
         if (e.shiftKey) store.redo();
@@ -382,6 +482,7 @@ export default function EditorPage() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- toast is a stable context fn
   }, []);
 
   const setStatus = async (status: PropertyStatus) => {

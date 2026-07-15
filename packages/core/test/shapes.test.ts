@@ -22,8 +22,11 @@ describe('docToShapes', () => {
   it('splits walls around openings and emits door arcs + window lines', () => {
     const doc = addOpening(addOpening(addWall(emptyFloorDoc(), wall), door), window_);
     const shapes = docToShapes(doc, { showDims: false });
-    const wallLines = shapes.filter((s) => s.kind === 'line' && s.width === wall.thickness);
-    expect(wallLines).toHaveLength(3); // wall cut into 3 segments by 2 openings
+    // Walls render as filled mitred quads (R18), one per solid segment.
+    const wallQuads = shapes.filter(
+      (s) => s.kind === 'polyline' && s.closed && s.fill === '#1F312C' && s.points.length === 4,
+    );
+    expect(wallQuads).toHaveLength(3); // wall cut into 3 segments by 2 openings
     expect(shapes.some((s) => s.kind === 'arc')).toBe(true); // door swing
   });
 
@@ -36,7 +39,8 @@ describe('docToShapes', () => {
     const texts = shapes.filter((s) => s.kind === 'text').map((s) => (s.kind === 'text' ? s.text : ''));
     expect(texts).toContain('Bedroom');
     expect(texts).not.toContain('Stairs'); // stairs draw treads, not labels
-    expect(shapes.filter((s) => s.kind === 'polyline')).toHaveLength(1); // direction arrow
+    // one open polyline (stairs direction arrow); wall quads are closed fills
+    expect(shapes.filter((s) => s.kind === 'polyline' && !s.closed)).toHaveLength(1);
   });
 
   it('adds overall dimension lines when requested', () => {

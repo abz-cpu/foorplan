@@ -43,11 +43,14 @@ import {
   parseLengthToMm,
   roomAreaM2,
   roomPerimeterM,
+  roomTypeLabel,
   ROOM_TYPES,
   scaleDoc,
+  scaleDocAxis,
   setNorthAngle,
   SURVEY_SCHEMA,
   surveyCompletion,
+  trimRoomOverlaps,
   type PropertySurvey,
   setUnderlay,
   SYMBOL_DEFS,
@@ -377,6 +380,8 @@ export function RoomPanel({
   const [wallThickness, setWallThickness] = useState('');
   const [labelText, setLabelText] = useState('');
   const [calibrateLen, setCalibrateLen] = useState('');
+  const [calibrateMode, setCalibrateMode] = useState<'uniform' | 'x' | 'y'>('uniform');
+  const [wallDisplayLen, setWallDisplayLen] = useState('');
 
   // Clear the detect-rooms preview if the panel unmounts mid-hover
   // (e.g. the mobile sheet closes) so the canvas wash never gets stuck on.
@@ -394,6 +399,11 @@ export function RoomPanel({
   useEffect(() => {
     setWallThickness(wall ? String(wall.thickness) : '');
   }, [wall?.id, wall?.thickness, wall]);
+  useEffect(() => {
+    setWallDisplayLen(
+      wall?.displayLengthMm !== undefined ? formatMmForInput(wall.displayLengthMm) : '',
+    );
+  }, [wall?.id, wall?.displayLengthMm, wall]);
   useEffect(() => {
     setLabelText(label?.text ?? '');
   }, [label?.id, label?.text, label]);
@@ -423,6 +433,23 @@ export function RoomPanel({
       setWallLen(formatMmForInput(currentMm));
     }
   };
+  const commitWallDisplayLen = () => {
+    if (!wall) return;
+    const raw = wallDisplayLen.trim();
+    if (raw === '') {
+      if (wall.displayLengthMm !== undefined) {
+        commit('Clear label override', updateWall(doc, wall.id, { displayLengthMm: undefined }));
+      }
+      return;
+    }
+    const mm = parseLengthToMm(raw);
+    if (mm !== null && mm > 0 && mm !== wall.displayLengthMm) {
+      commit('Override length label', updateWall(doc, wall.id, { displayLengthMm: mm }));
+    } else if (mm === null) {
+      setWallDisplayLen(wall.displayLengthMm !== undefined ? formatMmForInput(wall.displayLengthMm) : '');
+    }
+  };
+
   const commitWallThickness = () => {
     if (!wall) return;
     const v = Number.parseInt(wallThickness, 10);
@@ -448,7 +475,16 @@ export function RoomPanel({
     if (targetMm === null || targetMm < 100 || currentMm < 1) return;
     const factor = targetMm / currentMm;
     if (Math.abs(factor - 1) < 0.001) return;
-    commit('Calibrate plan scale', scaleDoc(doc, factor, wall.a));
+    if (calibrateMode === 'uniform') {
+      commit('Calibrate plan scale', scaleDoc(doc, factor, wall.a));
+    } else {
+      // One axis only — when tracing a photo whose two axes are off by
+      // different amounts, calibrate once with a horizontal wall and once
+      // with a vertical one.
+      const fx = calibrateMode === 'x' ? factor : 1;
+      const fy = calibrateMode === 'y' ? factor : 1;
+      commit('Calibrate plan scale', scaleDocAxis(doc, fx, fy, wall.a));
+    }
     fitToView();
     toast(`Plan scaled ×${factor.toFixed(3)} to match ${(targetMm / 1000).toFixed(2)}m`);
   };
@@ -746,7 +782,9 @@ export function RoomPanel({
                   {/* 'Stairs' is an asset placed with the Stairs tool, not a
                       room type a room can be converted into. */}
                   {ROOM_TYPES.filter((t) => t !== 'Stairs').map((t) => (
-                    <option key={t}>{t}</option>
+                    <option key={t} value={t}>
+                      {roomTypeLabel(t)}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -956,6 +994,21 @@ export function RoomPanel({
                 className={textInputClass}
               />
               <p className="mt-1 text-[11px] text-ink-ghost">Accepts m, cm, mm, or feet/inches (13'9")</p>
+              <label className="mb-1.5 mt-3 block text-xs font-semibold text-ink-mid">
+                Printed label override <span className="font-normal text-ink-ghost">(optional)</span>
+              </label>
+              <input
+                value={wallDisplayLen}
+                onChange={(e) => setWallDisplayLen(e.target.value)}
+                onBlur={commitWallDisplayLen}
+                onKeyDown={blurOnEnter}
+                placeholder="Site-measured, e.g. 3.62m — blank = drawn length"
+                className={textInputClass}
+              />
+              <p className="mt-1 text-[11px] leading-snug text-ink-ghost">
+                Changes the measurement LABEL only (shown italic) — the drawn wall stays exactly
+                where it is.
+              </p>
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <StatTile label="Length" value={formatMmAsM(wallLengthMm(wall))} />
                 <div>
@@ -1000,6 +1053,28 @@ export function RoomPanel({
                   Measured this wall on site? Enter its real length and the whole plan scales to
                   match — ideal after a rough sketch or tracing a photo.
                 </p>
+                <div className="mt-2 flex gap-1">
+                  {(
+                    [
+                      ['uniform', 'Whole plan'],
+                      ['x', 'Width only'],
+                      ['y', 'Height only'],
+                    ] as const
+                  ).map(([mode, label]) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => setCalibrateMode(mode)}
+                      className={`h-7 flex-1 cursor-pointer rounded-md border text-[10.5px] font-semibold ${
+                        calibrateMode === mode
+                          ? 'border-action bg-action-soft text-brand'
+                          : 'border-input bg-white text-ink-faint hover:bg-shell'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
                 <div className="mt-2 flex gap-2">
                   <input
                     value={calibrateLen}
@@ -1091,6 +1166,20 @@ export function RoomPanel({
                         </li>
                       ))}
                     </ul>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        let next = trimRoomOverlaps(doc);
+                        // Rooms that stopped covering their neighbours often
+                        // flip nearby walls back to the right class.
+                        if (autoWallThickness) next = autoClassifyWallThickness(next);
+                        commit('Trim room overlaps', next);
+                        toast('Overlaps trimmed — the larger room of each pair was cut around the smaller');
+                      }}
+                      className="mt-2 h-8 w-full cursor-pointer rounded-lg bg-[#B8862B] text-[11.5px] font-semibold text-white hover:bg-[#A2761F]"
+                    >
+                      Trim overlaps automatically
+                    </button>
                   </div>
                 )}
                 <div className="mt-3 flex flex-col gap-2">

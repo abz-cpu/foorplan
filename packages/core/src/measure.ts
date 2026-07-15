@@ -1,5 +1,5 @@
 import polygonClipping from 'polygon-clipping';
-import { polygonAreaMm2, polygonPerimeterMm, rectUnionAreaMm2, roomPolygon } from './geometry';
+import { findRoomOverlaps, polygonAreaMm2, polygonPerimeterMm, rectUnionAreaMm2, roomPolygon } from './geometry';
 import { pointInPolygon } from './faces';
 import { wallNormal } from './openings';
 import type { FloorDoc, Point, RoomRect, Wall } from './types';
@@ -182,4 +182,57 @@ export function classifyExternalWalls(doc: FloorDoc, toleranceMm = 30): Set<stri
     if (externalVotes > internalVotes) externalIds.add(wall.id);
   }
   return externalIds;
+}
+
+/**
+ * Resolve every room-overlap warning in one shot: for each overlapping pair,
+ * the overlap is subtracted from the LARGER room (the smaller — a porch, a
+ * WC — keeps its full drawn footprint). The trimmed room becomes a polygon
+ * following the cut; a still-rectangular result stays a plain rect. Rooms
+ * whose footprint would vanish are left untouched.
+ */
+export function trimRoomOverlaps(doc: FloorDoc): FloorDoc {
+  const toPC = (ring: Point[]): polygonClipping.Polygon => [ring.map((p) => [p.x, p.y] as [number, number])];
+  let next = doc;
+  // Recompute pairs after each trim so chained overlaps resolve too.
+  for (let guard = 0; guard < 12; guard++) {
+    const pairs = findRoomOverlaps(next);
+    if (pairs.length === 0) break;
+    const { a, b } = pairs[0];
+    const [keep, cut] =
+      polygonAreaMm2(roomPolygon(a)) >= polygonAreaMm2(roomPolygon(b)) ? [a, b] : [b, a];
+    let result: polygonClipping.MultiPolygon;
+    try {
+      result = polygonClipping.difference([toPC(roomPolygon(keep))], [toPC(roomPolygon(cut))]);
+    } catch {
+      break; // degenerate geometry — leave as drawn
+    }
+    if (result.length === 0) break; // fully swallowed — refuse to delete a room silently
+    // Largest remaining piece becomes the room's new outline.
+    const rings = result.map((poly) => ringToPoints(poly[0] as [number, number][]));
+    const biggest = rings.reduce((x, y) => (polygonAreaMm2(x) >= polygonAreaMm2(y) ? x : y));
+    const ring = biggest.map((p) => ({ x: Math.round(p.x), y: Math.round(p.y) }));
+    if (polygonAreaMm2(ring) < 250_000) break; // sliver — bail out
+    const xs = ring.map((p) => p.x);
+    const ys = ring.map((p) => p.y);
+    const minX = Math.min(...xs);
+    const minY = Math.min(...ys);
+    const w = Math.max(...xs) - minX;
+    const h = Math.max(...ys) - minY;
+    const isRect =
+      ring.length === 4 &&
+      ring.every((p, i) => {
+        const q = ring[(i + 1) % 4];
+        return Math.abs(p.x - q.x) < 2 || Math.abs(p.y - q.y) < 2;
+      });
+    next = {
+      ...next,
+      rooms: next.rooms.map((r) =>
+        r.id === keep.id
+          ? { ...r, x: minX, y: minY, w, h, polygon: isRect ? undefined : ring, labelOffset: undefined }
+          : r,
+      ),
+    };
+  }
+  return next;
 }

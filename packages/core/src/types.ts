@@ -10,15 +10,31 @@ export interface Point {
 
 export const ROOM_TYPES = [
   'Living Room',
+  'Lounge',
   'Kitchen / Diner',
+  'Dining Room',
   'Bedroom',
   'Bathroom',
   'WC',
   'Hallway',
+  'Study',
+  'Conservatory',
+  'Garage',
+  'Porch',
   'Stairs',
   'Utility',
   'Other',
 ] as const;
+
+/** UI display names where the stored type value reads too tersely. Stored
+ *  values never change (they're persisted in every doc). */
+export const ROOM_TYPE_LABELS: Record<string, string> = {
+  WC: 'WC / Toilet',
+};
+
+export function roomTypeLabel(type: string): string {
+  return ROOM_TYPE_LABELS[type] ?? type;
+}
 
 export type RoomType = (typeof ROOM_TYPES)[number];
 
@@ -28,6 +44,9 @@ export interface Wall {
   b: Point;
   /** mm */
   thickness: number;
+  /** Overrides the PRINTED length label only (site-measured value when the
+   *  drawn geometry doesn't quite match) — never changes the geometry. */
+  displayLengthMm?: number;
 }
 
 export interface RoomRect {

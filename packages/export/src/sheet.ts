@@ -47,6 +47,11 @@ export interface SheetOptions {
   brand?: BrandProfile;
   /** Display units for areas (GIA + room labels) — m², ft², or both. */
   areaUnits?: AreaUnits;
+  /** Scale bar in the bottom-left corner (default on, always a 0.5 m rule). */
+  showScaleBar?: boolean;
+  /** Compass detail: bare north arrow (default), the four cardinals, or the
+   *  full 8-point rose. 'none' hides it. */
+  compass?: 'arrow' | 'nsew' | 'eight' | 'none';
 }
 
 /** A composed export sheet: shapes in paper-millimetre coordinates. */
@@ -222,16 +227,10 @@ export function buildFloorSheet(doc: FloorDoc, opts: SheetOptions): Sheet {
     });
     shapes.push(...transformShapes(planShapes, scale, dx, dy));
 
-    /* Scale bar (bottom-left of content box) */
-    if (opts.showMeasurements) {
-      // Prefer the SMALLEST round reference length (0.5 m wherever it's drawable
-      // at all) instead of the oversized bar the old "largest that fits" rule
-      // produced. The low floor keeps 0.5 m even on a spread-out plan that's
-      // scaled right down; it only steps up when 0.5 m would be a sub-4mm sliver.
-      const MIN_BAR_MM = 4;
-      const candidates = [500, 1000, 2000, 5000, 10000];
-      const niceWorldMm =
-        candidates.find((l) => l * scale >= MIN_BAR_MM) ?? candidates[candidates.length - 1];
+    /* Scale bar (bottom-left of content box) — always a compact 0.5 m rule,
+       hidden when it would be an unreadable sliver or the user turned it off. */
+    if (opts.showMeasurements && (opts.showScaleBar ?? true) && 500 * scale >= 2.5 && 500 * scale <= cw / 2) {
+      const niceWorldMm = 500;
       const barLen = niceWorldMm * scale;
       const bx = cx0 + 2;
       const by = cy0 + ch - 4;
@@ -252,35 +251,55 @@ export function buildFloorSheet(doc: FloorDoc, opts: SheetOptions): Sheet {
       );
     }
 
-    /* North arrow (top-right of content box), rotated to the plan's stored
-       north direction — 0deg (default) points straight up the page. */
-    const nx = cx0 + cw - 6;
-    const ny = cy0 + 8;
-    const center: Point = { x: nx, y: ny };
-    const northDeg = doc.northAngleDeg ?? 0;
-    const arrowPts = [
-      { x: nx - 1.6, y: ny + 2.2 },
-      { x: nx, y: ny - 2.6 },
-      { x: nx + 1.6, y: ny + 2.2 },
-      { x: nx, y: ny + 1 },
-      { x: nx - 1.6, y: ny + 2.2 },
-    ].map((p) => rotatePoint(p, center, northDeg));
-    const labelPt = rotatePoint({ x: nx, y: ny + 7.6 }, center, northDeg);
-    shapes.push(
-      { kind: 'arc', cx: nx, cy: ny, r: 4.4, startDeg: 0, endDeg: 359.99, anticlockwise: false, stroke: '#7C9A90', width: 0.4 },
-      { kind: 'polyline', points: arrowPts, stroke: '#4A5D57', width: 0.5 },
-      {
-        kind: 'text',
-        x: labelPt.x,
-        y: labelPt.y,
-        text: 'N',
-        size: 2.8,
-        color: '#4A5D57',
-        font: 'sans',
-        weight: 700,
-        align: 'center',
-      },
-    );
+    /* Compass (top-right of content box), rotated to the plan's stored north
+       direction — 0deg (default) points straight up the page. The 'N' (and
+       any other cardinals) sit on a ring just outside the circle along their
+       own rotated direction, so a rotated north never strands the label. */
+    const compass = opts.compass ?? 'arrow';
+    if (compass !== 'none') {
+      const nx = cx0 + cw - 8;
+      const ny = cy0 + 10;
+      const center: Point = { x: nx, y: ny };
+      const northDeg = doc.northAngleDeg ?? 0;
+      const r = 4.4;
+      const arrowPts = [
+        { x: nx - 1.6, y: ny + 2.2 },
+        { x: nx, y: ny - 2.6 },
+        { x: nx + 1.6, y: ny + 2.2 },
+        { x: nx, y: ny + 1 },
+        { x: nx - 1.6, y: ny + 2.2 },
+      ].map((p) => rotatePoint(p, center, northDeg));
+      shapes.push(
+        { kind: 'arc', cx: nx, cy: ny, r, startDeg: 0, endDeg: 359.99, anticlockwise: false, stroke: '#7C9A90', width: 0.4 },
+        { kind: 'polyline', points: arrowPts, stroke: '#4A5D57', width: 0.5 },
+      );
+      const cardinal = (label: string, deg: number, size: number, color: string, weight: number) => {
+        const rad = ((deg + northDeg - 90) * Math.PI) / 180;
+        const dist = r + 2.4;
+        shapes.push({
+          kind: 'text',
+          x: nx + Math.cos(rad) * dist,
+          y: ny + Math.sin(rad) * dist + size * 0.35, // optical baseline centring
+          text: label,
+          size,
+          color,
+          font: 'sans',
+          weight,
+          align: 'center',
+        });
+      };
+      cardinal('N', 0, 2.6, '#B14E39', 700);
+      if (compass === 'nsew' || compass === 'eight') {
+        cardinal('E', 90, 2.2, '#4A5D57', 600);
+        cardinal('S', 180, 2.2, '#4A5D57', 600);
+        cardinal('W', 270, 2.2, '#4A5D57', 600);
+      }
+      if (compass === 'eight') {
+        for (const [label, deg] of [['NE', 45], ['SE', 135], ['SW', 225], ['NW', 315]] as const) {
+          cardinal(label, deg, 1.5, '#8A9A94', 500);
+        }
+      }
+    }
   }
 
   // "Made with" credit — always present, hyperlinked (SVG/PDF) back to the

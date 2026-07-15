@@ -7,6 +7,7 @@ export * from './history';
 export * from './format';
 export * from './thumbnail';
 export * from './openings';
+export * from './walljoin';
 export * from './measure';
 export * from './csv';
 export * from './survey';

@@ -1,12 +1,15 @@
+import { useEffect, useRef } from 'react';
 import { Download, X } from 'lucide-react';
 import {
   floorFootprint,
   floorGiaM2,
-  formatAreaM2,
+  formatArea,
   formatMmAsM,
   roomAreaM2,
+  type AreaUnits,
   type FloorDoc,
 } from '@floorplan/core';
+import { useEditorStore } from '@floorplan/editor';
 
 export interface ScheduleFloor {
   id: string;
@@ -25,7 +28,20 @@ export function RoomScheduleModal({
   onClose: () => void;
   onDownloadCsv: () => void;
 }) {
+  const areaUnits: AreaUnits = useEditorStore((s) => s.areaUnits);
   const totalGia = floors.reduce((a, f) => a + floorGiaM2(f.doc), 0);
+
+  // Escape-to-close via a ref: with [onClose] deps, any parent re-render
+  // during the SAME keydown dispatch (e.g. the canvas's own Escape handler
+  // deselecting) tears the listener down and re-adds it mid-dispatch — and a
+  // listener re-added during dispatch never receives the in-flight event.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onCloseRef.current();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   return (
     <div
@@ -86,7 +102,7 @@ export function RoomScheduleModal({
                               {formatMmAsM(r.h)}
                             </td>
                             <td className="px-3 py-2 text-right font-mono text-ink">
-                              {formatAreaM2(roomAreaM2(r), 2)}
+                              {formatArea(roomAreaM2(r), areaUnits, 2)}
                             </td>
                             <td className="px-3 py-2 text-right font-mono text-ink-soft">
                               {r.ceilingHeightM.toFixed(2)} m
@@ -101,7 +117,7 @@ export function RoomScheduleModal({
                             Floor totals
                           </td>
                           <td className="px-3 py-2 text-right font-mono text-action-soft-ink">
-                            {formatAreaM2(floorGiaM2(floor.doc), 2)}
+                            {formatArea(floorGiaM2(floor.doc), areaUnits, 2)}
                           </td>
                           <td className="px-3 py-2 text-right font-mono" colSpan={2}>
                             {fp.exposedPerimeterM.toFixed(2)} m perimeter
@@ -121,7 +137,7 @@ export function RoomScheduleModal({
             Total GIA across {floors.length} floor{floors.length === 1 ? '' : 's'}
           </span>
           <span className="font-mono text-sm font-medium text-action-soft-ink">
-            {formatAreaM2(totalGia, 2)}
+            {formatArea(totalGia, areaUnits, 2)}
           </span>
           <div className="flex-1" />
           <button

@@ -5,6 +5,7 @@ import {
   Check,
   ChevronDown,
   Copy,
+  Keyboard,
   Download,
   HardDrive,
   Maximize,
@@ -36,6 +37,7 @@ import { downloadBlob, slugify } from '@floorplan/export';
 import { BrandMark, SegmentedControl, StatusPill, Toggle, useToast } from '@floorplan/ui';
 import { ExportModal } from '../components/export/ExportModal';
 import { RoomPanel } from '../components/editor/RoomPanel';
+import { ShortcutsModal } from '../components/editor/ShortcutsModal';
 import { ToolPalette, TOOL_HINTS } from '../components/editor/ToolPalette';
 import { repos } from '../lib/repos';
 import { useIsMobile } from '../lib/useIsMobile';
@@ -88,6 +90,9 @@ export default function EditorPage() {
   // 2-step confirm, same pattern as property delete on the dashboard —
   // first click arms, second click within 3s executes.
   const [confirmDeleteFloorId, setConfirmDeleteFloorId] = useState<string | null>(null);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  // Inline floor-tab rename (double-click a tab to edit its name).
+  const [renamingFloor, setRenamingFloor] = useState<{ id: string; value: string } | null>(null);
   const [showWelcome, setShowWelcome] = useState(
     () => localStorage.getItem(EDITOR_WELCOME_SEEN_KEY) !== '1',
   );
@@ -127,6 +132,8 @@ export default function EditorPage() {
   const toggleAutoWallThickness = useEditorStore((s) => s.toggleAutoWallThickness);
   const planMode = useEditorStore((s) => s.planMode);
   const setPlanMode = useEditorStore((s) => s.setPlanMode);
+  const areaUnits = useEditorStore((s) => s.areaUnits);
+  const setAreaUnits = useEditorStore((s) => s.setAreaUnits);
   const saveState = useEditorStore((s) => s.saveState);
   const doc = useEditorStore((s) => s.doc);
   const floorId = useEditorStore((s) => s.floorId);
@@ -246,6 +253,27 @@ export default function EditorPage() {
     toast('Perimeter walls copied to new floor');
   };
 
+  const commitFloorRename = async () => {
+    if (!renamingFloor) return;
+    const { id, value } = renamingFloor;
+    setRenamingFloor(null);
+    const name = value.trim();
+    const current = floors.find((f) => f.id === id);
+    if (!name || !current || current.name === name) return;
+    await repos.floors.rename(id, name);
+    setFloors((fs) => fs.map((f) => (f.id === id ? { ...f, name } : f)));
+  };
+
+  // Fill an EMPTY current floor with the outline of another floor that has
+  // walls — the empty-floor helper card's one-click starting point.
+  const perimeterSource = floors.find((f) => f.id !== floorId && f.doc.walls.length > 0);
+  const copyPerimeterHere = () => {
+    if (!perimeterSource) return;
+    useEditorStore
+      .getState()
+      .commit(`Copy outline from ${perimeterSource.name}`, copyPerimeterWalls(perimeterSource.doc));
+  };
+
   const requestDeleteFloor = (id: string) => {
     if (floors.length <= 1) return;
     if (confirmDeleteFloorId === id) {
@@ -276,8 +304,20 @@ export default function EditorPage() {
   /* Keyboard shortcuts */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        // Escape always dismisses transient chrome, matching the modals.
+        setStatusMenuOpen(false);
+        setTweaksOpen(false);
+        setShortcutsOpen(false);
+        return;
+      }
       const target = e.target as HTMLElement;
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
+      if (e.key === '?') {
+        e.preventDefault();
+        setShortcutsOpen((o) => !o);
+        return;
+      }
       const store = useEditorStore.getState();
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault();
@@ -322,6 +362,9 @@ export default function EditorPage() {
           break;
         case '-':
           store.zoomBy(1 / ZOOM_STEP);
+          break;
+        case '0':
+          store.fitToView();
           break;
         case 'backspace':
         case 'delete':
@@ -474,15 +517,25 @@ export default function EditorPage() {
           <TopBarButton title="Zoom out (−)" onClick={() => zoomBy(1 / ZOOM_STEP)}>
             <Minus size={15} strokeWidth={2.2} />
           </TopBarButton>
-          <span className="min-w-[48px] text-center font-mono text-xs font-medium text-ink-mid">
+          <button
+            type="button"
+            title="Reset zoom to 100%"
+            onClick={() => zoomBy(1 / zoom)}
+            className="min-w-[48px] cursor-pointer rounded-[8px] text-center font-mono text-xs font-medium text-ink-mid hover:bg-white hover:shadow-segment"
+          >
             {Math.round(zoom * 100)}%
-          </span>
+          </button>
           <TopBarButton title="Zoom in (+)" onClick={() => zoomBy(ZOOM_STEP)}>
             <Plus size={15} strokeWidth={2.2} />
           </TopBarButton>
-          <TopBarButton title="Fit to screen" onClick={fitToView}>
+          <TopBarButton title="Fit to screen (0)" onClick={fitToView}>
             <Maximize size={14} />
           </TopBarButton>
+          <span className="hidden md:block">
+            <TopBarButton title="Keyboard shortcuts (?)" onClick={() => setShortcutsOpen(true)}>
+              <Keyboard size={15} />
+            </TopBarButton>
+          </span>
         </div>
 
         <div
@@ -585,6 +638,44 @@ export default function EditorPage() {
             </div>
           )}
 
+          {/* Empty-floor helper: a fresh floor is otherwise a silent blank
+              canvas. Hidden while the first-run welcome card is up, and the
+              moment a drawing tool is picked — it sits mid-canvas and must
+              never swallow the user's first wall/room drag. */}
+          {!showWelcome &&
+            tool === 'select' &&
+            doc.walls.length === 0 &&
+            doc.rooms.length === 0 &&
+            doc.symbols.length === 0 &&
+            doc.labels.length === 0 &&
+            !doc.underlay && (
+              <div className="pointer-events-none absolute inset-0 z-[5] flex items-center justify-center p-4">
+                <div className="pointer-events-auto w-[360px] max-w-full rounded-2xl border border-line bg-white/95 p-5 text-center shadow-float">
+                  <p className="text-[14px] font-bold tracking-tight">This floor is empty</p>
+                  <p className="mt-1.5 text-[12.5px] leading-relaxed text-ink-faint">
+                    Press <kbd className="rounded border border-line bg-shell px-1 font-mono text-[11px] font-semibold">W</kbd> to
+                    draw walls, or <kbd className="rounded border border-line bg-shell px-1 font-mono text-[11px] font-semibold">R</kbd> to
+                    drag out a room — walls appear around it automatically.
+                  </p>
+                  {perimeterSource && (
+                    <button
+                      type="button"
+                      onClick={copyPerimeterHere}
+                      className="mt-3 h-[32px] w-full cursor-pointer rounded-[8px] bg-action text-[12.5px] font-semibold text-white hover:bg-action-hover"
+                    >
+                      Copy outline from {perimeterSource.name}
+                    </button>
+                  )}
+                  <Link
+                    to="/templates"
+                    className="mt-2 block text-[11.5px] font-medium text-ink-ghost underline-offset-2 hover:text-ink-mid hover:underline"
+                  >
+                    Or start the whole property from a template
+                  </Link>
+                </div>
+              </div>
+            )}
+
           {/* pointer-events-none: this hint pill spans most of the canvas
               width at the top — without it, clicks in that top strip land on
               the pill instead of the shapes underneath (a real "clicks
@@ -600,15 +691,31 @@ export default function EditorPage() {
           <div className="absolute left-3.5 z-10 flex max-w-[calc(100%-28px)] gap-[3px] overflow-x-auto rounded-[11px] border border-line bg-white p-1 shadow-float bottom-[calc(64px+env(safe-area-inset-bottom))] md:bottom-3.5">
             {floors.map((f) => (
               <div key={f.id} className="group relative">
-                <button
-                  type="button"
-                  onClick={() => void switchFloor(f)}
-                  className={`h-11 cursor-pointer rounded-lg px-3 text-[12.5px] font-semibold md:h-8 ${
-                    floorId === f.id ? 'bg-brand text-[#D7EFE6]' : 'text-ink-soft hover:bg-shell'
-                  } ${floors.length > 1 ? 'pr-6' : ''}`}
-                >
-                  {f.name}
-                </button>
+                {renamingFloor?.id === f.id ? (
+                  <input
+                    autoFocus
+                    value={renamingFloor.value}
+                    onChange={(e) => setRenamingFloor({ id: f.id, value: e.target.value })}
+                    onBlur={() => void commitFloorRename()}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') void commitFloorRename();
+                      if (e.key === 'Escape') setRenamingFloor(null);
+                    }}
+                    className="h-11 w-[110px] rounded-lg border border-action bg-white px-2 text-[12.5px] font-semibold text-ink outline-none md:h-8"
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => void switchFloor(f)}
+                    onDoubleClick={() => setRenamingFloor({ id: f.id, value: f.name })}
+                    title="Double-click to rename"
+                    className={`h-11 cursor-pointer rounded-lg px-3 text-[12.5px] font-semibold md:h-8 ${
+                      floorId === f.id ? 'bg-brand text-[#D7EFE6]' : 'text-ink-soft hover:bg-shell'
+                    } ${floors.length > 1 ? 'pr-6' : ''}`}
+                  >
+                    {f.name}
+                  </button>
+                )}
                 {floors.length > 1 && (
                   <button
                     type="button"
@@ -656,6 +763,14 @@ export default function EditorPage() {
             <span className="hidden rounded-[9px] border border-line bg-white px-3 py-1.5 font-mono text-[11.5px] text-ink-mid shadow-segment md:inline-block">
               1 : {Math.round(1 / (zoom * BASE_PX_PER_MM * (96 / 25.4) * 0.001))}
             </span>
+            <button
+              type="button"
+              onClick={fitToView}
+              title="Fit to screen"
+              className="flex min-h-[44px] cursor-pointer items-center rounded-[9px] border border-line bg-white px-3 text-ink-mid shadow-segment md:hidden"
+            >
+              <Maximize size={14} />
+            </button>
             <button
               type="button"
               onClick={toggleSnap}
@@ -721,6 +836,22 @@ export default function EditorPage() {
                       <span className="text-[13px] font-medium">Show dimensions</span>
                       <Toggle dark checked={showDimensions} onChange={toggleShowDimensions} title="Show dimensions" />
                     </div>
+                    <div className="mt-3 flex items-center justify-between gap-3">
+                      <span className="text-[13px] font-medium">Areas</span>
+                      <SegmentedControl
+                        dark
+                        options={[
+                          { value: 'm2', label: 'm²' },
+                          { value: 'ft2', label: 'ft²' },
+                          { value: 'both', label: 'Both' },
+                        ]}
+                        value={areaUnits}
+                        onChange={setAreaUnits}
+                      />
+                    </div>
+                    <p className="mt-2 text-[11.5px] leading-snug text-white/50">
+                      Applies to room labels, the schedule, and exported plans.
+                    </p>
 
                     <div className="mt-4 border-t border-white/10 pt-3 text-[11px] font-semibold tracking-[0.07em] text-white/50">
                       LAYERS
@@ -798,12 +929,15 @@ export default function EditorPage() {
         </div>
       )}
 
+      {shortcutsOpen && <ShortcutsModal onClose={() => setShortcutsOpen(false)} />}
+
       {exportOpen && property && (
         <ExportModal
           address={`${property.addressLine1}${property.postcode ? `, ${property.postcode}` : ''}`}
           floorName={activeFloor?.name ?? 'Ground Floor'}
           doc={doc}
           initialPlanMode={planMode}
+          areaUnits={areaUnits}
           onClose={closeExport}
           onExported={() => {
             void setStatus('exported');

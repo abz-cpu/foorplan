@@ -108,6 +108,10 @@ class GuestFloorRepository implements FloorRepository {
     });
   }
 
+  async rename(id: string, name: string): Promise<void> {
+    await this.db.floors.update(id, { name, updatedAt: now() });
+  }
+
   async remove(id: string): Promise<void> {
     await this.db.floors.delete(id);
   }

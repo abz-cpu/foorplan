@@ -35,7 +35,8 @@ import {
   distanceToWall,
   doorSwingGeometry,
   findWall,
-  formatAreaM2,
+  docBounds,
+  formatArea,
   formatDims,
   formatMmAsM,
   nearestOffsetOnWall,
@@ -142,6 +143,8 @@ function rotateVec(v: Point, deg: number): Point {
 
 /** Smallest furniture footprint a resize handle can shrink to, mm. */
 const MIN_SYMBOL_MM = 150;
+// World-space gap between a furniture symbol's top edge and its rotate handle.
+const ROTATE_HANDLE_OFF_MM = 420;
 
 /** Fixed ray (room-label-local mm at scale 1) from a label's centre to its
  *  font-size handle; the handle sits at centre + BASE * scale. */
@@ -157,6 +160,7 @@ type HandleDrag =
   | { kind: 'room-resize'; room: RoomRect; ox: number; oy: number }
   | { kind: 'wall-end'; wall: Wall; end: 'a' | 'b' }
   | { kind: 'symbol-resize'; symbol: SymbolInstance; sx: 1 | -1; sy: 1 | -1; opp: Point }
+  | { kind: 'symbol-rotate'; symbol: SymbolInstance }
   | { kind: 'label-scale'; entity: 'room' | 'text'; id: string; center: Point };
 
 /** Overlap area of two AABBs {x0,y0,x1,y1}. */
@@ -371,6 +375,8 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
   const showFurniture = useEditorStore((s) => s.showFurniture);
   const planMode = useEditorStore((s) => s.planMode);
   const autoRoomWalls = useEditorStore((s) => s.autoRoomWalls);
+  const areaUnits = useEditorStore((s) => s.areaUnits);
+  const requestFocusName = useEditorStore((s) => s.requestFocusName);
   const autoWallThickness = useEditorStore((s) => s.autoWallThickness);
   const select = useEditorStore((s) => s.select);
   const toggleSelect = useEditorStore((s) => s.toggleSelect);
@@ -393,6 +399,8 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
   const roomDownScreen = useRef<Point | null>(null);
   const [resizeDraft, setResizeDraft] = useState<RoomRect | null>(null);
   const [symbolResizeDraft, setSymbolResizeDraft] = useState<SymbolInstance | null>(null);
+  // Live rotation preview while the furniture rotate handle is dragged.
+  const [symbolRotateDraft, setSymbolRotateDraft] = useState<{ id: string; deg: number } | null>(null);
   const [labelScaleDraft, setLabelScaleDraft] = useState<{ id: string; scale: number } | null>(null);
   const [wallEndDraft, setWallEndDraft] = useState<{ id: string; a: Point; b: Point } | null>(null);
   const [openingHover, setOpeningHover] = useState<{ wall: Wall; offsetMm: number } | null>(null);
@@ -590,6 +598,18 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
     ro.observe(el);
     return () => ro.disconnect();
   }, [setViewport]);
+
+  /* The floor doc loads asynchronously, so the initial fit often runs against
+     a still-empty doc — the fallback view then leaves the real plan half
+     off-screen (worst on phones). Re-fit once when content first arrives,
+     unless the user has already made an edit (never yank the view mid-draw). */
+  const didContentFit = useRef(false);
+  useEffect(() => {
+    if (didContentFit.current || !docBounds(doc)) return;
+    didContentFit.current = true;
+    const st = useEditorStore.getState();
+    if (!st.canUndo) st.fitToView();
+  }, [doc]);
 
   /**
    * iOS Safari fires non-standard `gesture*` events for pinch/rotate that
@@ -1039,6 +1059,11 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
     const symbol = doc.symbols.find((s) => s.id === selectedId);
     if (symbol) {
       const center = { x: symbol.x + symbol.w / 2, y: symbol.y + symbol.h / 2 };
+      // Rotation handle floats above the symbol's top edge (rotates with it).
+      const rv = rotateVec({ x: 0, y: -(symbol.h / 2 + ROTATE_HANDLE_OFF_MM) }, symbol.rotationDeg);
+      if (Math.hypot(p.x - (center.x + rv.x), p.y - (center.y + rv.y)) <= tol) {
+        return { kind: 'symbol-rotate', symbol };
+      }
       for (const sx of [-1, 1] as const) {
         for (const sy of [-1, 1] as const) {
           const v = rotateVec({ x: (sx * symbol.w) / 2, y: (sy * symbol.h) / 2 }, symbol.rotationDeg);
@@ -1283,6 +1308,16 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
           const half = rotateVec({ x: (h.sx * nw) / 2, y: (h.sy * nh) / 2 }, h.symbol.rotationDeg);
           const nc = { x: h.opp.x + half.x, y: h.opp.y + half.y };
           setSymbolResizeDraft({ ...h.symbol, w: nw, h: nh, x: nc.x - nw / 2, y: nc.y - nh / 2 });
+        } else if (h.kind === 'symbol-rotate') {
+          // Angle from the symbol centre to the pointer; the handle sits at
+          // the top edge, so straight up = 0°. Snap to 15° steps — hold
+          // Shift for free rotation.
+          const cx = h.symbol.x + h.symbol.w / 2;
+          const cy = h.symbol.y + h.symbol.h / 2;
+          let deg = (Math.atan2(raw.y - cy, raw.x - cx) * 180) / Math.PI + 90;
+          if (!pointerMods.current.shift) deg = Math.round(deg / 15) * 15;
+          deg = ((deg % 360) + 360) % 360;
+          setSymbolRotateDraft({ id: h.symbol.id, deg });
         } else {
           const ns = Math.max(
             0.5,
@@ -1467,6 +1502,12 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
               'Resize furniture',
               updateSymbol(doc, h.symbol.id, { x: draft.x, y: draft.y, w: draft.w, h: draft.h }),
             );
+          }
+        } else if (h.kind === 'symbol-rotate') {
+          const draft = symbolRotateDraft;
+          setSymbolRotateDraft(null);
+          if (draft && draft.id === h.symbol.id && draft.deg !== h.symbol.rotationDeg) {
+            commit('Rotate furniture', updateSymbol(doc, h.symbol.id, { rotationDeg: draft.deg }));
           }
         } else {
           const draft = labelScaleDraft;
@@ -1726,6 +1767,19 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
   const onMouseMove = (e: KonvaEventObject<MouseEvent>) => {
     pointerMods.current.shift = e.evt.shiftKey;
     pointerMove({ x: e.evt.clientX, y: e.evt.clientY });
+  };
+
+  // Double-click a room to rename it: selects the room and asks the panel to
+  // focus its name field. Select tool only, so drawing tools stay unaffected.
+  const onDblClick = () => {
+    if (tool !== 'select') return;
+    const raw = pointerWorld();
+    if (!raw) return;
+    const room = pickRoomAt(raw);
+    if (room && room.type !== 'Stairs') {
+      select(room.id);
+      requestFocusName();
+    }
   };
 
   const onWheel = (e: KonvaEventObject<WheelEvent>) => {
@@ -1994,6 +2048,34 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
     );
   };
 
+  const renderSymbolRotateHandle = (symbol: SymbolInstance) => {
+    const s = symbolResizeDraft?.id === symbol.id ? symbolResizeDraft : symbol;
+    const deg = symbolRotateDraft?.id === symbol.id ? symbolRotateDraft.deg : s.rotationDeg;
+    const center = { x: s.x + s.w / 2, y: s.y + s.h / 2 };
+    const top = rotateVec({ x: 0, y: -s.h / 2 }, deg);
+    const knob = rotateVec({ x: 0, y: -(s.h / 2 + ROTATE_HANDLE_OFF_MM) }, deg);
+    return (
+      <>
+        <Line
+          points={[center.x + top.x, center.y + top.y, center.x + knob.x, center.y + knob.y]}
+          stroke={ACTION}
+          strokeWidth={2 / scale}
+          dash={[6 / scale, 4 / scale]}
+          listening={false}
+        />
+        <Circle
+          x={center.x + knob.x}
+          y={center.y + knob.y}
+          radius={handleHalf * 1.1}
+          fill="#FFFFFF"
+          stroke={ACTION}
+          strokeWidth={2 / scale}
+          listening={false}
+        />
+      </>
+    );
+  };
+
   const renderRoomLabelHandle = (room: RoomRect) => {
     const scaleVal = roomLabelScale(room);
     const off = effectiveLabelOffset(room);
@@ -2087,6 +2169,13 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
             ),
         });
       } else {
+        items.push({
+          label: 'Rename',
+          onClick: () => {
+            select(room.id);
+            requestFocusName();
+          },
+        });
         items.push({
           label: 'Duplicate room',
           onClick: () => {
@@ -2210,6 +2299,8 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
         y={pan.y}
         onMouseDown={onMouseDown}
         onMouseMove={onMouseMove}
+        onDblClick={onDblClick}
+        onDblTap={onDblClick}
         onMouseUp={(e) => pointerUp({ x: e.evt.clientX, y: e.evt.clientY })}
         onWheel={onWheel}
         onContextMenu={(e) => {
@@ -2330,7 +2421,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
                     />
                     {showRoomLabels && (
                       <Text
-                        text={formatAreaM2(roomAreaM2(r))}
+                        text={formatArea(roomAreaM2(r), areaUnits)}
                         width={r.w}
                         y={r.h / 2 + 60 * roomLabelScale(room)}
                         align="center"
@@ -2498,7 +2589,8 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
             doc.symbols.map((sym) => {
               const off = manualOffset(sym.id);
               // Live resize preview takes priority over a move offset.
-              const base = symbolResizeDraft?.id === sym.id ? symbolResizeDraft : sym;
+              let base = symbolResizeDraft?.id === sym.id ? symbolResizeDraft : sym;
+              if (symbolRotateDraft?.id === sym.id) base = { ...base, rotationDeg: symbolRotateDraft.deg };
               return (
                 <SymbolNode
                   key={sym.id}
@@ -2764,6 +2856,9 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
           {/* Corner resize handles for the selected furniture */}
           {selectedSymbol && showFurniture && tool === 'select' && renderSymbolResizeHandles(selectedSymbol)}
 
+          {/* Rotation handle for the selected furniture */}
+          {selectedSymbol && showFurniture && tool === 'select' && renderSymbolRotateHandle(selectedSymbol)}
+
           {/* Font-size handle for the selected room's label / a text label */}
           {selectedRoom && !selectedRoom.type.includes('Stairs') && tool === 'select' && renderRoomLabelHandle(selectedRoom)}
           {selectedLabel && tool === 'select' && renderTextLabelHandle(selectedLabel)}
@@ -2813,7 +2908,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
           </svg>
         </div>
 
-        {planMode === 'presentation' && zonesPresent.length > 0 && (
+        {planMode === 'presentation' && zonesPresent.length > 0 && viewport.width >= 640 && (
           <div
             style={{
               display: 'flex',

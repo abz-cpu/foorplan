@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, Download, FileText, Image, Trash2, Upload, X } from 'lucide-react';
-import type { FloorDoc } from '@floorplan/core';
+import type { AreaUnits, FloorDoc } from '@floorplan/core';
 import {
   buildFloorSheet,
   canvasToBlob,
@@ -53,6 +53,7 @@ export function ExportModal({
   floorName,
   doc,
   initialPlanMode = 'technical',
+  areaUnits = 'm2',
   onClose,
   onExported,
 }: {
@@ -62,6 +63,8 @@ export function ExportModal({
   /** The editor's live plan mode when Export was opened — used as this
    *  export's starting point, independently overridable below. */
   initialPlanMode?: 'technical' | 'presentation';
+  /** Area display units chosen in the editor (Tweaks panel). */
+  areaUnits?: AreaUnits;
   onClose: () => void;
   onExported: (format: ExportFormat) => void;
 }) {
@@ -89,11 +92,17 @@ export function ExportModal({
     }
   };
 
+  // Escape-to-close via a ref: with [onClose] deps, any parent re-render
+  // during the SAME keydown dispatch (e.g. the canvas's own Escape handler
+  // deselecting) tears the listener down and re-adds it mid-dispatch — and a
+  // listener re-added during dispatch never receives the in-flight event.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onCloseRef.current();
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, []);
 
   const sheet = useMemo(
     () =>
@@ -106,8 +115,9 @@ export function ExportModal({
         disclaimer,
         planMode,
         brand,
+        areaUnits,
       }),
-    [doc, address, floorName, paper, orientation, measurements, disclaimer, planMode, brand],
+    [doc, address, floorName, paper, orientation, measurements, disclaimer, planMode, brand, areaUnits],
   );
   const previewSvg = useMemo(
     () => shapesToSvg(sheet.shapes, sheet.widthMm, sheet.heightMm),

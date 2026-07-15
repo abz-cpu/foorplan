@@ -61,6 +61,7 @@ function delegatingFloorRepository(): FloorRepository {
     create: async (propertyId, name, sortOrder) =>
       (await resolveRepos()).floors.create(propertyId, name, sortOrder),
     saveDoc: async (id, doc) => (await resolveRepos()).floors.saveDoc(id, doc),
+    rename: async (id, name) => (await resolveRepos()).floors.rename(id, name),
     remove: async (id) => (await resolveRepos()).floors.remove(id),
   };
 }

@@ -36,7 +36,7 @@ import {
   floorHasMixedCeilings,
   setFloorCeilingHeight,
   floorGiaM2,
-  formatAreaM2,
+  formatArea,
   formatMmAsM,
   formatMmForInput,
   normalizeDoc,
@@ -339,6 +339,19 @@ export function RoomPanel({
   const commit = useEditorStore((s) => s.commit);
   const select = useEditorStore((s) => s.select);
   const setDetectPreview = useEditorStore((s) => s.setDetectPreview);
+  const areaUnits = useEditorStore((s) => s.areaUnits);
+  const focusNameNonce = useEditorStore((s) => s.focusNameNonce);
+  // Double-click / right-click "Rename" on the canvas focuses the name field.
+  const nameInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (focusNameNonce > 0) {
+      // Selection state lands in the same render batch; focus after paint.
+      requestAnimationFrame(() => {
+        nameInputRef.current?.focus();
+        nameInputRef.current?.select();
+      });
+    }
+  }, [focusNameNonce]);
   const autoWallThickness = useEditorStore((s) => s.autoWallThickness);
   const fitToView = useEditorStore((s) => s.fitToView);
   const toast = useToast();
@@ -713,6 +726,7 @@ export function RoomPanel({
                 <SectionLabel>SELECTED ROOM</SectionLabel>
                 <label className="mb-1.5 block text-xs font-semibold text-ink-mid">Room name</label>
                 <input
+                  ref={nameInputRef}
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   onBlur={commitName}
@@ -765,7 +779,7 @@ export function RoomPanel({
                   </div>
                 )}
                 <div className="mt-2 grid grid-cols-2 gap-2">
-                  <StatTile label="Floor area" value={formatAreaM2(roomAreaM2(room), 2)} accent />
+                  <StatTile label="Floor area" value={formatArea(roomAreaM2(room), areaUnits, 2)} accent />
                   <StatTile label="Perimeter" value={`${roomPerimeterM(room).toFixed(1)} m`} />
                 </div>
                 <p className="mt-2.5 text-[11px] leading-relaxed text-ink-ghost">
@@ -1020,8 +1034,8 @@ export function RoomPanel({
               <div>
                 <SectionLabel>FLOOR SUMMARY</SectionLabel>
                 <div className="grid grid-cols-2 gap-2">
-                  <StatTile label="Gross internal area" value={formatAreaM2(floorGiaM2(doc), 2)} accent />
-                  <StatTile label="Footprint area" value={formatAreaM2(footprint.areaM2, 2)} />
+                  <StatTile label="Gross internal area" value={formatArea(floorGiaM2(doc), areaUnits, 2)} accent />
+                  <StatTile label="Footprint area" value={formatArea(footprint.areaM2, areaUnits, 2)} />
                   <StatTile
                     label="Heat-loss perimeter"
                     value={`${footprint.exposedPerimeterM.toFixed(2)} m`}
@@ -1241,7 +1255,7 @@ export function RoomPanel({
       <div className="flex flex-none items-center justify-between border-t border-line-soft bg-[#F7FAF9] px-4 py-3">
         <span className="text-xs font-semibold text-ink-mid">Gross internal area</span>
         <span className="font-mono text-sm font-medium text-action-soft-ink">
-          {formatAreaM2(floorGiaM2(doc))}
+          {formatArea(floorGiaM2(doc), areaUnits)}
         </span>
       </div>
 

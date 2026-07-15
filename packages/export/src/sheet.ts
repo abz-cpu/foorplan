@@ -4,8 +4,9 @@ import {
   floorCeilingHeightM,
   floorGiaM2,
   floorHasMixedCeilings,
-  formatAreaM2,
+  formatArea,
   transformShapes,
+  type AreaUnits,
   type FloorDoc,
   type Point,
   type Shape,
@@ -44,6 +45,8 @@ export interface SheetOptions {
   planMode?: 'technical' | 'presentation';
   /** Company branding for the header/footer. */
   brand?: BrandProfile;
+  /** Display units for areas (GIA + room labels) — m², ft², or both. */
+  areaUnits?: AreaUnits;
 }
 
 /** A composed export sheet: shapes in paper-millimetre coordinates. */
@@ -107,7 +110,7 @@ export function buildFloorSheet(doc: FloorDoc, opts: SheetOptions): Sheet {
       x: margin,
       y: margin + 9.6,
       text:
-        `${opts.floorName} · Approx. GIA ${formatAreaM2(floorGiaM2(doc))}` +
+        `${opts.floorName} · Approx. GIA ${formatArea(floorGiaM2(doc), opts.areaUnits ?? 'm2')}` +
         (doc.rooms.length > 0
           ? ` · Ceiling ${floorCeilingHeightM(doc).toFixed(2)}m${floorHasMixedCeilings(doc) ? ' (typical)' : ''}`
           : ''),
@@ -215,6 +218,7 @@ export function buildFloorSheet(doc: FloorDoc, opts: SheetOptions): Sheet {
       showDims: opts.showMeasurements,
       showLabels: true,
       planMode: opts.planMode,
+      areaUnits: opts.areaUnits,
     });
     shapes.push(...transformShapes(planShapes, scale, dx, dy));
 

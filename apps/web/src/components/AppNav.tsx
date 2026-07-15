@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Cloud, CloudOff, Plus } from 'lucide-react';
 import { BrandMark, Button } from '@floorplan/ui';
 import { isCloudConfigured, useAuthSession } from '../lib/supabase';
@@ -32,7 +32,32 @@ function AccountPill() {
   );
 }
 
-export function AppNav({ onNewProperty }: { onNewProperty: () => void }) {
+function NavLink({ to, current, children }: { to: string; current: boolean; children: string }) {
+  if (current) {
+    return (
+      <span className="rounded-lg bg-action-soft px-3 py-[7px] text-[13.5px] font-semibold text-brand">
+        {children}
+      </span>
+    );
+  }
+  return (
+    <Link
+      to={to}
+      className="rounded-lg px-3 py-[7px] text-[13.5px] font-medium text-ink-soft hover:bg-shell hover:text-ink"
+    >
+      {children}
+    </Link>
+  );
+}
+
+export function AppNav({
+  onNewProperty,
+  active = 'properties',
+}: {
+  onNewProperty?: () => void;
+  active?: 'properties' | 'templates';
+}) {
+  const navigate = useNavigate();
   return (
     <nav className="sticky top-0 z-30 flex h-[60px] items-center border-b border-line bg-white px-4 md:px-6">
       <div className="flex items-center gap-2.5">
@@ -46,15 +71,12 @@ export function AppNav({ onNewProperty }: { onNewProperty: () => void }) {
       </div>
 
       <div className="ml-9 hidden items-center gap-1 md:flex">
-        <span className="rounded-lg bg-action-soft px-3 py-[7px] text-[13.5px] font-semibold text-brand">
+        <NavLink to="/" current={active === 'properties'}>
           Properties
-        </span>
-        <span
-          className="cursor-not-allowed rounded-lg px-3 py-[7px] text-[13.5px] font-medium text-ink-ghost"
-          title="Coming soon"
-        >
+        </NavLink>
+        <NavLink to="/templates" current={active === 'templates'}>
           Templates
-        </span>
+        </NavLink>
         <span
           className="cursor-not-allowed rounded-lg px-3 py-[7px] text-[13.5px] font-medium text-ink-ghost"
           title="Coming soon"
@@ -66,7 +88,7 @@ export function AppNav({ onNewProperty }: { onNewProperty: () => void }) {
       <div className="flex-1" />
 
       <div className="flex items-center gap-3">
-        <Button onClick={onNewProperty} className="shadow-cta">
+        <Button onClick={onNewProperty ?? (() => navigate('/'))} className="shadow-cta">
           <Plus size={15} strokeWidth={2.4} />
           <span className="hidden sm:inline">New Property</span>
           <span className="sm:hidden">New</span>

@@ -167,6 +167,11 @@ export class SupabaseFloorRepository implements FloorRepository {
     if (res.error) throw new Error(res.error.message);
   }
 
+  async rename(id: string, name: string): Promise<void> {
+    const res = await this.client.from('floors').update({ name }).eq('id', id);
+    if (res.error) throw new Error(res.error.message);
+  }
+
   async remove(id: string): Promise<void> {
     const res = await this.client.from('floors').delete().eq('id', id);
     if (res.error) throw new Error(res.error.message);

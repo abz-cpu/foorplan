@@ -1,7 +1,7 @@
 import { docBounds, roomAreaM2 } from './geometry';
 import { resolveRoomLabelOffset } from './labels';
 import { doorSwingGeometry, openingJambs, wallNormal, wallSegments } from './openings';
-import { formatAreaM2, formatMmAsM } from './format';
+import { formatArea, formatMmAsM, type AreaUnits } from './format';
 import { SYMBOL_DEFS, type SymbolInstance } from './symbols';
 import type { FloorDoc, Opening, Point, RoomRect, RoomType, TextLabel, Wall } from './types';
 
@@ -84,6 +84,8 @@ export interface DocShapesOptions {
    *  instead of plain white, matching the editor's Presentation plan mode
    *  so an exported sheet looks the same as what was on screen. */
   planMode?: 'technical' | 'presentation';
+  /** Display units for room area labels — m², ft², or both. */
+  areaUnits?: AreaUnits;
 }
 
 const WALL = '#1F312C';
@@ -114,6 +116,7 @@ function roomShapes(
   showLabels: boolean,
   planMode: 'technical' | 'presentation',
   labelOffset: Point = { x: 0, y: 0 },
+  areaUnits: AreaUnits = 'm2',
 ): Shape[] {
   const zone = planMode === 'presentation' ? ROOM_ZONE_COLORS[room.type] : null;
   const fill = zone?.fill ?? '#FFFFFF';
@@ -209,7 +212,7 @@ function roomShapes(
       kind: 'text',
       x: cx,
       y: cy + 240,
-      text: formatAreaM2(roomAreaM2(room)),
+      text: formatArea(roomAreaM2(room), areaUnits),
       size: 185,
       color: FAINT,
       font: 'mono',
@@ -462,7 +465,7 @@ function maxSpan(b: { minX: number; minY: number; maxX: number; maxY: number }):
 
 /** Flatten a floor document into ordered drawing primitives (world mm). */
 export function docToShapes(doc: FloorDoc, options: DocShapesOptions = {}): Shape[] {
-  const { showDims = true, showLabels = true, planMode = 'technical' } = options;
+  const { showDims = true, showLabels = true, planMode = 'technical', areaUnits = 'm2' } = options;
   const shapes: Shape[] = [];
 
   // Largest-area first so a smaller nested room (e.g. stairs inside a
@@ -471,7 +474,7 @@ export function docToShapes(doc: FloorDoc, options: DocShapesOptions = {}): Shap
   const roomsByAreaDesc = [...doc.rooms].sort((a, b) => b.w * b.h - a.w * a.h);
   for (const room of roomsByAreaDesc) {
     const labelOffset = resolveRoomLabelOffset(room, doc.symbols, doc.walls);
-    shapes.push(...roomShapes(room, showLabels, planMode, labelOffset));
+    shapes.push(...roomShapes(room, showLabels, planMode, labelOffset, areaUnits));
   }
 
   for (const wall of doc.walls) {

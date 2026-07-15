@@ -3,6 +3,7 @@ import {
   docBounds,
   emptyFloorDoc,
   History,
+  type AreaUnits,
   type FloorDoc,
   type Point,
   type SymbolKind,
@@ -44,6 +45,8 @@ interface ViewPrefs {
   /** New/changed walls are auto-classified internal (100mm) vs external
    *  (200mm) after each wall/room draw; custom thicknesses are preserved. */
   autoWallThickness: boolean;
+  /** Display units for floor areas — m², ft², or both. */
+  areaUnits: AreaUnits;
 }
 
 const VIEW_PREFS_KEY = 'floorplan:viewPrefs';
@@ -55,6 +58,7 @@ const DEFAULT_VIEW_PREFS: ViewPrefs = {
   planMode: 'presentation',
   autoRoomWalls: true,
   autoWallThickness: true,
+  areaUnits: 'm2',
 };
 
 function loadViewPrefs(): ViewPrefs {
@@ -93,6 +97,7 @@ function pickViewPrefs(state: ViewPrefs): ViewPrefs {
     planMode: state.planMode,
     autoRoomWalls: state.autoRoomWalls,
     autoWallThickness: state.autoWallThickness,
+    areaUnits: state.areaUnits,
   };
 }
 
@@ -126,6 +131,11 @@ interface EditorState {
   /** True while the "Detect rooms from walls" button is hovered — the
    *  canvas previews the enclosed areas that would become rooms. */
   detectPreview: boolean;
+  /** Display units for floor areas — m², ft², or both. */
+  areaUnits: AreaUnits;
+  /** Bumped to ask the properties panel to focus the selected room's name
+   *  field (double-click / right-click "Rename" on the canvas). */
+  focusNameNonce: number;
 
   loadFloor(floorId: string, doc: FloorDoc): void;
   setTool(tool: Tool): void;
@@ -155,6 +165,9 @@ interface EditorState {
   toggleAutoRoomWalls(): void;
   toggleAutoWallThickness(): void;
   setDetectPreview(on: boolean): void;
+  setAreaUnits(units: AreaUnits): void;
+  /** Ask the properties panel to focus the selected entity's name field. */
+  requestFocusName(): void;
 }
 
 const clampZoom = (z: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
@@ -179,6 +192,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
     viewport: { width: 800, height: 600 },
     symbolKind: 'sofa',
     detectPreview: false,
+    focusNameNonce: 0,
     ...loadViewPrefs(),
 
     setSymbolKind(kind) {
@@ -371,6 +385,15 @@ export const useEditorStore = create<EditorState>((set, get) => {
 
     setDetectPreview(detectPreview) {
       set({ detectPreview });
+    },
+
+    setAreaUnits(areaUnits) {
+      set({ areaUnits });
+      saveViewPrefs(pickViewPrefs({ ...get(), areaUnits }));
+    },
+
+    requestFocusName() {
+      set({ focusNameNonce: get().focusNameNonce + 1 });
     },
   };
 });

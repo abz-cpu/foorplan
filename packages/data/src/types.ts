@@ -55,6 +55,7 @@ export interface FloorRepository {
   get(id: string): Promise<FloorRecord | undefined>;
   create(propertyId: string, name: string, sortOrder: number): Promise<FloorRecord>;
   saveDoc(id: string, doc: FloorDoc): Promise<void>;
+  rename(id: string, name: string): Promise<void>;
   remove(id: string): Promise<void>;
 }
 

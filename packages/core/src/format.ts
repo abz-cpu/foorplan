@@ -8,6 +8,25 @@ export function formatAreaM2(areaM2: number, decimals = 1): string {
   return `${areaM2.toFixed(decimals)} m²`;
 }
 
+/** How floor areas are displayed throughout the app. UK listings (Rightmove,
+ *  EPC reports) conventionally quote square feet alongside square metres. */
+export type AreaUnits = 'm2' | 'ft2' | 'both';
+
+const SQFT_PER_M2 = 10.7639;
+
+/** "153 ft²" — whole square feet; sub-foot precision is meaningless. */
+export function formatAreaSqFt(areaM2: number): string {
+  return `${Math.round(areaM2 * SQFT_PER_M2)} ft²`;
+}
+
+/** Format an area in the chosen display units ("14.2 m²", "153 ft²", or
+ *  "14.2 m² · 153 ft²"). */
+export function formatArea(areaM2: number, units: AreaUnits = 'm2', decimals = 1): string {
+  if (units === 'ft2') return formatAreaSqFt(areaM2);
+  if (units === 'both') return `${formatAreaM2(areaM2, decimals)} · ${formatAreaSqFt(areaM2)}`;
+  return formatAreaM2(areaM2, decimals);
+}
+
 /** "4.40 × 3.40 m" */
 export function formatDims(wMm: number, hMm: number): string {
   return `${(wMm / 1000).toFixed(2)} × ${(hMm / 1000).toFixed(2)} m`;

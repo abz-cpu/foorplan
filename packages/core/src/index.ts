@@ -18,3 +18,4 @@ export * from './faces';
 export * from './assistant';
 export * from './length';
 export * from './demo';
+export * from './templates';

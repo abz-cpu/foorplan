@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button, TextInput } from '@floorplan/ui';
 
 export interface NewPropertyValues {
@@ -19,11 +19,17 @@ export function NewPropertyDialog({
   const [postcode, setPostcode] = useState('');
   const valid = addressLine1.trim().length > 0;
 
+  // Escape-to-close via a ref: with [onClose] deps, any parent re-render
+  // during the SAME keydown dispatch (e.g. the canvas's own Escape handler
+  // deselecting) tears the listener down and re-adds it mid-dispatch — and a
+  // listener re-added during dispatch never receives the in-flight event.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onCloseRef.current();
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, []);
 
   const submit = () => {
     if (!valid) return;

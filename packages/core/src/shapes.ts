@@ -79,6 +79,23 @@ export type Shape =
       href: string;
     };
 
+/**
+ * Normalise an arc to Konva-style "start rotation + positive sweep" form.
+ * Canvas-2D arcs carry a direction flag and angles that may wrap across
+ * ±180°; a mapper that takes min/|Δ| draws the 270° complement for a door
+ * whose jamb sits across the wrap (e.g. start 180°, end −90°).
+ */
+export function arcSweep(a: { startDeg: number; endDeg: number; anticlockwise: boolean }): {
+  fromDeg: number;
+  sweepDeg: number;
+} {
+  const fromDeg = a.anticlockwise ? a.endDeg : a.startDeg;
+  const toDeg = a.anticlockwise ? a.startDeg : a.endDeg;
+  let sweepDeg = (((toDeg - fromDeg) % 360) + 360) % 360;
+  if (sweepDeg === 0 && toDeg !== fromDeg) sweepDeg = 360;
+  return { fromDeg, sweepDeg };
+}
+
 export interface DocShapesOptions {
   showDims?: boolean;
   showLabels?: boolean;
@@ -369,13 +386,13 @@ export function openingRenderCtx(
   const { start, end } = openingJambs(wall, opening);
   const n = wallNormal(wall);
   const c = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
-  const roomAt = (sgn: number) => {
-    const p = { x: c.x + n.x * sgn * (wall.thickness / 2 + 150), y: c.y + n.y * sgn * (wall.thickness / 2 + 150) };
+  const roomNear = (at: Point, sgn: number) => {
+    const p = { x: at.x + n.x * sgn * (wall.thickness / 2 + 150), y: at.y + n.y * sgn * (wall.thickness / 2 + 150) };
     return doc.rooms.find((r) => r.type !== 'Stairs' && pointInPolygon(p, roomPolygon(r)));
   };
   if (opening.kind === 'door') {
     const sgn = opening.swingSide === 'b' ? -1 : 1;
-    const room = roomAt(sgn) ?? roomAt(-sgn);
+    const room = roomNear(c, sgn) ?? roomNear(c, -sgn);
     const fill = room
       ? planMode === 'presentation'
         ? ROOM_ZONE_COLORS[room.type].fill
@@ -383,9 +400,17 @@ export function openingRenderCtx(
       : null;
     return { thresholdFill: fill };
   }
-  const aRoom = roomAt(1);
-  const bRoom = roomAt(-1);
-  const outwardSign: 1 | -1 = aRoom && !bRoom ? -1 : 1;
+  // Windows: probe several points along the gap on each side — a single
+  // centre probe lands outside the room polygon near a stepped/jogged wall
+  // and flips a bay/box projection into the room.
+  const probes = [0.25, 0.5, 0.75].map((f) => ({
+    x: start.x + (end.x - start.x) * f,
+    y: start.y + (end.y - start.y) * f,
+  }));
+  const hits = (sgn: number) => probes.filter((p) => roomNear(p, sgn)).length;
+  const aHits = hits(1);
+  const bHits = hits(-1);
+  const outwardSign: 1 | -1 = aHits > bHits ? -1 : bHits > aHits ? 1 : 1;
   return { outwardSign };
 }
 
@@ -417,15 +442,19 @@ export function openingShapes(wall: Wall, opening: Opening, ctx: OpeningRenderCt
       const out = { x: n.x * sgn, y: n.y * sgn };
       const dirLen = Math.hypot(end.x - start.x, end.y - start.y) || 1;
       const dir = { x: (end.x - start.x) / dirLen, y: (end.y - start.y) / dirLen };
-      const D = style === 'bay' ? 620 : 520;
+      // Depth beyond the OUTER face, and a ring anchored at the INNER face:
+      // starting at the centreline leaves the inner half of the wall gap as a
+      // white slot, which reads as a U-shaped notch cut into the wall.
+      const D = t / 2 + (style === 'bay' ? 520 : 420);
+      const inn = -t / 2;
       const off = (p: Point, alongMm: number, outMm: number): Point => ({
         x: p.x + dir.x * alongMm + out.x * outMm,
         y: p.y + dir.y * alongMm + out.y * outMm,
       });
       const ring =
         style === 'bay'
-          ? [start, off(start, dirLen * 0.28, D), off(start, dirLen * 0.72, D), end]
-          : [start, off(start, 0, D), off(start, dirLen, D), end];
+          ? [off(start, 0, inn), off(start, dirLen * 0.28, D), off(start, dirLen * 0.72, D), off(start, dirLen, inn)]
+          : [off(start, 0, inn), off(start, 0, D), off(start, dirLen, D), off(start, dirLen, inn)];
       shapes.push({ kind: 'polyline', points: ring, stroke: WALL, width: 24, fill: '#FFFFFF', closed: true });
       // glazing line following the projection, pulled back toward the wall
       const inner = ring.map((p, i) => (i === 0 || i === ring.length - 1 ? p : { x: p.x - out.x * 170, y: p.y - out.y * 170 }));

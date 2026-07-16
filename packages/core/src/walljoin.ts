@@ -34,22 +34,27 @@ function endCorners(w: Wall, p: Point, other: Point, partners: Wall[]): Corners 
     if (dot < -0.999) {
       // Partner doubles straight back — treat as a free end below.
     } else {
+      // True corner: intersect this wall's face line with the partner's face
+      // line ON THE SAME SIDE. Unlike the symmetric-mitre shortcut this stays
+      // exact when the two walls have different thicknesses (a thin step wall
+      // meeting a thick external wall) — the shortcut leaves a notch there.
+      const hq = q.thickness / 2;
       const nOut = { x: -dOut.y, y: dOut.x };
-      let mx = nIn.x + nOut.x;
-      let my = nIn.y + nOut.y;
-      const mlen = Math.hypot(mx, my);
-      if (mlen > 1e-6) {
-        mx /= mlen;
-        my /= mlen;
-        const denom = mx * nIn.x + my * nIn.y;
-        if (Math.abs(denom) > 1e-6) {
-          // Clamp the mitre length so near-collinear joints can't spike.
-          const L = Math.min(Math.abs(h / denom), w.thickness * 2.5) * Math.sign(h / denom);
-          return {
-            left: { x: p.x + mx * L, y: p.y + my * L },
-            right: { x: p.x - mx * L, y: p.y - my * L },
-          };
-        }
+      const cross = dIn.x * dOut.y - dIn.y * dOut.x;
+      if (Math.abs(cross) > 1e-6) {
+        const maxRun = Math.max(w.thickness, q.thickness) * 2.5;
+        const corner = (side: 1 | -1): Point => {
+          const ax = p.x + nIn.x * h * side;
+          const ay = p.y + nIn.y * h * side;
+          const bx = p.x + nOut.x * hq * side;
+          const by = p.y + nOut.y * hq * side;
+          // Solve a + s·dIn = b + u·dOut for s; clamp so near-collinear
+          // joints can't spike.
+          let s = ((bx - ax) * dOut.y - (by - ay) * dOut.x) / cross;
+          s = Math.max(-maxRun, Math.min(maxRun, s));
+          return { x: ax + dIn.x * s, y: ay + dIn.y * s };
+        };
+        return { left: corner(1), right: corner(-1) };
       }
       // ~180° continuation: plain perpendicular cut.
       return {

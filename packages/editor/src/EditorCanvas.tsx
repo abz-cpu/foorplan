@@ -29,6 +29,7 @@ import {
   detectRooms,
   EXTERNAL_WALL_THICKNESS_MM,
   DEFAULT_WINDOW_WIDTH_MM,
+  arcSweep,
   findRoomOverlaps,
   deleteEntities,
   distance,
@@ -257,7 +258,9 @@ function CoreShapes({ shapes, recolor }: { shapes: CoreShape[]; recolor?: (c: st
           );
         }
         if (sh.kind === 'arc') {
-          const angle = Math.abs(sh.endDeg - sh.startDeg);
+          // Honour sweep direction and the ±180° wrap — min/|Δ| draws the
+          // 270° complement for a flipped-hinge door (arc through the wall).
+          const { fromDeg, sweepDeg } = arcSweep(sh);
           return (
             <Arc
               key={i}
@@ -265,8 +268,8 @@ function CoreShapes({ shapes, recolor }: { shapes: CoreShape[]; recolor?: (c: st
               y={sh.cy}
               innerRadius={sh.r}
               outerRadius={sh.r}
-              angle={angle}
-              rotation={Math.min(sh.startDeg, sh.endDeg)}
+              angle={sweepDeg}
+              rotation={fromDeg}
               stroke={rc(sh.stroke)}
               strokeWidth={sh.width}
               listening={false}

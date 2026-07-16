@@ -76,6 +76,13 @@ export interface RoomRect {
    *  the drawing isn't exact) — never changes the drawn rectangle. */
   displayWMm?: number;
   displayLMm?: number;
+  /** Custom fill colour (hex) for this specific room, overriding the
+   *  by-type zone colour — lets two bedrooms read differently, or any room
+   *  take a bespoke colour. Undefined = the room-type colour. */
+  color?: string;
+  /** Show only the room name — no area or width×length lines. For a hallway
+   *  or landing an assessor may want a bare label. Undefined/false = full. */
+  hideAreaLabel?: boolean;
   /** Non-rectangular rooms (bays, chamfers, L/T/U shapes) carry their exact
    *  outline here, in absolute mm. When present it's the room's true shape
    *  and x/y/w/h are its bounding box (kept for selection fallback and
@@ -93,6 +100,13 @@ export interface TextLabel {
   /** Heading style: bigger + bold — for titling structures drawn side by
    *  side on one canvas ("Ground Floor", "First Floor"). */
   heading?: boolean;
+  /** Heading labels only: also stamp the titled floor's total area and
+   *  ceiling height beneath the name. Undefined = show them (a heading is a
+   *  floor stamp by default). Set false for a bare title. */
+  floorStamp?: boolean;
+  /** Heading labels only: ceiling height in m to print in the stamp,
+   *  overriding the value derived from that floor's rooms. */
+  heightM?: number;
 }
 
 /** A door or window cut into a wall, positioned along it. */
@@ -110,6 +124,10 @@ export interface Opening {
   swingSide?: 'a' | 'b';
   /** door only: leaf arrangement. Undefined = 'single'. */
   doorStyle?: 'single' | 'double' | 'sliding';
+  /** door only: how far the leaf/swing arc projects, mm — lets a door show a
+   *  shallower swing (e.g. it can't fully open) while the opening in the wall
+   *  keeps its width. Undefined = widthMm (a full quarter-circle swing). */
+  swingDepthMm?: number;
   /** window only: 'bay' bumps out as an angled projection, 'box' as a square
    *  one — drawn as plan graphics outside the wall line. Undefined = 'standard'. */
   windowStyle?: 'standard' | 'bay' | 'box';

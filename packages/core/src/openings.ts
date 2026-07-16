@@ -93,20 +93,24 @@ export function wallSegments(wall: Wall, openings: Opening[]): { a: Point; b: Po
 export function doorSwingGeometry(
   wall: Wall,
   opening: Opening,
-): { hinge: Point; jamb: Point; tip: Point; startDeg: number; endDeg: number; delta: number } {
+): { hinge: Point; jamb: Point; tip: Point; radius: number; startDeg: number; endDeg: number; delta: number } {
   const { start, end } = openingJambs(wall, opening);
   const n = wallNormal(wall);
   const side = opening.swingSide === 'b' ? { x: -n.x, y: -n.y } : n;
   const hinge = opening.hinge === 'left' ? start : end;
   const jamb = opening.hinge === 'left' ? end : start;
-  const tip = { x: hinge.x + side.x * opening.widthMm, y: hinge.y + side.y * opening.widthMm };
+  // Swing depth = how far the leaf/arc reaches. Defaults to the opening width
+  // (a full quarter circle); a smaller value shows a door that opens less far
+  // while the wall opening keeps its width. Clamp to the width.
+  const radius = Math.max(50, Math.min(opening.swingDepthMm ?? opening.widthMm, opening.widthMm));
+  const tip = { x: hinge.x + side.x * radius, y: hinge.y + side.y * radius };
   const angle = (from: Point, to: Point) => (Math.atan2(to.y - from.y, to.x - from.x) * 180) / Math.PI;
   const startDeg = angle(hinge, jamb);
   const endDeg = angle(hinge, tip);
   let delta = endDeg - startDeg;
   while (delta > 180) delta -= 360;
   while (delta < -180) delta += 360;
-  return { hinge, jamb, tip, startDeg, endDeg, delta };
+  return { hinge, jamb, tip, radius, startDeg, endDeg, delta };
 }
 
 /** Find the nearest wall within `toleranceMm` of a point, or null. */

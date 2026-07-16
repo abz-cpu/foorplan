@@ -136,6 +136,19 @@ export const ROOM_ZONE_COLORS: Record<RoomType, { fill: string; edge: string }> 
   Other: { fill: '#EDEDED', edge: '#C6C6C6' },
 };
 
+/** Darken a #rrggbb fill toward its edge tone (mix with black) — used to
+ *  derive a matching outline for a room's bespoke colour. */
+export function deriveEdge(hex: string, amount = 0.28): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return ROOM_EDGE;
+  const v = parseInt(m[1], 16);
+  const mix = (c: number) => Math.round(c * (1 - amount));
+  const r = mix((v >> 16) & 0xff);
+  const g = mix((v >> 8) & 0xff);
+  const b = mix(v & 0xff);
+  return `#${((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1)}`;
+}
+
 function roomShapes(
   room: RoomRect,
   showLabels: boolean,
@@ -144,8 +157,11 @@ function roomShapes(
   areaUnits: AreaUnits = 'm2',
 ): Shape[] {
   const zone = planMode === 'presentation' ? ROOM_ZONE_COLORS[room.type] : null;
-  const fill = zone?.fill ?? '#FFFFFF';
-  const edge = zone?.edge ?? ROOM_EDGE;
+  // A per-room custom colour wins over the by-type zone shading (still only in
+  // presentation mode, which is where rooms are coloured at all).
+  const custom = planMode === 'presentation' ? room.color : undefined;
+  const fill = custom ?? zone?.fill ?? '#FFFFFF';
+  const edge = custom ? deriveEdge(custom) : zone?.edge ?? ROOM_EDGE;
   const shapes: Shape[] =
     room.polygon && room.polygon.length >= 3
       ? [{ kind: 'polyline', points: room.polygon, stroke: edge, width: 18, fill, closed: true }]
@@ -165,6 +181,23 @@ function roomShapes(
     const cy = room.y + room.h / 2 + labelOffset.y;
     const areaText = formatArea(roomAreaM2(room), areaUnits);
     const dimsText = formatDims(room.displayWMm ?? room.w, room.displayLMm ?? room.h);
+    if (room.hideAreaLabel) {
+      // Name-only: a bare label for a hallway/landing an assessor doesn't want
+      // measured. Centre the single line vertically.
+      const k = roomLabelShrink(room, [room.name]);
+      shapes.push({
+        kind: 'text',
+        x: cx,
+        y: cy + 90 * k,
+        text: room.name,
+        size: 260 * k,
+        color: INK,
+        font: 'sans',
+        weight: 600,
+        align: 'center',
+      });
+      return shapes;
+    }
     // Shrink the label block to fit small rooms (a porch, a WC) instead of
     // spilling over their walls into the neighbouring space.
     const k = roomLabelShrink(room, [room.name, areaText, dimsText]);
@@ -531,7 +564,8 @@ export function openingShapes(wall: Wall, opening: Opening, ctx: OpeningRenderCt
   if (style === 'double') {
     // Two half-width leaves hinged at both jambs, meeting in the middle.
     const sgn = opening.swingSide === 'b' ? -1 : 1;
-    const half = opening.widthMm / 2;
+    const depth = Math.max(50, Math.min(opening.swingDepthMm ?? opening.widthMm, opening.widthMm));
+    const half = depth / 2;
     const dirLen = Math.hypot(end.x - start.x, end.y - start.y) || 1;
     const dir = { x: (end.x - start.x) / dirLen, y: (end.y - start.y) / dirLen };
     const dirDeg = (Math.atan2(dir.y, dir.x) * 180) / Math.PI;
@@ -561,14 +595,14 @@ export function openingShapes(wall: Wall, opening: Opening, ctx: OpeningRenderCt
   }
 
   // Single (default): leaf at the hinge jamb + quarter swing arc.
-  const { hinge, tip, startDeg, endDeg, delta } = doorSwingGeometry(wall, opening);
+  const { hinge, tip, radius, startDeg, endDeg, delta } = doorSwingGeometry(wall, opening);
   shapes.push(
     { kind: 'line', x1: hinge.x, y1: hinge.y, x2: tip.x, y2: tip.y, stroke: WALL_LIGHT, width: 25 },
     {
       kind: 'arc',
       cx: hinge.x,
       cy: hinge.y,
-      r: opening.widthMm,
+      r: radius,
       startDeg,
       endDeg,
       anticlockwise: delta < 0,
@@ -638,11 +672,49 @@ export function symbolToShapes(sym: SymbolInstance, stroke = WALL_LIGHT, width =
   return shapes;
 }
 
-function labelShapes(label: TextLabel): Shape[] {
+/** Per-floor totals for a heading "floor stamp": the area and ceiling height
+ *  of the storey it titles. When several floors are drawn side by side on one
+ *  canvas each heading claims the rooms nearest it, so every floor stamps its
+ *  own figures. */
+export function headingFloorStats(
+  doc: FloorDoc,
+  label: TextLabel,
+): { areaM2: number; ceilingM: number; roomCount: number } {
+  const headings = doc.labels.filter((l) => l.heading);
+  const centre = (r: RoomRect) => ({ x: r.x + r.w / 2, y: r.y + r.h / 2 });
+  const nearestHeading = (r: RoomRect) => {
+    let best = headings[0];
+    let bestD = Infinity;
+    for (const h of headings) {
+      const c = centre(r);
+      const d = Math.hypot(c.x - h.x, c.y - h.y);
+      if (d < bestD) {
+        bestD = d;
+        best = h;
+      }
+    }
+    return best;
+  };
+  const mine = doc.rooms.filter((r) => r.type !== 'Stairs' && (headings.length <= 1 || nearestHeading(r) === label));
+  const areaM2 = mine.filter((r) => r.includeInGia).reduce((s, r) => s + roomAreaM2(r), 0);
+  // Ceiling: the override, else the most common ceiling among the floor's rooms.
+  let ceilingM = label.heightM ?? 0;
+  if (!ceilingM) {
+    const counts = new Map<number, number>();
+    for (const r of mine) counts.set(r.ceilingHeightM, (counts.get(r.ceilingHeightM) ?? 0) + 1);
+    ceilingM = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 2.4;
+  }
+  return { areaM2, ceilingM, roomCount: mine.length };
+}
+
+function labelShapes(
+  label: TextLabel,
+  stamp?: { areaText: string; ceilingM: number } | null,
+): Shape[] {
   const scale = label.scale ?? 1;
   // Heading style titles a structure ("Ground Floor") — bigger and bolder.
   const size = (label.heading ? 400 : 220) * scale;
-  return [
+  const shapes: Shape[] = [
     {
       kind: 'text',
       x: label.x,
@@ -655,6 +727,20 @@ function labelShapes(label: TextLabel): Shape[] {
       align: 'center',
     },
   ];
+  // Floor stamp: area + ceiling height under the title.
+  if (stamp) {
+    shapes.push({
+      kind: 'text',
+      x: label.x,
+      y: label.y + size * 0.62,
+      text: `GIA ${stamp.areaText} · ${stamp.ceilingM.toFixed(2)} m ceiling`,
+      size: size * 0.34,
+      color: FAINT,
+      font: 'mono',
+      align: 'center',
+    });
+  }
+  return shapes;
 }
 
 /** Group walls into connected structures: two walls join when an endpoint of
@@ -799,7 +885,18 @@ export function docToShapes(doc: FloorDoc, options: DocShapesOptions = {}): Shap
   }
 
   for (const sym of doc.symbols) shapes.push(...symbolToShapes(sym));
-  if (showLabels) for (const label of doc.labels) shapes.push(...labelShapes(label));
+  if (showLabels)
+    for (const label of doc.labels) {
+      // A heading is a floor stamp by default: name + that floor's GIA and
+      // ceiling height, so several storeys on one sheet each carry their own.
+      const stamped = label.heading && (label.floorStamp ?? true);
+      if (stamped) {
+        const st = headingFloorStats(doc, label);
+        shapes.push(...labelShapes(label, { areaText: formatArea(st.areaM2, areaUnits), ceilingM: st.ceilingM }));
+      } else {
+        shapes.push(...labelShapes(label));
+      }
+    }
 
   if (showDims) shapes.push(...dimensionShapes(doc));
   return shapes;

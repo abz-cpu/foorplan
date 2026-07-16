@@ -102,23 +102,30 @@ export function buildFloorSheet(doc: FloorDoc, opts: SheetOptions): Sheet {
   const [pw, ph] = PAPER_MM[opts.paper];
   const [W, H] = opts.orientation === 'portrait' ? [pw, ph] : [ph, pw];
   const margin = 12;
-  const headerH = 15;
+  const headerH = 17;
 
   const shapes: Shape[] = [];
   const brand = opts.brand ?? {};
 
-  /* Header: address + floor/GIA, brand mark (logo or company name) right */
+  /* Header: address + floor/GIA, brand mark (logo or company name) right.
+     When several storeys are drawn on one sheet (≥2 heading "floor stamps"),
+     the header stops asserting a single floor/ceiling — each stamp carries
+     its own — and reports the whole-sheet total instead. */
+  const floorHeadings = doc.labels.filter((l) => l.heading);
+  const multiFloor = floorHeadings.length >= 2;
+  const subtitle = multiFloor
+    ? `${floorHeadings.length} floors · Total GIA ${formatArea(floorGiaM2(doc), opts.areaUnits ?? 'm2')}`
+    : `${opts.floorName} · Approx. GIA ${formatArea(floorGiaM2(doc), opts.areaUnits ?? 'm2')}` +
+      (doc.rooms.length > 0
+        ? ` · Ceiling ${floorCeilingHeightM(doc).toFixed(2)}m${floorHasMixedCeilings(doc) ? ' (typical)' : ''}`
+        : '');
   shapes.push(
     { kind: 'text', x: margin, y: margin + 4.6, text: opts.address, size: 5, color: INK, font: 'sans', weight: 700, align: 'left' },
     {
       kind: 'text',
       x: margin,
       y: margin + 9.6,
-      text:
-        `${opts.floorName} · Approx. GIA ${formatArea(floorGiaM2(doc), opts.areaUnits ?? 'm2')}` +
-        (doc.rooms.length > 0
-          ? ` · Ceiling ${floorCeilingHeightM(doc).toFixed(2)}m${floorHasMixedCeilings(doc) ? ' (typical)' : ''}`
-          : ''),
+      text: subtitle,
       size: 3.1,
       color: GHOST,
       font: 'sans',
@@ -127,10 +134,11 @@ export function buildFloorSheet(doc: FloorDoc, opts: SheetOptions): Sheet {
   );
   const company = (brand.companyName && brand.companyName.trim()) || (brand.logoDataUrl ? '' : 'L&D ENERGY');
   if (brand.logoDataUrl) {
-    // Right-aligned logo, capped to a header-sized box.
-    const logoH = 9;
+    // Right-aligned logo, larger, capped to the header band. A typed company
+    // name sits to its LEFT, vertically centred, so it never crowds the rule.
+    const logoH = 11.5;
     const aspect = brand.logoAspect && brand.logoAspect > 0 ? brand.logoAspect : 3;
-    const logoW = Math.min(logoH * aspect, 52);
+    const logoW = Math.min(logoH * aspect, 62);
     shapes.push({
       kind: 'image',
       x: W - margin - logoW,
@@ -139,15 +147,13 @@ export function buildFloorSheet(doc: FloorDoc, opts: SheetOptions): Sheet {
       h: logoH,
       href: brand.logoDataUrl,
     });
-    // A typed company name still shows, small, beneath the logo — so
-    // filling it in always does something visible.
     if (company) {
       shapes.push({
         kind: 'text',
-        x: W - margin,
-        y: margin + logoH + 2.8,
+        x: W - margin - logoW - 3.5,
+        y: margin + logoH / 2 + 1,
         text: company,
-        size: 2.6,
+        size: 3.0,
         color: '#33433E',
         font: 'sans',
         weight: 600,

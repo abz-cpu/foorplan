@@ -30,6 +30,8 @@ import {
   EXTERNAL_WALL_THICKNESS_MM,
   DEFAULT_WINDOW_WIDTH_MM,
   arcSweep,
+  deriveEdge,
+  headingFloorStats,
   findRoomOverlaps,
   deleteEntities,
   distance,
@@ -2362,6 +2364,9 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
             const isSel = selectedIds.includes(room.id);
             const stairs = room.type === 'Stairs';
             const zone = planMode === 'presentation' ? ROOM_ZONE_COLORS[room.type] : null;
+            // Per-room custom colour overrides the by-type zone shading.
+            const roomFill = planMode === 'presentation' && r.color ? r.color : zone?.fill ?? '#FFFFFF';
+            const roomEdge = planMode === 'presentation' && r.color ? deriveEdge(r.color) : zone?.edge ?? ROOM_EDGE;
             const off = manualOffset(room.id);
             const overlapping = overlapRoomIds.has(room.id);
             return (
@@ -2380,8 +2385,8 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
                   <Line
                     points={r.polygon.flatMap((p) => [p.x - r.x, p.y - r.y])}
                     closed
-                    fill={isSel ? SELECT_FILL : (zone?.fill ?? '#FFFFFF')}
-                    stroke={isSel ? ACTION : overlapping ? WARN : (zone?.edge ?? ROOM_EDGE)}
+                    fill={isSel ? SELECT_FILL : roomFill}
+                    stroke={isSel ? ACTION : overlapping ? WARN : roomEdge}
                     strokeWidth={isSel ? 34 : overlapping ? 28 : 18}
                     dash={isSel ? [110, 75] : overlapping ? [140, 90] : undefined}
                     lineJoin="round"
@@ -2391,8 +2396,8 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
                   <Rect
                     width={r.w}
                     height={r.h}
-                    fill={isSel ? SELECT_FILL : (zone?.fill ?? '#FFFFFF')}
-                    stroke={isSel ? ACTION : overlapping ? WARN : (zone?.edge ?? ROOM_EDGE)}
+                    fill={isSel ? SELECT_FILL : roomFill}
+                    stroke={isSel ? ACTION : overlapping ? WARN : roomEdge}
                     strokeWidth={isSel ? 34 : overlapping ? 28 : 18}
                     dash={isSel ? [110, 75] : overlapping ? [140, 90] : undefined}
                   />
@@ -2420,7 +2425,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
                         <Text
                           text={r.name}
                           width={r.w}
-                          y={r.h / 2 - 320 * ls}
+                          y={r.h / 2 - (r.hideAreaLabel ? 130 : 320) * ls}
                           align="center"
                           fontSize={260 * ls}
                           fontFamily={SANS}
@@ -2430,7 +2435,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
                           strokeWidth={30 * fit}
                           fillAfterStrokeEnabled
                         />
-                        {showRoomLabels && (
+                        {showRoomLabels && !r.hideAreaLabel && (
                           <>
                             <Text
                               text={areaText}
@@ -2641,20 +2646,37 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
           {doc.labels.map((label) => {
             const off = manualOffset(label.id);
             const ls = (labelScaleDraft?.id === label.id ? labelScaleDraft.scale : label.scale) ?? 1;
+            const size = (label.heading ? 400 : 220) * ls;
+            const sel = selectedIds.includes(label.id);
+            // A heading is a floor stamp by default: name + that floor's GIA and
+            // ceiling height, matching the export sheet.
+            const stamped = label.heading && (label.floorStamp ?? true);
+            const stats = stamped ? headingFloorStats(doc, label) : null;
             return (
-              <Text
-                key={label.id}
-                x={label.x + off.x}
-                y={label.y + off.y}
-                text={label.text}
-                fontSize={(label.heading ? 400 : 220) * ls}
-                fontFamily={SANS}
-                fontStyle={label.heading ? '700' : '600'}
-                fill={selectedIds.includes(label.id) ? ACTION : INK}
-                align="center"
-                offsetX={label.text.length * (label.heading ? 100 : 55) * ls}
-                listening={false}
-              />
+              <Group key={label.id} x={label.x + off.x} y={label.y + off.y} listening={false}>
+                <Text
+                  text={label.text}
+                  fontSize={size}
+                  fontFamily={SANS}
+                  fontStyle={label.heading ? '700' : '600'}
+                  fill={sel ? ACTION : INK}
+                  align="center"
+                  offsetX={label.text.length * (label.heading ? 100 : 55) * ls}
+                  listening={false}
+                />
+                {stats && (
+                  <Text
+                    text={`GIA ${formatArea(stats.areaM2, areaUnits)} · ${stats.ceilingM.toFixed(2)} m ceiling`}
+                    y={size * 1.02}
+                    fontSize={size * 0.34}
+                    fontFamily={MONO}
+                    fill={FAINT}
+                    align="center"
+                    offsetX={(`GIA ${formatArea(stats.areaM2, areaUnits)} · ${stats.ceilingM.toFixed(2)} m ceiling`.length * size * 0.34) / 3.4}
+                    listening={false}
+                  />
+                )}
+              </Group>
             );
           })}
 

@@ -45,6 +45,7 @@ import {
   roomPerimeterM,
   roomTypeLabel,
   ROOM_TYPES,
+  ROOM_ZONE_COLORS,
   scaleDoc,
   scaleDocAxis,
   setNorthAngle,
@@ -74,6 +75,14 @@ export interface PanelFloor {
   name: string;
   doc: FloorDoc;
 }
+
+/** Quick-pick room colours — a distinct spread so rooms of the same type
+ *  (two bedrooms) can still read differently; a native picker covers any
+ *  other colour. */
+const ROOM_SWATCHES = [
+  '#E4EEE8', '#DCEDDA', '#FBEED9', '#F9E3D0', '#E3EAF7', '#DFF1F0',
+  '#EDE7F4', '#F6DCE4', '#E9F0D6', '#FDE3C8', '#DCE7F5', '#EDEDED',
+];
 
 function StatTile({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
@@ -927,6 +936,71 @@ export function RoomPanel({
                 </label>
               </div>
 
+              <div>
+                <SectionLabel>LABEL &amp; COLOUR</SectionLabel>
+                <label className="flex cursor-pointer items-center gap-2.5">
+                  <input
+                    type="checkbox"
+                    checked={!room.hideAreaLabel}
+                    onChange={(e) =>
+                      commit(
+                        e.target.checked ? 'Show area on label' : 'Hide area on label',
+                        updateRoom(doc, room.id, { hideAreaLabel: e.target.checked ? undefined : true }),
+                      )
+                    }
+                    className="h-[15px] w-[15px] cursor-pointer accent-action"
+                  />
+                  <span className="text-[12.5px] font-medium text-ink-mid">Show area &amp; size on label</span>
+                </label>
+                <p className="mt-1 text-[11px] leading-snug text-ink-ghost">
+                  Off shows just the room name — handy for a hallway or landing.
+                </p>
+                <label className="mb-1.5 mt-3 block text-xs font-semibold text-ink-mid">Room colour</label>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    title="Default (by room type)"
+                    onClick={() => commit('Reset room colour', updateRoom(doc, room.id, { color: undefined }))}
+                    className={`flex h-6 w-6 items-center justify-center rounded-md border border-line text-[8px] font-bold text-ink-faint ${
+                      !room.color ? 'ring-2 ring-action ring-offset-1' : ''
+                    }`}
+                    style={{ background: ROOM_ZONE_COLORS[room.type].fill }}
+                  >
+                    {!room.color ? '✓' : ''}
+                  </button>
+                  {ROOM_SWATCHES.map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      title={c}
+                      onClick={() => commit('Set room colour', updateRoom(doc, room.id, { color: c }))}
+                      className={`h-6 w-6 rounded-md border border-line ${
+                        room.color?.toLowerCase() === c.toLowerCase() ? 'ring-2 ring-action ring-offset-1' : ''
+                      }`}
+                      style={{ background: c }}
+                    />
+                  ))}
+                  <label
+                    title="Any colour"
+                    className="relative h-6 w-6 cursor-pointer overflow-hidden rounded-md border border-line"
+                    style={{
+                      background:
+                        'conic-gradient(from 0deg, #ef4444, #f59e0b, #eab308, #22c55e, #06b6d4, #6366f1, #d946ef, #ef4444)',
+                    }}
+                  >
+                    <input
+                      type="color"
+                      value={room.color ?? ROOM_ZONE_COLORS[room.type].fill}
+                      onChange={(e) => commit('Set room colour', updateRoom(doc, room.id, { color: e.target.value }))}
+                      className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                    />
+                  </label>
+                </div>
+                <p className="mt-1 text-[11px] leading-snug text-ink-ghost">
+                  Applies in the coloured (Presentation) view. Default follows the room type.
+                </p>
+              </div>
+
               <DeleteButton
                 label="Delete room"
                 onClick={() => {
@@ -980,6 +1054,29 @@ export function RoomPanel({
                     </p>
                   )}
                 </>
+              )}
+              {opening.kind === 'door' && (opening.doorStyle ?? 'single') !== 'sliding' && (
+                <div className="mt-3">
+                  <SizeStepper
+                    label="Swing depth"
+                    value={Math.min(opening.swingDepthMm ?? opening.widthMm, opening.widthMm)}
+                    step={25}
+                    min={200}
+                    max={opening.widthMm}
+                    onCommit={(mm) =>
+                      commit(
+                        'Set door swing depth',
+                        updateOpening(doc, opening.id, {
+                          swingDepthMm: mm >= opening.widthMm ? undefined : mm,
+                        }),
+                      )
+                    }
+                  />
+                  <p className="mt-1 text-[11px] leading-snug text-ink-ghost">
+                    How far the door swings open. Lower it to show a shallower swing — the opening
+                    keeps its width.
+                  </p>
+                </div>
               )}
               {opening.kind === 'door' && (
                 <div className="mt-3.5 flex flex-col gap-2">
@@ -1093,6 +1190,53 @@ export function RoomPanel({
                 Headings title a structure — "Ground Floor", "First Floor" — when several storeys are
                 drawn side by side on one canvas.
               </p>
+              {label.heading && (
+                <div className="mt-3">
+                  <label className="flex cursor-pointer items-center gap-2.5">
+                    <input
+                      type="checkbox"
+                      checked={label.floorStamp ?? true}
+                      onChange={(e) =>
+                        commit(
+                          'Toggle floor totals',
+                          updateLabel(doc, label.id, { floorStamp: e.target.checked ? undefined : false }),
+                        )
+                      }
+                      className="h-[15px] w-[15px] cursor-pointer accent-action"
+                    />
+                    <span className="text-[12.5px] font-medium text-ink-mid">Show this floor's area &amp; height</span>
+                  </label>
+                  {(label.floorStamp ?? true) && (
+                    <>
+                      <label className="mb-1.5 mt-3 block text-xs font-semibold text-ink-mid">
+                        Floor ceiling height <span className="font-normal text-ink-ghost">(optional)</span>
+                      </label>
+                      <input
+                        key={label.id}
+                        defaultValue={label.heightM !== undefined ? String(label.heightM) : ''}
+                        onBlur={(e) => {
+                          const raw = e.target.value.trim();
+                          if (raw === '') {
+                            if (label.heightM !== undefined)
+                              commit('Clear floor height', updateLabel(doc, label.id, { heightM: undefined }));
+                            return;
+                          }
+                          const v = Number.parseFloat(raw);
+                          if (Number.isFinite(v) && v >= 1 && v <= 6 && v !== label.heightM)
+                            commit('Set floor height', updateLabel(doc, label.id, { heightM: v }));
+                        }}
+                        onKeyDown={blurOnEnter}
+                        placeholder="e.g. 2.40"
+                        className={textInputClass}
+                      />
+                      <p className="mt-1 text-[11px] leading-snug text-ink-ghost">
+                        Area is totalled automatically from the rooms nearest this title. Blank height =
+                        taken from those rooms.
+                      </p>
+                    </>
+                  )}
+                </div>
+              )}
               <DeleteButton
                 label="Delete label"
                 onClick={() => {

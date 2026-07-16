@@ -43,6 +43,48 @@ function scaleBarLabel(shapes: { kind: string; text?: string }[]): string | unde
     .find((t) => /^(0\.5|1|2|5|10) m$/.test(t));
 }
 
+describe('branding header', () => {
+  const LOGO = 'data:image/png;base64,AAAA';
+  it('renders a larger logo image and puts the company caption to its left', () => {
+    const sheet = buildFloorSheet(
+      houseDoc(),
+      opts({ brand: { logoDataUrl: LOGO, logoAspect: 3, companyName: 'L&D Energy' } }),
+    );
+    const img = sheet.shapes.find((s) => s.kind === 'image') as { w: number; h: number; x: number } | undefined;
+    expect(img).toBeDefined();
+    expect(img!.h).toBeGreaterThanOrEqual(11); // was 9mm — the "too tiny" logo
+    const caption = sheet.shapes.find(
+      (s) => s.kind === 'text' && (s as { text: string }).text === 'L&D Energy',
+    ) as { x: number } | undefined;
+    expect(caption).toBeDefined();
+    // caption sits to the LEFT of the logo, not stacked beneath it on the rule
+    expect(caption!.x).toBeLessThan(img!.x);
+  });
+});
+
+describe('multi-floor header', () => {
+  it('reports the whole-sheet total across floors when ≥2 heading stamps exist', () => {
+    const doc = houseDoc();
+    doc.labels = [
+      { id: 'a', x: 1000, y: 7000, text: 'Ground Floor', heading: true },
+      { id: 'b', x: 9000, y: 7000, text: 'First Floor', heading: true },
+    ];
+    const sheet = buildFloorSheet(doc, opts());
+    const sub = sheet.shapes.find(
+      (s) => s.kind === 'text' && /floors · Total GIA/.test((s as { text: string }).text),
+    );
+    expect(sub).toBeDefined();
+  });
+
+  it('keeps the single-floor subtitle when there are no heading stamps', () => {
+    const sheet = buildFloorSheet(houseDoc(), opts());
+    const sub = sheet.shapes.find(
+      (s) => s.kind === 'text' && /^Ground Floor · Approx\. GIA/.test((s as { text: string }).text),
+    );
+    expect(sub).toBeDefined();
+  });
+});
+
 describe('export scale bar', () => {
   it('renders a short 0.5 m bar on a typical plan, not an oversized 2 m one', () => {
     const sheet = buildFloorSheet(houseDoc(), opts());

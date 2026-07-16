@@ -47,6 +47,8 @@ import {
   parseLengthToMm,
   pointAlongWall,
   differenceRectilinear,
+  openingRenderCtx,
+  openingShapes,
   ringBounds,
   ringsOverlap,
   roomAreaM2,
@@ -54,6 +56,8 @@ import {
   roomTypeLabel,
   roomPolygon,
   smartRoomLabelOffset,
+  stairShapes,
+  wallComponents,
   ROOM_TYPES,
   ROOM_ZONE_COLORS,
   snapPointToGrid,
@@ -70,7 +74,9 @@ import {
   wallsForRoom,
   wallsForPolygon,
   wallNormal,
+  type FloorDoc,
   type Opening,
+  type Shape as CoreShape,
   type Point,
   type RoomRect,
   type RoomType,
@@ -229,133 +235,103 @@ function SymbolNode({ sym, selected }: { sym: SymbolInstance; selected: boolean 
   );
 }
 
-function StairsTreads({ room }: { room: RoomRect }) {
-  const horizontal = room.w >= room.h;
-  const reversed = room.stairDirection === 'reversed';
-  const spacing = 280;
-  const treads: number[] = [];
-  if (horizontal) {
-    for (let x = spacing; x < room.w - 40; x += spacing) treads.push(x);
-  } else {
-    for (let y = spacing; y < room.h - 40; y += spacing) treads.push(y);
-  }
-  // The arrow shaft runs from `shaftFrom` to `shaftTo` along the long axis;
-  // the chevron sits at `shaftTo` (the "up"/travel-direction end) with its
-  // wings trailing back toward `wingBack`. Flipping `reversed` swaps which
-  // end is which, so the whole arrow points the other way.
-  const dim = horizontal ? room.w : room.h;
-  const shaftFrom = reversed ? dim - 120 : 120;
-  const shaftTo = reversed ? 200 : dim - 200;
-  const wingBack = reversed ? shaftTo + 120 : shaftTo - 120;
+/** Render core display-list shapes as Konva nodes — lets the canvas reuse
+ *  the exact same opening/stairs graphics the export backends draw, so the
+ *  two can never drift. `recolor` maps stroke colours (selection highlight)
+ *  while leaving fills (thresholds) untouched. */
+function CoreShapes({ shapes, recolor }: { shapes: CoreShape[]; recolor?: (c: string) => string }) {
+  const rc = recolor ?? ((c: string) => c);
   return (
     <>
-      {treads.map((t) => (
-        <Line
-          key={t}
-          points={horizontal ? [t, 0, t, room.h] : [0, t, room.w, t]}
-          stroke={WALL_LIGHT}
-          strokeWidth={16}
-          listening={false}
-        />
-      ))}
-      {horizontal ? (
-        <>
-          <Line points={[shaftFrom, room.h / 2, shaftTo, room.h / 2]} stroke={INK} strokeWidth={22} listening={false} />
-          <Line
-            points={[wingBack, room.h / 2 - 110, shaftTo, room.h / 2, wingBack, room.h / 2 + 110]}
-            stroke={INK}
-            strokeWidth={22}
-            listening={false}
-          />
-        </>
-      ) : (
-        <>
-          <Line points={[room.w / 2, shaftFrom, room.w / 2, shaftTo]} stroke={INK} strokeWidth={22} listening={false} />
-          <Line
-            points={[room.w / 2 - 110, wingBack, room.w / 2, shaftTo, room.w / 2 + 110, wingBack]}
-            stroke={INK}
-            strokeWidth={22}
-            listening={false}
-          />
-        </>
-      )}
+      {shapes.map((sh, i) => {
+        if (sh.kind === 'line') {
+          return (
+            <Line
+              key={i}
+              points={[sh.x1, sh.y1, sh.x2, sh.y2]}
+              stroke={rc(sh.stroke)}
+              strokeWidth={sh.width}
+              dash={sh.dash}
+              listening={false}
+            />
+          );
+        }
+        if (sh.kind === 'arc') {
+          const angle = Math.abs(sh.endDeg - sh.startDeg);
+          return (
+            <Arc
+              key={i}
+              x={sh.cx}
+              y={sh.cy}
+              innerRadius={sh.r}
+              outerRadius={sh.r}
+              angle={angle}
+              rotation={Math.min(sh.startDeg, sh.endDeg)}
+              stroke={rc(sh.stroke)}
+              strokeWidth={sh.width}
+              listening={false}
+            />
+          );
+        }
+        if (sh.kind === 'polyline') {
+          return (
+            <Line
+              key={i}
+              points={sh.points.flatMap((p) => [p.x, p.y])}
+              closed={sh.closed}
+              fill={sh.fill}
+              stroke={sh.fill && sh.stroke === sh.fill ? sh.stroke : rc(sh.stroke)}
+              strokeWidth={sh.width}
+              lineJoin="round"
+              listening={false}
+            />
+          );
+        }
+        if (sh.kind === 'rect') {
+          return (
+            <Rect
+              key={i}
+              x={sh.x}
+              y={sh.y}
+              width={sh.w}
+              height={sh.h}
+              fill={sh.fill}
+              stroke={sh.stroke ? rc(sh.stroke) : undefined}
+              strokeWidth={sh.strokeWidth}
+              listening={false}
+            />
+          );
+        }
+        return null;
+      })}
     </>
   );
+}
+
+function StairsTreads({ room }: { room: RoomRect }) {
+  // Rendered inside the room's Group (origin at room.x/y), so generate the
+  // core shapes with a zero-origin copy. Same graphics as the export.
+  return <CoreShapes shapes={stairShapes({ ...room, x: 0, y: 0 })} />;
 }
 
 function OpeningShape({
   wall,
   opening,
   selected,
+  doc,
+  planMode,
 }: {
   wall: Wall;
   opening: Opening;
   selected: boolean;
+  doc: FloorDoc;
+  planMode: 'technical' | 'presentation';
 }) {
-  const { start, end } = openingJambs(wall, opening);
-  const n = wallNormal(wall);
-  const t = wall.thickness;
-  const color = selected ? ACTION : WALL;
-  const colorLight = selected ? ACTION : WALL_LIGHT;
-
-  const parts: React.ReactNode[] = [];
-  if (opening.kind === 'window') {
-    for (const s of [t * 0.28, -t * 0.28]) {
-      parts.push(
-        <Line
-          key={`w${s}`}
-          points={[start.x + n.x * s, start.y + n.y * s, end.x + n.x * s, end.y + n.y * s]}
-          stroke={color}
-          strokeWidth={22}
-          listening={false}
-        />,
-      );
-    }
-    for (const p of [start, end]) {
-      parts.push(
-        <Line
-          key={`j${p.x},${p.y}`}
-          points={[p.x + n.x * (t / 2), p.y + n.y * (t / 2), p.x - n.x * (t / 2), p.y - n.y * (t / 2)]}
-          stroke={color}
-          strokeWidth={22}
-          listening={false}
-        />,
-      );
-    }
-  } else {
-    const { hinge, tip, startDeg, endDeg, delta } = doorSwingGeometry(wall, opening);
-    parts.push(
-      <Line
-        key="leaf"
-        points={[hinge.x, hinge.y, tip.x, tip.y]}
-        stroke={colorLight}
-        strokeWidth={25}
-        listening={false}
-      />,
-      <Arc
-        key="swing"
-        x={hinge.x}
-        y={hinge.y}
-        innerRadius={opening.widthMm}
-        outerRadius={opening.widthMm}
-        angle={Math.abs(delta)}
-        rotation={delta >= 0 ? startDeg : endDeg}
-        stroke={colorLight}
-        strokeWidth={20}
-        listening={false}
-      />,
-    );
-  }
-
-  return (
-    <Group>
-      {parts}
-      {/* invisible grab/hit region across the opening */}
-      {/* No hit region — openings are selected/dragged via the Stage-level
-          geometric pointer pipeline (pickEntityAt + openingDrag), which is
-          browser-independent. */}
-    </Group>
-  );
+  // Exactly the shapes the export draws (styles, thresholds, projections),
+  // recoloured to the selection accent when picked. Openings are selected
+  // and dragged via the Stage-level geometric pipeline — nothing listens.
+  const shapes = openingShapes(wall, opening, openingRenderCtx(doc, wall, opening, planMode));
+  return <CoreShapes shapes={shapes} recolor={selected ? () => ACTION : undefined} />;
 }
 
 export function EditorCanvas({ className = '' }: { className?: string }) {
@@ -2452,18 +2428,32 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
                           fillAfterStrokeEnabled
                         />
                         {showRoomLabels && (
-                          <Text
-                            text={areaText}
-                            width={r.w}
-                            y={r.h / 2 + 60 * ls}
-                            align="center"
-                            fontSize={185 * ls}
-                            fontFamily={MONO}
-                            fill={FAINT}
-                            stroke="#FFFFFF"
-                            strokeWidth={26 * fit}
-                            fillAfterStrokeEnabled
-                          />
+                          <>
+                            <Text
+                              text={areaText}
+                              width={r.w}
+                              y={r.h / 2 + 60 * ls}
+                              align="center"
+                              fontSize={185 * ls}
+                              fontFamily={MONO}
+                              fill={FAINT}
+                              stroke="#FFFFFF"
+                              strokeWidth={26 * fit}
+                              fillAfterStrokeEnabled
+                            />
+                            <Text
+                              text={formatDims(r.displayWMm ?? r.w, r.displayLMm ?? r.h)}
+                              width={r.w}
+                              y={r.h / 2 + 285 * ls}
+                              align="center"
+                              fontSize={160 * ls}
+                              fontFamily={MONO}
+                              fill={FAINT}
+                              stroke="#FFFFFF"
+                              strokeWidth={24 * fit}
+                              fillAfterStrokeEnabled
+                            />
+                          </>
                         )}
                       </Group>
                     );
@@ -2563,17 +2553,20 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
               lines the exported sheet shows, kept live on the canvas so the
               edit view is WYSIWYG with the export. Dashed + lighter so they
               read as secondary to the per-wall labels. */}
-          {showDimensions && doc.walls.length > 0 && (() => {
-            const minX = Math.min(...doc.walls.flatMap((w) => [w.a.x, w.b.x]));
-            const maxX = Math.max(...doc.walls.flatMap((w) => [w.a.x, w.b.x]));
-            const minY = Math.min(...doc.walls.flatMap((w) => [w.a.y, w.b.y]));
-            const maxY = Math.max(...doc.walls.flatMap((w) => [w.a.y, w.b.y]));
-            if (maxX - minX < 1 || maxY - minY < 1) return null;
+          {showDimensions && doc.walls.length > 0 && wallComponents(doc.walls).map((group, gi) => {
+            // One width/height pair per detached structure — matching the
+            // exported sheet, so two storeys drawn side by side each get
+            // their own overall dimensions instead of one spanning line.
+            const minX = Math.min(...group.flatMap((w) => [w.a.x, w.b.x]));
+            const maxX = Math.max(...group.flatMap((w) => [w.a.x, w.b.x]));
+            const minY = Math.min(...group.flatMap((w) => [w.a.y, w.b.y]));
+            const maxY = Math.max(...group.flatMap((w) => [w.a.y, w.b.y]));
+            if (maxX - minX < 400 && maxY - minY < 400) return null;
             const gap = 700;
             const topY = minY - gap;
             const leftX = minX - gap;
             return (
-              <Group listening={false}>
+              <Group key={`dims-${gi}`} listening={false}>
                 <Line points={[minX, topY, maxX, topY]} stroke={DIM_LINE} strokeWidth={16} dash={[160, 110]} />
                 <Line points={[minX, topY - 110, minX, topY + 110]} stroke={DIM_LINE} strokeWidth={16} />
                 <Line points={[maxX, topY - 110, maxX, topY + 110]} stroke={DIM_LINE} strokeWidth={16} />
@@ -2613,14 +2606,14 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
                 />
               </Group>
             );
-          })()}
+          })}
 
           {/* Openings */}
           {doc.openings.map((o) => {
             const wall = findWall(doc, o.wallId);
             if (!wall) return null;
             const effective = openingDraft && o.id === openingDraft.id ? { ...o, offsetMm: openingDraft.offsetMm } : o;
-            return <OpeningShape key={o.id} wall={wall} opening={effective} selected={selectedIds.includes(o.id)} />;
+            return <OpeningShape key={o.id} wall={wall} opening={effective} selected={selectedIds.includes(o.id)} doc={doc} planMode={planMode} />;
           })}
 
           {/* Furniture symbols — non-interactive; selection + drag come from
@@ -2651,12 +2644,12 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
                 x={label.x + off.x}
                 y={label.y + off.y}
                 text={label.text}
-                fontSize={220 * ls}
+                fontSize={(label.heading ? 400 : 220) * ls}
                 fontFamily={SANS}
-                fontStyle="600"
+                fontStyle={label.heading ? '700' : '600'}
                 fill={selectedIds.includes(label.id) ? ACTION : INK}
                 align="center"
-                offsetX={label.text.length * 55 * ls}
+                offsetX={label.text.length * (label.heading ? 100 : 55) * ls}
                 listening={false}
               />
             );

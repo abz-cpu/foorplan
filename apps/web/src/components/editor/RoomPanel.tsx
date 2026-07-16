@@ -94,6 +94,36 @@ function SectionLabel({ children }: { children: string }) {
   );
 }
 
+/** Row of small mutually-exclusive style pills (door/window/stair styles). */
+function StylePills<T extends string>({
+  value,
+  options,
+  onChange,
+}: {
+  value: T;
+  options: { value: T; label: string }[];
+  onChange: (v: T) => void;
+}) {
+  return (
+    <div className="flex gap-1">
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          onClick={() => onChange(o.value)}
+          className={`h-7 flex-1 cursor-pointer rounded-md border text-[10.5px] font-semibold ${
+            value === o.value
+              ? 'border-action bg-action-soft text-brand'
+              : 'border-input bg-white text-ink-faint hover:bg-shell'
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function DeleteButton({ label, onClick }: { label: string; onClick: () => void }) {
   return (
     <button
@@ -382,6 +412,8 @@ export function RoomPanel({
   const [calibrateLen, setCalibrateLen] = useState('');
   const [calibrateMode, setCalibrateMode] = useState<'uniform' | 'x' | 'y'>('uniform');
   const [wallDisplayLen, setWallDisplayLen] = useState('');
+  const [displayW, setDisplayW] = useState('');
+  const [displayL, setDisplayL] = useState('');
 
   // Clear the detect-rooms preview if the panel unmounts mid-hover
   // (e.g. the mobile sheet closes) so the canvas wash never gets stuck on.
@@ -404,6 +436,10 @@ export function RoomPanel({
       wall?.displayLengthMm !== undefined ? formatMmForInput(wall.displayLengthMm) : '',
     );
   }, [wall?.id, wall?.displayLengthMm, wall]);
+  useEffect(() => {
+    setDisplayW(room?.displayWMm !== undefined ? formatMmForInput(room.displayWMm) : '');
+    setDisplayL(room?.displayLMm !== undefined ? formatMmForInput(room.displayLMm) : '');
+  }, [room?.id, room?.displayWMm, room?.displayLMm, room]);
   useEffect(() => {
     setLabelText(label?.text ?? '');
   }, [label?.id, label?.text, label]);
@@ -433,6 +469,22 @@ export function RoomPanel({
       setWallLen(formatMmForInput(currentMm));
     }
   };
+  const commitDisplaySize = (axis: 'w' | 'l') => {
+    if (!room) return;
+    const raw = (axis === 'w' ? displayW : displayL).trim();
+    const key = axis === 'w' ? 'displayWMm' : 'displayLMm';
+    if (raw === '') {
+      if (room[key] !== undefined) {
+        commit('Clear size override', updateRoom(doc, room.id, { [key]: undefined }));
+      }
+      return;
+    }
+    const mm = parseLengthToMm(raw);
+    if (mm !== null && mm > 0 && mm !== room[key]) {
+      commit('Override printed size', updateRoom(doc, room.id, { [key]: mm }));
+    }
+  };
+
   const commitWallDisplayLen = () => {
     if (!wall) return;
     const raw = wallDisplayLen.trim();
@@ -724,6 +776,18 @@ export function RoomPanel({
                   <StatTile label="Length" value={formatMmAsM(room.h)} />
                 </div>
               </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-ink-mid">Style</label>
+                <StylePills
+                  value={room.stairStyle ?? 'straight'}
+                  options={[
+                    { value: 'straight', label: 'Straight' },
+                    { value: 'uturn', label: 'U-turn' },
+                    { value: 'spiral', label: 'Spiral' },
+                  ]}
+                  onChange={(v) => commit('Set stair style', updateRoom(doc, room.id, { stairStyle: v }))}
+                />
+              </div>
               <PanelButton
                 icon={<FlipHorizontal2 size={13} />}
                 label="Flip direction"
@@ -820,6 +884,31 @@ export function RoomPanel({
                   <StatTile label="Floor area" value={formatArea(roomAreaM2(room), areaUnits, 2)} accent />
                   <StatTile label="Perimeter" value={`${roomPerimeterM(room).toFixed(1)} m`} />
                 </div>
+                <label className="mb-1.5 mt-3 block text-xs font-semibold text-ink-mid">
+                  Printed size override <span className="font-normal text-ink-ghost">(optional)</span>
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    value={displayW}
+                    onChange={(e) => setDisplayW(e.target.value)}
+                    onBlur={() => commitDisplaySize('w')}
+                    onKeyDown={blurOnEnter}
+                    placeholder="W, e.g. 3.62m"
+                    className={textInputClass}
+                  />
+                  <input
+                    value={displayL}
+                    onChange={(e) => setDisplayL(e.target.value)}
+                    onBlur={() => commitDisplaySize('l')}
+                    onKeyDown={blurOnEnter}
+                    placeholder="L, e.g. 4.20m"
+                    className={textInputClass}
+                  />
+                </div>
+                <p className="mt-1 text-[11px] leading-snug text-ink-ghost">
+                  Site-measured values for the printed W × L line only — the drawn room doesn't
+                  change. Blank = drawn size.
+                </p>
                 <p className="mt-2.5 text-[11px] leading-relaxed text-ink-ghost">
                   Ceiling height is set for the whole floor — see Floor summary (deselect this room).
                 </p>
@@ -862,6 +951,35 @@ export function RoomPanel({
                   <StatTile label="On wall" value={formatMmAsM(wallLengthMm(openingWall))} />
                   <StatTile label="From end" value={formatMmAsM(opening.offsetMm)} />
                 </div>
+              )}
+              <label className="mb-1.5 mt-3 block text-xs font-semibold text-ink-mid">Style</label>
+              {opening.kind === 'door' ? (
+                <StylePills
+                  value={opening.doorStyle ?? 'single'}
+                  options={[
+                    { value: 'single', label: 'Single' },
+                    { value: 'double', label: 'Double' },
+                    { value: 'sliding', label: 'Sliding' },
+                  ]}
+                  onChange={(v) => commit('Set door style', updateOpening(doc, opening.id, { doorStyle: v }))}
+                />
+              ) : (
+                <>
+                  <StylePills
+                    value={opening.windowStyle ?? 'standard'}
+                    options={[
+                      { value: 'standard', label: 'Standard' },
+                      { value: 'bay', label: 'Bay' },
+                      { value: 'box', label: 'Box' },
+                    ]}
+                    onChange={(v) => commit('Set window style', updateOpening(doc, opening.id, { windowStyle: v }))}
+                  />
+                  {(opening.windowStyle === 'bay' || opening.windowStyle === 'box') && (
+                    <p className="mt-1 text-[11px] leading-snug text-ink-ghost">
+                      The projection is drawn on the outside of the wall automatically.
+                    </p>
+                  )}
+                </>
               )}
               {opening.kind === 'door' && (
                 <div className="mt-3.5 flex flex-col gap-2">
@@ -962,6 +1080,19 @@ export function RoomPanel({
                 onKeyDown={blurOnEnter}
                 className={textInputClass}
               />
+              <label className="mb-1.5 mt-3 block text-xs font-semibold text-ink-mid">Style</label>
+              <StylePills
+                value={label.heading ? 'heading' : 'normal'}
+                options={[
+                  { value: 'normal', label: 'Normal' },
+                  { value: 'heading', label: 'Heading (floor title)' },
+                ]}
+                onChange={(v) => commit('Set label style', updateLabel(doc, label.id, { heading: v === 'heading' }))}
+              />
+              <p className="mt-1 text-[11px] leading-snug text-ink-ghost">
+                Headings title a structure — "Ground Floor", "First Floor" — when several storeys are
+                drawn side by side on one canvas.
+              </p>
               <DeleteButton
                 label="Delete label"
                 onClick={() => {

@@ -63,6 +63,8 @@ export interface RoomRect {
   includeInGia: boolean;
   /** Stairs only: which way the up/down arrow points. Undefined = 'forward'. */
   stairDirection?: 'forward' | 'reversed';
+  /** Stairs only: flight shape. Undefined = 'straight'. */
+  stairStyle?: 'straight' | 'uturn' | 'spiral';
   /** How far the name/area label has been dragged from the room's centre,
    *  mm — lets the label be moved off furniture placed mid-room.
    *  Undefined = centred (with a smart auto-nudge off furniture/walls). */
@@ -70,6 +72,10 @@ export interface RoomRect {
   /** Font scale for the name/area label, resized by its on-canvas handle.
    *  Undefined = 1 (default size). */
   labelScale?: number;
+  /** Override the PRINTED width/length line only (site-measured values when
+   *  the drawing isn't exact) — never changes the drawn rectangle. */
+  displayWMm?: number;
+  displayLMm?: number;
   /** Non-rectangular rooms (bays, chamfers, L/T/U shapes) carry their exact
    *  outline here, in absolute mm. When present it's the room's true shape
    *  and x/y/w/h are its bounding box (kept for selection fallback and
@@ -84,6 +90,9 @@ export interface TextLabel {
   text: string;
   /** Font scale, resized by the label's on-canvas handle. Undefined = 1. */
   scale?: number;
+  /** Heading style: bigger + bold — for titling structures drawn side by
+   *  side on one canvas ("Ground Floor", "First Floor"). */
+  heading?: boolean;
 }
 
 /** A door or window cut into a wall, positioned along it. */
@@ -99,6 +108,11 @@ export interface Opening {
   /** door only: which side of the wall the door swings toward — 'a' is
    *  wallNormal(wall) as-is, 'b' is the opposite side. Undefined = 'a'. */
   swingSide?: 'a' | 'b';
+  /** door only: leaf arrangement. Undefined = 'single'. */
+  doorStyle?: 'single' | 'double' | 'sliding';
+  /** window only: 'bay' bumps out as an angled projection, 'box' as a square
+   *  one — drawn as plan graphics outside the wall line. Undefined = 'standard'. */
+  windowStyle?: 'standard' | 'bay' | 'box';
 }
 
 /** Reference photo (sketch/old plan) rendered under the grid for tracing. */

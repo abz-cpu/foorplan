@@ -83,6 +83,27 @@ describe('multi-floor header', () => {
     );
     expect(sub).toBeDefined();
   });
+
+  it('drops the floor name + ceiling when two detached floor plans are drawn untitled', () => {
+    // Two separate boxes side by side, no heading labels — the case the user
+    // hit where the header still said "Ground Floor · Ceiling".
+    let doc = emptyFloorDoc();
+    doc = { ...doc, walls: [
+      wall('a-t', 0, 0, 5000, 0), wall('a-r', 5000, 0, 5000, 4000),
+      wall('a-b', 0, 4000, 5000, 4000), wall('a-l', 0, 0, 0, 4000),
+      wall('b-t', 9000, 0, 14000, 0), wall('b-r', 14000, 0, 14000, 4000),
+      wall('b-b', 9000, 4000, 14000, 4000), wall('b-l', 9000, 0, 9000, 4000),
+    ] };
+    doc.rooms = [
+      { id: 'r1', x: 100, y: 100, w: 4800, h: 3800, name: 'Living', type: 'Living Room', ceilingHeightM: 2.4, includeInGia: true },
+      { id: 'r2', x: 9100, y: 100, w: 4800, h: 3800, name: 'Bed', type: 'Bedroom', ceilingHeightM: 2.7, includeInGia: true },
+    ];
+    const sheet = buildFloorSheet(doc, opts());
+    const texts = sheet.shapes.filter((s) => s.kind === 'text').map((s) => (s as { text: string }).text);
+    expect(texts.some((t) => /floors · Total GIA/.test(t))).toBe(true);
+    expect(texts.some((t) => /Ground Floor · Approx/.test(t))).toBe(false);
+    expect(texts.some((t) => /Ceiling/.test(t))).toBe(false);
+  });
 });
 
 describe('export scale bar', () => {

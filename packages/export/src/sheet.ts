@@ -6,6 +6,7 @@ import {
   floorHasMixedCeilings,
   formatArea,
   transformShapes,
+  wallComponents,
   type AreaUnits,
   type FloorDoc,
   type Point,
@@ -102,19 +103,32 @@ export function buildFloorSheet(doc: FloorDoc, opts: SheetOptions): Sheet {
   const [pw, ph] = PAPER_MM[opts.paper];
   const [W, H] = opts.orientation === 'portrait' ? [pw, ph] : [ph, pw];
   const margin = 12;
-  const headerH = 17;
+  const headerH = 21;
 
   const shapes: Shape[] = [];
   const brand = opts.brand ?? {};
 
   /* Header: address + floor/GIA, brand mark (logo or company name) right.
-     When several storeys are drawn on one sheet (≥2 heading "floor stamps"),
-     the header stops asserting a single floor/ceiling — each stamp carries
-     its own — and reports the whole-sheet total instead. */
+     When several storeys are drawn on one sheet, the header stops asserting a
+     single floor name / ceiling — each floor's stamp carries its own — and
+     reports the whole-sheet total instead. "Several storeys" = ≥2 heading
+     "floor stamps", OR ≥2 physically detached wall structures (floor plans
+     drawn side by side without titles). */
   const floorHeadings = doc.labels.filter((l) => l.heading);
-  const multiFloor = floorHeadings.length >= 2;
+  const structureCount = wallComponents(doc.walls).filter((g) => {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const w of g) for (const p of [w.a, w.b]) {
+      if (p.x < minX) minX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y > maxY) maxY = p.y;
+    }
+    return Math.max(maxX - minX, maxY - minY) > 1500; // ignore stray offcuts
+  }).length;
+  const floorCount = Math.max(floorHeadings.length, structureCount);
+  const multiFloor = floorCount >= 2;
   const subtitle = multiFloor
-    ? `${floorHeadings.length} floors · Total GIA ${formatArea(floorGiaM2(doc), opts.areaUnits ?? 'm2')}`
+    ? `${floorCount} floors · Total GIA ${formatArea(floorGiaM2(doc), opts.areaUnits ?? 'm2')}`
     : `${opts.floorName} · Approx. GIA ${formatArea(floorGiaM2(doc), opts.areaUnits ?? 'm2')}` +
       (doc.rooms.length > 0
         ? ` · Ceiling ${floorCeilingHeightM(doc).toFixed(2)}m${floorHasMixedCeilings(doc) ? ' (typical)' : ''}`
@@ -134,15 +148,17 @@ export function buildFloorSheet(doc: FloorDoc, opts: SheetOptions): Sheet {
   );
   const company = (brand.companyName && brand.companyName.trim()) || (brand.logoDataUrl ? '' : 'L&D ENERGY');
   if (brand.logoDataUrl) {
-    // Right-aligned logo, larger, capped to the header band. A typed company
-    // name sits to its LEFT, vertically centred, so it never crowds the rule.
-    const logoH = 11.5;
+    // Right-aligned logo, as large as the header band allows. The uploaded
+    // logo has its blank margin trimmed at upload time, so it fills this box
+    // instead of floating small in whitespace. A typed company name sits to
+    // its LEFT, vertically centred, so it never crowds the rule.
+    const logoH = headerH - 4; // fills the band, leaving a hair above the rule
     const aspect = brand.logoAspect && brand.logoAspect > 0 ? brand.logoAspect : 3;
-    const logoW = Math.min(logoH * aspect, 62);
+    const logoW = Math.min(logoH * aspect, W * 0.42);
     shapes.push({
       kind: 'image',
       x: W - margin - logoW,
-      y: margin,
+      y: margin - 1,
       w: logoW,
       h: logoH,
       href: brand.logoDataUrl,
@@ -151,7 +167,7 @@ export function buildFloorSheet(doc: FloorDoc, opts: SheetOptions): Sheet {
       shapes.push({
         kind: 'text',
         x: W - margin - logoW - 3.5,
-        y: margin + logoH / 2 + 1,
+        y: margin + logoH / 2,
         text: company,
         size: 3.0,
         color: '#33433E',

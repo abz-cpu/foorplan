@@ -1,0 +1,49 @@
+# Build, sign, and publish the OmniPlan Windows installer + updater manifest.
+# Publishes to the release channel repo (Hvssmuh/OmniPlan-Releases).
+#
+# Required repo secrets:
+#   TAURI_SIGNING_PRIVATE_KEY           minisign private key (updater)
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  its password
+#   RELEASES_REPO_TOKEN                 PAT with contents:write on OmniPlan-Releases
+
+name: release-desktop
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build + sign installer
+        uses: tauri-apps/tauri-action@v0
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          GITHUB_TOKEN: ${{ secrets.RELEASES_REPO_TOKEN }}
+        with:
+          projectPath: apps/web
+          # Publish the artifacts + auto-generated latest.json to the channel repo.
+          owner: Hvssmuh
+          repo: OmniPlan-Releases
+          tagName: ${{ github.ref_name }}
+          releaseName: "OmniPlan ${{ github.ref_name }}"
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: true
+          updaterJsonPreferNsis: true

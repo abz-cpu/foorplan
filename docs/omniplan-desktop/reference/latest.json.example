@@ -1,0 +1,11 @@
+{
+  "version": "0.1.1",
+  "notes": "Bug fixes and improvements.",
+  "pub_date": "2026-01-01T00:00:00Z",
+  "platforms": {
+    "windows-x86_64": {
+      "signature": "<contents of OmniPlan_0.1.1_x64-setup.exe.sig produced by the tauri signer>",
+      "url": "https://github.com/Hvssmuh/OmniPlan-Releases/releases/download/v0.1.1/OmniPlan_0.1.1_x64-setup.exe"
+    }
+  }
+}

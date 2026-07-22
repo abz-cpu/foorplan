@@ -22,8 +22,8 @@ const ICONS: Record<string, string> = {
 export const TOOL_HINTS: Record<Tool, string> = {
   select: 'Select — tap anything to edit it, drag empty space to box-select, hold Space to pan',
   pan: 'Pan — drag anywhere to move around the canvas',
-  wall: 'Wall — click to place points; hold Shift for straight, X to flip internal/external',
-  room: 'Room — drag a rectangle (it fits around existing rooms), or click corners for any L/T/U shape (Enter to finish)',
+  wall: 'Wall-by-Wall — click to place points; after the first click press an arrow key, type a length and Enter for an exact wall; hold Shift for straight',
+  room: 'QuickDraw — drag a rectangle (it fits around existing rooms), or click corners for any L/T/U shape (Enter to finish)',
   door: 'Door — click a wall to place, drag with Select to slide',
   window: 'Window — click a wall to place, drag with Select to slide',
   stairs: 'Stairs — drag a rectangle to place a flight',
@@ -40,8 +40,6 @@ interface PaletteEntry {
 const ENTRIES: PaletteEntry[] = [
   { id: 'select', tip: 'Select (V)' },
   { id: 'pan', tip: 'Pan (H) — drag to move the view' },
-  { id: 'wall', tip: 'Wall (W)' },
-  { id: 'room', tip: 'Room (R)' },
   { id: 'door', tip: 'Door (D)' },
   { id: 'window', tip: 'Window (N)' },
   { id: 'stairs', tip: 'Stairs (S)' },

@@ -8,7 +8,6 @@ import {
   Download,
   FlipHorizontal2,
   ImagePlus,
-  Layers,
   ListChecks,
   Lock,
   LockOpen,
@@ -17,17 +16,13 @@ import {
   RotateCcw,
   RotateCw,
   Ruler,
-  ScanSearch,
   Sparkles,
   Trash2,
 } from 'lucide-react';
 import {
-  applyAutoWallThickness,
-  autoClassifyWallThickness,
   DEFAULT_WALL_THICKNESS_MM,
   deleteEntities,
   deleteEntity,
-  detectRooms,
   EXTERNAL_WALL_THICKNESS_MM,
   findRoomOverlaps,
   findWall,
@@ -380,7 +375,6 @@ export function RoomPanel({
   const selectedIds = useEditorStore((s) => s.selectedIds);
   const commit = useEditorStore((s) => s.commit);
   const select = useEditorStore((s) => s.select);
-  const setDetectPreview = useEditorStore((s) => s.setDetectPreview);
   const areaUnits = useEditorStore((s) => s.areaUnits);
   const focusNameNonce = useEditorStore((s) => s.focusNameNonce);
   // Double-click / right-click "Rename" on the canvas focuses the name field.
@@ -394,7 +388,6 @@ export function RoomPanel({
       });
     }
   }, [focusNameNonce]);
-  const autoWallThickness = useEditorStore((s) => s.autoWallThickness);
   const fitToView = useEditorStore((s) => s.fitToView);
   const toast = useToast();
 
@@ -423,10 +416,6 @@ export function RoomPanel({
   const [wallDisplayLen, setWallDisplayLen] = useState('');
   const [displayW, setDisplayW] = useState('');
   const [displayL, setDisplayL] = useState('');
-
-  // Clear the detect-rooms preview if the panel unmounts mid-hover
-  // (e.g. the mobile sheet closes) so the canvas wash never gets stuck on.
-  useEffect(() => () => setDetectPreview(false), [setDetectPreview]);
 
   useEffect(() => {
     setName(room?.name ?? '');
@@ -548,43 +537,6 @@ export function RoomPanel({
     }
     fitToView();
     toast(`Plan scaled ×${factor.toFixed(3)} to match ${(targetMm / 1000).toFixed(2)}m`);
-  };
-
-  const handleDetectRooms = async () => {
-    const found = detectRooms(doc);
-    if (found.length === 0) {
-      toast('No new enclosed rooms found');
-      return;
-    }
-    const floorIndex = Math.max(
-      floors.findIndex((f) => f.id === floorId),
-      0,
-    );
-    // Name the detected rooms immediately — closed wall loops should arrive
-    // as usable rooms, not generic "Room N" placeholders needing a second
-    // manual step in the Assistant tab.
-    const withNames = { ...doc, rooms: [...doc.rooms, ...found] };
-    const suggestions = await suggestRoomNamesSmart(withNames, floorIndex);
-    let next = withNames;
-    for (const s of suggestions) {
-      if (found.some((f) => f.id === s.roomId)) {
-        next = updateRoom(next, s.roomId, { name: s.name, type: s.type });
-      }
-    }
-    // Rooms just appeared, so walls become classifiable — boundary walls
-    // turn external, partitions internal (custom thicknesses untouched).
-    if (autoWallThickness) next = autoClassifyWallThickness(next);
-    commit('Detect rooms', next);
-    toast(`${found.length} room${found.length === 1 ? '' : 's'} detected and named`);
-  };
-
-  const handleAutoWallThickness = () => {
-    if (doc.walls.length === 0) {
-      toast('Draw some walls first');
-      return;
-    }
-    commit('Auto-set wall thickness', applyAutoWallThickness(doc));
-    toast('External walls thickened, internal walls reset');
   };
 
   const northAngleDeg = doc.northAngleDeg ?? 0;
@@ -1444,10 +1396,7 @@ export function RoomPanel({
                     <button
                       type="button"
                       onClick={() => {
-                        let next = trimRoomOverlaps(doc);
-                        // Rooms that stopped covering their neighbours often
-                        // flip nearby walls back to the right class.
-                        if (autoWallThickness) next = autoClassifyWallThickness(next);
+                        const next = trimRoomOverlaps(doc);
                         commit('Trim room overlaps', next);
                         toast('Overlaps trimmed — the larger room of each pair was cut around the smaller');
                       }}
@@ -1458,22 +1407,6 @@ export function RoomPanel({
                   </div>
                 )}
                 <div className="mt-3 flex flex-col gap-2">
-                  <PanelButton
-                    icon={<ScanSearch size={13} />}
-                    label="Detect rooms from walls"
-                    onClick={() => {
-                      setDetectPreview(false);
-                      void handleDetectRooms();
-                    }}
-                    onMouseEnter={() => setDetectPreview(true)}
-                    onMouseLeave={() => setDetectPreview(false)}
-                  />
-                  <p className="text-[11px] leading-relaxed text-ink-ghost">
-                    Each closed loop of walls becomes one room, following bays and L/T/U shapes to
-                    the inner wall face. Prefer to draw it directly? With the Room tool, a dragged
-                    rectangle is carved to fit around any rooms it covers (so it never overlaps them)
-                    — or click the corners for any shape (Enter to finish).
-                  </p>
                   <PanelButton
                     icon={<ListChecks size={13} />}
                     label="View room schedule"
@@ -1488,11 +1421,6 @@ export function RoomPanel({
                     icon={<Download size={13} />}
                     label="Export for EPC (CSV)"
                     onClick={onDownloadEpcCsv}
-                  />
-                  <PanelButton
-                    icon={<Layers size={13} />}
-                    label="Auto-set wall thickness"
-                    onClick={handleAutoWallThickness}
                   />
                 </div>
                 {onSurveyChange && (

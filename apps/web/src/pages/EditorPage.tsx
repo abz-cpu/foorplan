@@ -45,6 +45,7 @@ import { ExportModal } from '../components/export/ExportModal';
 import { RoomPanel } from '../components/editor/RoomPanel';
 import { ShortcutsModal } from '../components/editor/ShortcutsModal';
 import { ToolPalette, TOOL_HINTS } from '../components/editor/ToolPalette';
+import { DrawPanel } from '../components/editor/DrawPanel';
 import { repos } from '../lib/repos';
 import { useIsMobile } from '../lib/useIsMobile';
 
@@ -198,8 +199,6 @@ export default function EditorPage() {
   const toggleShowFurniture = useEditorStore((s) => s.toggleShowFurniture);
   const autoRoomWalls = useEditorStore((s) => s.autoRoomWalls);
   const toggleAutoRoomWalls = useEditorStore((s) => s.toggleAutoRoomWalls);
-  const autoWallThickness = useEditorStore((s) => s.autoWallThickness);
-  const toggleAutoWallThickness = useEditorStore((s) => s.toggleAutoWallThickness);
   const planMode = useEditorStore((s) => s.planMode);
   const setPlanMode = useEditorStore((s) => s.setPlanMode);
   const areaUnits = useEditorStore((s) => s.areaUnits);
@@ -696,6 +695,10 @@ export default function EditorPage() {
             className="absolute inset-x-0 bottom-0 z-10 pb-[env(safe-area-inset-bottom)] md:hidden"
           />
 
+          {/* QuickDraw / Wall-by-Wall entry point (replaces the old Wall & Room
+              palette buttons). */}
+          <DrawPanel className="absolute left-3.5 top-3.5 z-10" />
+
           {showWelcome && (
             <div className="absolute left-3.5 right-3.5 top-[68px] z-10 rounded-[13px] border border-line bg-white p-4 shadow-float md:left-auto md:w-[300px]">
               <div className="flex items-start justify-between gap-2">
@@ -724,8 +727,8 @@ export default function EditorPage() {
                 <li className="flex items-start gap-2 text-[12.5px] text-ink-soft">
                   <ScanSearch size={14} className="mt-0.5 flex-none text-action" />
                   <span>
-                    "Detect rooms from walls" in the panel on the right finds enclosed rooms
-                    automatically.
+                    Start a room from the Draw panel (top-left): QuickDraw a rectangle, or go
+                    Wall-by-Wall.
                   </span>
                 </li>
               </ul>
@@ -754,9 +757,11 @@ export default function EditorPage() {
                 <div className="pointer-events-auto w-[360px] max-w-full rounded-2xl border border-line bg-white/95 p-5 text-center shadow-float">
                   <p className="text-[14px] font-bold tracking-tight">This floor is empty</p>
                   <p className="mt-1.5 text-[12.5px] leading-relaxed text-ink-faint">
-                    Press <kbd className="rounded border border-line bg-shell px-1 font-mono text-[11px] font-semibold">W</kbd> to
-                    draw walls, or <kbd className="rounded border border-line bg-shell px-1 font-mono text-[11px] font-semibold">R</kbd> to
-                    drag out a room — walls appear around it automatically.
+                    Use the <span className="font-semibold text-ink-mid">Draw</span> panel (top-left):{' '}
+                    <kbd className="rounded border border-line bg-shell px-1 font-mono text-[11px] font-semibold">R</kbd> to
+                    QuickDraw a room, or{' '}
+                    <kbd className="rounded border border-line bg-shell px-1 font-mono text-[11px] font-semibold">W</kbd> to
+                    go Wall-by-Wall — walls appear around a room automatically.
                   </p>
                   {perimeterSource && (
                     <button
@@ -973,12 +978,9 @@ export default function EditorPage() {
                       <span className="text-[13px] font-medium">Auto walls around rooms</span>
                       <Toggle dark checked={autoRoomWalls} onChange={toggleAutoRoomWalls} title="Auto walls around rooms" />
                     </div>
-                    <div className="mt-3 flex items-center justify-between">
-                      <span className="text-[13px] font-medium">Auto wall thickness</span>
-                      <Toggle dark checked={autoWallThickness} onChange={toggleAutoWallThickness} title="Auto wall thickness" />
-                    </div>
                     <p className="mt-2 text-[11.5px] leading-snug text-white/50">
-                      Drawn rooms get enclosed automatically; boundary walls come out external (200mm), partitions internal (100mm).
+                      Drawn rooms get enclosed with walls automatically. Set each wall's thickness
+                      yourself in the panel when a wall is selected.
                     </p>
                   </div>
                 </>

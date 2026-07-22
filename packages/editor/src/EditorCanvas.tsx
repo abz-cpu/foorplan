@@ -21,12 +21,10 @@ import {
   addRoom,
   addSymbol,
   addWall,
-  autoClassifyWallThickness,
   clampOpeningOffset,
   DEFAULT_CEILING_HEIGHT_M,
   DEFAULT_DOOR_WIDTH_MM,
   DEFAULT_WALL_THICKNESS_MM,
-  detectRooms,
   EXTERNAL_WALL_THICKNESS_MM,
   DEFAULT_WINDOW_WIDTH_MM,
   arcSweep,
@@ -361,7 +359,6 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
   const autoRoomWalls = useEditorStore((s) => s.autoRoomWalls);
   const areaUnits = useEditorStore((s) => s.areaUnits);
   const requestFocusName = useEditorStore((s) => s.requestFocusName);
-  const autoWallThickness = useEditorStore((s) => s.autoWallThickness);
   const select = useEditorStore((s) => s.select);
   const toggleSelect = useEditorStore((s) => s.toggleSelect);
   const selectMany = useEditorStore((s) => s.selectMany);
@@ -486,13 +483,6 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
   }, [tool]);
 
   const drawThickness = drawExternal ? EXTERNAL_WALL_THICKNESS_MM : DEFAULT_WALL_THICKNESS_MM;
-
-  const detectPreview = useEditorStore((s) => s.detectPreview);
-  // Only computed while the Detect button is hovered; pure function of doc.
-  const detectPreviewRooms = useMemo(
-    () => (detectPreview ? detectRooms(doc) : []),
-    [detectPreview, doc],
-  );
 
   /* Laser-measure keyboard wall entry — only listens while the Wall tool is
      active and a chain is in progress (there's a fixed start point to
@@ -1166,12 +1156,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
         setWallStart(pt);
         setHoverPt(pt);
       } else if (distance(wallStart, pt) >= 10) {
-        let next = addWall(doc, { id: newId(), a: wallStart, b: pt, thickness: drawThickness });
-        // Auto internal/external thickness: with rooms on the plan, a wall
-        // on the exposed boundary becomes 200mm and partitions 100mm as you
-        // draw — no re-typing afterwards. Custom thicknesses are preserved,
-        // and with no rooms yet nothing is touched.
-        if (autoWallThickness) next = autoClassifyWallThickness(next);
+        const next = addWall(doc, { id: newId(), a: wallStart, b: pt, thickness: drawThickness });
         commit('Draw wall', next);
         setWallStart(pt);
         setHoverPt(pt);
@@ -1450,12 +1435,11 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
       let next = addRoom(doc, room);
       if (autoRoomWalls) {
         for (const wall of wallsForPolygon(doc, pts)) next = addWall(next, wall);
-        if (autoWallThickness) next = autoClassifyWallThickness(next);
       }
       commit('Add room', next);
       select(room.id);
     },
-    [doc, autoRoomWalls, autoWallThickness, commit, select],
+    [doc, autoRoomWalls, commit, select],
   );
 
   /* Polygon room: Enter finishes the outline, Backspace removes the last
@@ -1682,7 +1666,6 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
           let next = addRoom(doc, room);
           if (autoRoomWalls) {
             for (const wall of wallsForPolygon(next, piece)) next = addWall(next, wall);
-            if (autoWallThickness) next = autoClassifyWallThickness(next);
           }
           commit('Add room', next);
           select(room.id);
@@ -1704,11 +1687,9 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
         let next = addRoom(doc, room);
         // A drawn room auto-encloses itself: walls appear along any edge that
         // doesn't already have one (a shared wall with the neighbour is reused,
-        // not doubled), then thicknesses are classified so the boundary comes
-        // out external and partitions internal.
+        // not doubled).
         if (!stairs && autoRoomWalls) {
           for (const wall of wallsForRoom(doc, room)) next = addWall(next, wall);
-          if (autoWallThickness) next = autoClassifyWallThickness(next);
         }
         commit(stairs ? 'Add stairs' : 'Add room', next);
         select(room.id);
@@ -2738,23 +2719,6 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
           )}
 
           {/* Wall draft preview */}
-          {/* "Detect rooms from walls" hover preview — light blue wash over
-              every enclosed area that would become a room if clicked. */}
-          {detectPreview &&
-            detectPreviewRooms.map((r) => (
-              <Rect
-                key={`dp-${r.id}`}
-                x={r.x}
-                y={r.y}
-                width={r.w}
-                height={r.h}
-                fill="rgba(96,141,222,0.22)"
-                stroke="#608DDE"
-                strokeWidth={18}
-                dash={[140, 100]}
-                listening={false}
-              />
-            ))}
 
           {/* Smart-snap alignment guides: dashed lines through the wall
               corner the pending point is axis-aligned with. */}

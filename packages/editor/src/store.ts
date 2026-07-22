@@ -42,9 +42,6 @@ interface ViewPrefs {
   planMode: PlanMode;
   /** Drawing a room auto-creates walls along its uncovered edges. */
   autoRoomWalls: boolean;
-  /** New/changed walls are auto-classified internal (100mm) vs external
-   *  (200mm) after each wall/room draw; custom thicknesses are preserved. */
-  autoWallThickness: boolean;
   /** Display units for floor areas — m², ft², or both. */
   areaUnits: AreaUnits;
 }
@@ -57,7 +54,6 @@ const DEFAULT_VIEW_PREFS: ViewPrefs = {
   showFurniture: true,
   planMode: 'presentation',
   autoRoomWalls: true,
-  autoWallThickness: true,
   areaUnits: 'm2',
 };
 
@@ -96,7 +92,6 @@ function pickViewPrefs(state: ViewPrefs): ViewPrefs {
     showFurniture: state.showFurniture,
     planMode: state.planMode,
     autoRoomWalls: state.autoRoomWalls,
-    autoWallThickness: state.autoWallThickness,
     areaUnits: state.areaUnits,
   };
 }
@@ -127,10 +122,6 @@ interface EditorState {
   showFurniture: boolean;
   planMode: PlanMode;
   autoRoomWalls: boolean;
-  autoWallThickness: boolean;
-  /** True while the "Detect rooms from walls" button is hovered — the
-   *  canvas previews the enclosed areas that would become rooms. */
-  detectPreview: boolean;
   /** Display units for floor areas — m², ft², or both. */
   areaUnits: AreaUnits;
   /** Bumped to ask the properties panel to focus the selected room's name
@@ -163,8 +154,6 @@ interface EditorState {
   toggleShowFurniture(): void;
   setPlanMode(mode: PlanMode): void;
   toggleAutoRoomWalls(): void;
-  toggleAutoWallThickness(): void;
-  setDetectPreview(on: boolean): void;
   setAreaUnits(units: AreaUnits): void;
   /** Ask the properties panel to focus the selected entity's name field. */
   requestFocusName(): void;
@@ -191,7 +180,6 @@ export const useEditorStore = create<EditorState>((set, get) => {
     saveState: 'saved',
     viewport: { width: 800, height: 600 },
     symbolKind: 'sofa',
-    detectPreview: false,
     focusNameNonce: 0,
     ...loadViewPrefs(),
 
@@ -375,16 +363,6 @@ export const useEditorStore = create<EditorState>((set, get) => {
       const autoRoomWalls = !get().autoRoomWalls;
       set({ autoRoomWalls });
       saveViewPrefs(pickViewPrefs({ ...get(), autoRoomWalls }));
-    },
-
-    toggleAutoWallThickness() {
-      const autoWallThickness = !get().autoWallThickness;
-      set({ autoWallThickness });
-      saveViewPrefs(pickViewPrefs({ ...get(), autoWallThickness }));
-    },
-
-    setDetectPreview(detectPreview) {
-      set({ detectPreview });
     },
 
     setAreaUnits(areaUnits) {

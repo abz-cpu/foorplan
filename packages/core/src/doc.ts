@@ -206,28 +206,6 @@ export function applyAutoWallThickness(doc: FloorDoc): FloorDoc {
 }
 
 /**
- * Continuous variant of applyAutoWallThickness, safe to run after every
- * wall/room edit: only walls still at one of the two stock thicknesses are
- * reclassified, so a custom per-wall value (e.g. a typed 150mm) is never
- * stomped. With no rooms drawn yet classification has nothing to sample
- * against, so the doc is returned untouched rather than everything
- * collapsing to "internal".
- */
-export function autoClassifyWallThickness(doc: FloorDoc): FloorDoc {
-  if (doc.rooms.length === 0 || doc.walls.length === 0) return doc;
-  const externalIds = classifyExternalWalls(doc);
-  let changed = false;
-  const walls = doc.walls.map((w) => {
-    if (w.thickness !== DEFAULT_WALL_THICKNESS_MM && w.thickness !== EXTERNAL_WALL_THICKNESS_MM) return w;
-    const want = externalIds.has(w.id) ? EXTERNAL_WALL_THICKNESS_MM : DEFAULT_WALL_THICKNESS_MM;
-    if (w.thickness === want) return w;
-    changed = true;
-    return { ...w, thickness: want };
-  });
-  return changed ? { ...doc, walls } : doc;
-}
-
-/**
  * The walls a freshly drawn room needs so it's enclosed like a real room —
  * one per rectangle edge, skipping any edge an existing wall already runs
  * along (drawing a room against an existing wall must not double it up).

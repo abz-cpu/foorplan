@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   addRoom,
   addWall,
-  autoClassifyWallThickness,
   copyPerimeterWalls,
   deleteEntities,
   deleteEntity,
@@ -165,39 +164,6 @@ describe('wallsForRoom', () => {
     expect(walls.every((w) => Math.abs((w.a.x + w.b.x) / 2 - 3050) > 220 || w.a.y === w.b.y)).toBe(true);
   });
 });
-
-describe('autoClassifyWallThickness', () => {
-  it('does nothing with no rooms to sample against', () => {
-    const d = addWall(emptyFloorDoc(), { ...wall, thickness: 200 });
-    expect(autoClassifyWallThickness(d).walls[0].thickness).toBe(200);
-  });
-
-  it('classifies boundary walls external and partitions internal, preserving custom values', () => {
-    // Two rooms side by side sharing a partition at x=3000
-    let d = emptyFloorDoc();
-    const t = 100;
-    const mk = (id: string, a: [number, number], b: [number, number], thickness = t): Wall => ({
-      id, a: { x: a[0], y: a[1] }, b: { x: b[0], y: b[1] }, thickness,
-    });
-    d = addWall(d, mk('top', [0, 0], [6000, 0]));
-    d = addWall(d, mk('bottom', [0, 4000], [6000, 4000]));
-    d = addWall(d, mk('left', [0, 0], [0, 4000]));
-    d = addWall(d, mk('right', [6000, 0], [6000, 4000]));
-    d = addWall(d, mk('mid', [3000, 0], [3000, 4000]));
-    d = addWall(d, mk('custom', [1500, 0], [1500, 4000], 150)); // user-typed custom
-    d = addRoom(d, { ...room, id: 'ra', x: 50, y: 50, w: 2900, h: 3900 });
-    d = addRoom(d, { ...room, id: 'rb', x: 3050, y: 50, w: 2900, h: 3900 });
-    const out = autoClassifyWallThickness(d);
-    const th = (id: string) => out.walls.find((w) => w.id === id)?.thickness;
-    expect(th('top')).toBe(200);
-    expect(th('left')).toBe(200);
-    expect(th('right')).toBe(200);
-    expect(th('bottom')).toBe(200);
-    expect(th('mid')).toBe(100);
-    expect(th('custom')).toBe(150); // untouched
-  });
-});
-
 
 describe('scaleDoc', () => {
   const p = (x: number, y: number) => ({ x, y });

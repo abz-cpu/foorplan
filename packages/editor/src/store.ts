@@ -14,6 +14,7 @@ export type Tool =
   | 'select'
   | 'pan'
   | 'wall'
+  | 'freewall'
   | 'room'
   | 'door'
   | 'window'

@@ -78,34 +78,53 @@ export function DrawPanel({ className = '' }: { className?: string }) {
   return (
     <div className={`w-[190px] rounded-[13px] border border-line bg-white p-2 shadow-float ${className}`}>
       <div className="px-1 pb-1.5 text-[10px] font-semibold tracking-[0.09em] text-ink-ghost">DRAW ROOM</div>
-      <div className="flex gap-1.5">
+      <div className="flex flex-col gap-1.5">
+        <div className="flex gap-1.5">
+          <button
+            type="button"
+            onClick={() => setTool('room')}
+            title="QuickDraw — drag a rectangle room (R)"
+            className={modeButtonClass(tool === 'room')}
+          >
+            <svg width="24" height="18" viewBox="0 0 24 18" fill="none" stroke="currentColor" strokeWidth="1.6">
+              <rect x="2" y="2" width="20" height="14" rx="1" />
+              <line x1="2" y1="2" x2="22" y2="16" strokeDasharray="3 2" strokeWidth="1" opacity="0.5" />
+            </svg>
+            QuickDraw
+          </button>
+          <button
+            type="button"
+            onClick={() => setTool('wall')}
+            title="Wall-by-Wall — click points; click back on the first corner to close the loop into a room (W)"
+            className={modeButtonClass(tool === 'wall')}
+          >
+            <svg width="24" height="18" viewBox="0 0 24 18" fill="none" stroke="currentColor" strokeWidth="1.6">
+              <polyline points="3,15 3,3 12,3 12,10 21,10" />
+              <circle cx="3" cy="15" r="1.6" fill="currentColor" />
+              <circle cx="3" cy="3" r="1.6" fill="currentColor" />
+              <circle cx="12" cy="3" r="1.6" fill="currentColor" />
+              <circle cx="12" cy="10" r="1.6" fill="currentColor" />
+              <circle cx="21" cy="10" r="1.6" fill="currentColor" />
+            </svg>
+            Wall-by-Wall
+          </button>
+        </div>
         <button
           type="button"
-          onClick={() => setTool('room')}
-          title="QuickDraw — drag a rectangle room (R)"
-          className={modeButtonClass(tool === 'room')}
+          onClick={() => setTool('freewall')}
+          title="Free Wall — draw standalone / partition walls that snap onto existing walls (no room created)"
+          className={`flex cursor-pointer items-center justify-center gap-1.5 rounded-[9px] border px-2.5 py-1.5 text-[11px] font-semibold transition-colors ${
+            tool === 'freewall'
+              ? 'border-brand bg-brand text-brand-ink'
+              : 'border-line text-ink-mid hover:border-brand hover:bg-shell'
+          }`}
         >
-          <svg width="24" height="18" viewBox="0 0 24 18" fill="none" stroke="currentColor" strokeWidth="1.6">
-            <rect x="2" y="2" width="20" height="14" rx="1" />
-            <line x1="2" y1="2" x2="22" y2="16" strokeDasharray="3 2" strokeWidth="1" opacity="0.5" />
+          <svg width="22" height="14" viewBox="0 0 24 18" fill="none" stroke="currentColor" strokeWidth="1.6">
+            <line x1="3" y1="14" x2="21" y2="4" />
+            <circle cx="3" cy="14" r="1.8" fill="currentColor" />
+            <circle cx="21" cy="4" r="1.8" fill="currentColor" />
           </svg>
-          QuickDraw
-        </button>
-        <button
-          type="button"
-          onClick={() => setTool('wall')}
-          title="Wall-by-Wall — click points to draw walls (W)"
-          className={modeButtonClass(tool === 'wall')}
-        >
-          <svg width="24" height="18" viewBox="0 0 24 18" fill="none" stroke="currentColor" strokeWidth="1.6">
-            <polyline points="3,15 3,3 12,3 12,10 21,10" />
-            <circle cx="3" cy="15" r="1.6" fill="currentColor" />
-            <circle cx="3" cy="3" r="1.6" fill="currentColor" />
-            <circle cx="12" cy="3" r="1.6" fill="currentColor" />
-            <circle cx="12" cy="10" r="1.6" fill="currentColor" />
-            <circle cx="21" cy="10" r="1.6" fill="currentColor" />
-          </svg>
-          Wall-by-Wall
+          Free Wall
         </button>
       </div>
       <div className="mt-2 flex items-center gap-1.5">
@@ -138,7 +157,7 @@ export function DrawPanel({ className = '' }: { className?: string }) {
         </button>
       </div>
       <div className="mt-1 px-1 text-[10px] leading-snug text-ink-ghost">
-        QuickDraw a room by size (e.g. 4.2 × 3.6), or pick a mode and draw on the canvas.
+        QuickDraw by size (e.g. 4.2 × 3.6) · Wall-by-Wall closes into a room · Free Wall for partitions.
       </div>
     </div>
   );

@@ -371,6 +371,9 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
 
   /* Draft interaction state */
   const [wallStart, setWallStart] = useState<Point | null>(null);
+  // Full chain of placed vertices for the current wall run (Wall-by-Wall and
+  // Free Wall). Lets Wall-by-Wall detect a closed loop and turn it into a room.
+  const [wallChain, setWallChain] = useState<Point[]>([]);
   const [hoverPt, setHoverPt] = useState<Point | null>(null);
   const [rectDraft, setRectDraft] = useState<{ a: Point; b: Point; stairs: boolean } | null>(null);
   // Vertices of a shaped (L/T/U/polygon) room being clicked out with the Room
@@ -472,7 +475,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
   /* X toggles internal/external for the wall being drawn (Wall tool only,
      ignored while typing in a field). */
   useEffect(() => {
-    if (tool !== 'wall') return;
+    if (tool !== 'wall' && tool !== 'freewall') return;
     const onKeyDown = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
@@ -488,7 +491,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
      active and a chain is in progress (there's a fixed start point to
      extend from). */
   useEffect(() => {
-    if (tool !== 'wall' || !wallStart) return;
+    if ((tool !== 'wall' && tool !== 'freewall') || !wallStart) return;
     const DIRECTIONS: Record<string, Point> = {
       ArrowUp: { x: 0, y: -1 },
       ArrowDown: { x: 0, y: 1 },
@@ -527,6 +530,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
             addWall(doc, { id: newId(), a: wallStart, b: endpoint, thickness: drawThickness }),
           );
           setWallStart(endpoint);
+          setWallChain((c) => (c.length ? [...c, endpoint] : [wallStart, endpoint]));
           setHoverPt(endpoint);
         }
         setKeyedDirection(null);
@@ -609,6 +613,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
 
   const clearDrafts = useCallback(() => {
     setWallStart(null);
+    setWallChain([]);
     setHoverPt(null);
     setRectDraft(null);
     setPolyDraft(null);
@@ -1149,23 +1154,47 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
     const raw = pointerWorld();
     if (!raw) return;
 
-    if (tool === 'wall') {
+    if (tool === 'wall' || tool === 'freewall') {
       const pt =
         wallStart && pointerMods.current.shift ? constrainOrthoTo(raw, wallStart) : snapEnd(raw, wallStart);
       if (!wallStart) {
         setWallStart(pt);
+        setWallChain([pt]);
+        setHoverPt(pt);
+      } else if (
+        tool === 'wall' &&
+        wallChain.length >= 3 &&
+        Math.hypot((pt.x - wallChain[0].x) * scale, (pt.y - wallChain[0].y) * scale) < 14
+      ) {
+        // Wall-by-Wall: clicking back on the first corner closes the loop into
+        // a room. Edges already walled by the chain are reused, not doubled.
+        let next = doc;
+        if (distance(wallStart, wallChain[0]) >= 10) {
+          next = addWall(next, { id: newId(), a: wallStart, b: wallChain[0], thickness: drawThickness });
+        }
+        const res = buildRoomOnRing(next, wallChain);
+        if (res) {
+          commit('Draw room', res.doc);
+          select(res.roomId);
+        } else if (next !== doc) {
+          commit('Draw wall', next);
+        }
+        setWallStart(null);
+        setWallChain([]);
         setHoverPt(pt);
       } else if (distance(wallStart, pt) >= 10) {
         const next = addWall(doc, { id: newId(), a: wallStart, b: pt, thickness: drawThickness });
         commit('Draw wall', next);
         setWallStart(pt);
+        setWallChain((c) => [...c, pt]);
         setHoverPt(pt);
       } else {
-        // Clicking the current chain point again finishes the chain.
+        // Clicking the current chain point again finishes an open run.
         // (Konva's own dblclick fires for any two clicks within 400ms even at
         // different positions, which would break fast chain-drawing — so chain
         // termination is position-based instead.)
         setWallStart(null);
+        setWallChain([]);
         setHoverPt(pt);
       }
     } else if (isDraftingTool(tool)) {
@@ -1350,7 +1379,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
       }
       return;
     }
-    if (tool === 'wall') {
+    if (tool === 'wall' || tool === 'freewall') {
       const raw = worldFromClient(screen);
       if (raw) {
         // Shift locks to 45° increments — takes priority over corner
@@ -1406,18 +1435,20 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
   // Turn a clicked-out polygon into a shaped room (walls + thickness like a
   // drawn rectangle). A 4-point axis-aligned outline collapses back to a plain
   // rectangle so it still gets W/L steppers.
-  const finishPolyRoom = useCallback(
-    (pts: Point[]) => {
-      setPolyDraft(null);
-      setHoverPt(null);
-      roomDownScreen.current = null;
-      if (pts.length < 3) return;
-      const b = ringBounds(pts);
-      if (b.w < MIN_ROOM_MM || b.h < MIN_ROOM_MM) return;
+  // Turn a closed ring of vertices into a room: a plain rect when the outline
+  // is a 4-corner axis-aligned box (so it keeps W/L steppers), else a polygon
+  // room. Any edge without a wall along it gets one; edges already walled — as
+  // in a closed Wall-by-Wall loop — are left alone (wallsForPolygon skips them),
+  // so nothing is doubled.
+  const buildRoomOnRing = useCallback(
+    (baseDoc: FloorDoc, ring: Point[]): { doc: FloorDoc; roomId: string } | null => {
+      if (ring.length < 3) return null;
+      const b = ringBounds(ring);
+      if (b.w < MIN_ROOM_MM || b.h < MIN_ROOM_MM) return null;
       const isRect =
-        pts.length === 4 &&
-        pts.every((p, i) => {
-          const q = pts[(i + 1) % 4];
+        ring.length === 4 &&
+        ring.every((p, i) => {
+          const q = ring[(i + 1) % ring.length];
           return Math.abs(p.x - q.x) < 2 || Math.abs(p.y - q.y) < 2;
         });
       const room: RoomRect = {
@@ -1426,20 +1457,33 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
         y: b.y,
         w: b.w,
         h: b.h,
-        ...(isRect ? {} : { polygon: pts }),
-        name: `Room ${doc.rooms.length + 1}`,
+        ...(isRect ? {} : { polygon: ring }),
+        name: `Room ${baseDoc.rooms.length + 1}`,
         type: 'Other',
         ceilingHeightM: DEFAULT_CEILING_HEIGHT_M,
         includeInGia: true,
       };
-      let next = addRoom(doc, room);
+      let next = addRoom(baseDoc, room);
       if (autoRoomWalls) {
-        for (const wall of wallsForPolygon(doc, pts)) next = addWall(next, wall);
+        for (const wall of wallsForPolygon(baseDoc, ring)) next = addWall(next, wall);
       }
-      commit('Add room', next);
-      select(room.id);
+      return { doc: next, roomId: room.id };
     },
-    [doc, autoRoomWalls, commit, select],
+    [autoRoomWalls],
+  );
+
+  // Turn a clicked-out polygon (Room tool) into a shaped room.
+  const finishPolyRoom = useCallback(
+    (pts: Point[]) => {
+      setPolyDraft(null);
+      setHoverPt(null);
+      roomDownScreen.current = null;
+      const res = buildRoomOnRing(doc, pts);
+      if (!res) return;
+      commit('Add room', res.doc);
+      select(res.roomId);
+    },
+    [doc, buildRoomOnRing, commit, select],
   );
 
   /* Polygon room: Enter finishes the outline, Backspace removes the last
@@ -1845,6 +1889,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
 
   const endWallChain = () => {
     setWallStart(null);
+    setWallChain([]);
     setHoverPt(null);
   };
 
@@ -2742,10 +2787,10 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
               )}
             </Group>
           )}
-          {tool === 'wall' && hoverPt && !wallStart && (
+          {(tool === 'wall' || tool === 'freewall') && hoverPt && !wallStart && (
             <Circle x={hoverPt.x} y={hoverPt.y} radius={90} stroke={ACTION} strokeWidth={30} listening={false} />
           )}
-          {tool === 'wall' && wallStart && hoverPt && !keyedDirection && (
+          {(tool === 'wall' || tool === 'freewall') && wallStart && hoverPt && !keyedDirection && (
             <>
               <Line
                 points={[wallStart.x, wallStart.y, hoverPt.x, hoverPt.y]}
@@ -2773,9 +2818,29 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
             </>
           )}
 
+          {/* Wall-by-Wall close target: a ring at the first corner that fills
+              in when the cursor is near it — clicking there closes the loop
+              into a room. */}
+          {tool === 'wall' && wallStart && wallChain.length >= 3 && (
+            <Circle
+              x={wallChain[0].x}
+              y={wallChain[0].y}
+              radius={140}
+              stroke={ACTION}
+              strokeWidth={30}
+              fill={
+                hoverPt &&
+                Math.hypot((hoverPt.x - wallChain[0].x) * scale, (hoverPt.y - wallChain[0].y) * scale) < 14
+                  ? ACTION
+                  : undefined
+              }
+              listening={false}
+            />
+          )}
+
           {/* Laser-measure keyboard entry preview: an arrow key locked a
               direction, digits are being typed for the exact length. */}
-          {tool === 'wall' &&
+          {(tool === 'wall' || tool === 'freewall') &&
             wallStart &&
             keyedDirection &&
             (() => {

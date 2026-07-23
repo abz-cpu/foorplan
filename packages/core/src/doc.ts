@@ -2,6 +2,7 @@ import { newId } from './ids';
 import { classifyExternalWalls } from './measure';
 import type { SymbolInstance } from './symbols';
 import {
+  DEFAULT_CEILING_HEIGHT_M,
   DEFAULT_WALL_THICKNESS_MM,
   EXTERNAL_WALL_THICKNESS_MM,
   type FloorDoc,
@@ -163,7 +164,7 @@ export function setFloorCeilingHeight(doc: FloorDoc, metres: number): FloorDoc {
 
 /** The floor's representative ceiling height (the most common room value),
  *  or a default when there are no rooms yet. */
-export function floorCeilingHeightM(doc: FloorDoc, fallback = 2.4): number {
+export function floorCeilingHeightM(doc: FloorDoc, fallback = DEFAULT_CEILING_HEIGHT_M): number {
   const rooms = doc.rooms.filter((r) => r.type !== 'Stairs');
   if (rooms.length === 0) return fallback;
   const counts = new Map<number, number>();

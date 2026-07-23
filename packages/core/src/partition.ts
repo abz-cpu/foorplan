@@ -9,15 +9,16 @@ import { distance, wallLengthMm } from './geometry';
 import { roomPolygon } from './geometry';
 import { pointInPolygon } from './faces';
 import { nearestWall, pointAlongWall } from './openings';
+import { DEFAULT_CEILING_HEIGHT_M } from './types';
 import type { FloorDoc, Point, RoomRect, Wall } from './types';
 
 /**
  * Standard floor-to-ceiling height (m) stamped on a room the instant a
- * Wall-by-Wall perimeter closes into a valid polygon. A closed residential
- * room always has a height, so volume/RdSAP data exists immediately rather than
- * being left blank until the assessor fills it in.
+ * Wall-by-Wall perimeter closes into a valid polygon — the same
+ * DEFAULT_CEILING_HEIGHT_M every other tool uses, so volume/RdSAP data is
+ * consistent no matter how the room was drawn.
  */
-export const STANDARD_ROOM_HEIGHT_M = 2.735;
+export const STANDARD_ROOM_HEIGHT_M = DEFAULT_CEILING_HEIGHT_M;
 
 /** Nearest point on segment a→b to p, clamped to the segment. */
 export function nearestPointOnSegment(p: Point, a: Point, b: Point): Point {

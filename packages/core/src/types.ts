@@ -163,7 +163,10 @@ export const DEFAULT_WALL_THICKNESS_MM = 100;
 /** Typical masonry/cavity wall thickness — applied to boundary walls by
  *  "Auto-set wall thickness" (see measure.ts's classifyExternalWalls). */
 export const EXTERNAL_WALL_THICKNESS_MM = 200;
-export const DEFAULT_CEILING_HEIGHT_M = 2.4;
+/** Standard residential floor-to-ceiling height (m). Every room defaults to
+ *  this regardless of which tool drew it, so RdSAP / volume data stays
+ *  consistent across the app. */
+export const DEFAULT_CEILING_HEIGHT_M = 2.735;
 export const DEFAULT_GRID_MM = 100;
 export const DEFAULT_DOOR_WIDTH_MM = 826;
 export const DEFAULT_WINDOW_WIDTH_MM = 1200;

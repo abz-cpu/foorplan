@@ -216,6 +216,6 @@ describe('floor ceiling height', () => {
     expect(floorHasMixedCeilings(setFloorCeilingHeight(d, 2.4))).toBe(false);
   });
   it('floorCeilingHeightM falls back with no rooms', () => {
-    expect(floorCeilingHeightM(emptyFloorDoc())).toBe(2.4);
+    expect(floorCeilingHeightM(emptyFloorDoc())).toBe(2.735);
   });
 });

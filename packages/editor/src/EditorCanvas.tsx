@@ -384,6 +384,9 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
   const [freeSnap, setFreeSnap] = useState<PartitionSnap | null>(null);
   // The room a Free Wall run started inside, so every node stays in that room.
   const startRoomRef = useRef<RoomRect | null>(null);
+  // The wall the attached end of a Free Wall run snapped onto — drives the HUD
+  // while the free end is dragged into the room.
+  const startSnapRef = useRef<PartitionSnap | null>(null);
   const [hoverPt, setHoverPt] = useState<Point | null>(null);
   const [rectDraft, setRectDraft] = useState<{ a: Point; b: Point; stairs: boolean } | null>(null);
   // Vertices of a shaped (L/T/U/polygon) room being clicked out with the Room
@@ -624,6 +627,9 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
   const clearDrafts = useCallback(() => {
     setWallStart(null);
     setWallChain([]);
+    setFreeSnap(null);
+    startRoomRef.current = null;
+    startSnapRef.current = null;
     setHoverPt(null);
     setRectDraft(null);
     setPolyDraft(null);
@@ -1212,6 +1218,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
         setWallStart(pt);
         setWallChain([pt]);
         startRoomRef.current = res.room;
+        startSnapRef.current = res.snap;
         setHoverPt(pt);
       } else if (distance(wallStart, pt) >= 10) {
         const next = addWall(doc, { id: newId(), a: wallStart, b: pt, thickness: DEFAULT_WALL_THICKNESS_MM });
@@ -1224,6 +1231,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
         setWallStart(null);
         setWallChain([]);
         startRoomRef.current = null;
+        startSnapRef.current = null;
         setHoverPt(pt);
       }
     } else if (isDraftingTool(tool)) {
@@ -1331,8 +1339,23 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
           });
         } else if (h.kind === 'wall-end') {
           const other = h.end === 'a' ? h.wall.b : h.wall.a;
-          const snapped = snapEndFree(raw, other);
+          let snapped = snapEndFree(raw, other);
           if (distance(snapped, other) < 100) return; // refuse to collapse the wall
+          // Partition constraint: a wall whose midpoint sits strictly inside a
+          // room is an internal partition, so its dragged end snaps onto the
+          // perimeter walls (sliding along them) but can never leave the room
+          // polygon. Perimeter walls (midpoint on/outside the boundary) reshape
+          // the shell freely.
+          const mid = { x: (h.wall.a.x + h.wall.b.x) / 2, y: (h.wall.a.y + h.wall.b.y) / 2 };
+          const home = roomContainingPoint(doc, mid);
+          if (home) {
+            const others = { ...doc, walls: doc.walls.filter((w) => w.id !== h.wall.id) };
+            const wallSnap = snapPointToWall(others, snapped, wallHitToleranceMm, h.wall.thickness);
+            snapped =
+              wallSnap && wallSnap.distanceMm <= wallHitToleranceMm
+                ? wallSnap.point
+                : clampPointInsidePolygon(snapped, roomPolygon(home));
+          }
           setWallEndDraft({
             id: h.wall.id,
             a: h.end === 'a' ? snapped : h.wall.a,
@@ -1953,6 +1976,9 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
   const endWallChain = () => {
     setWallStart(null);
     setWallChain([]);
+    setFreeSnap(null);
+    startRoomRef.current = null;
+    startSnapRef.current = null;
     setHoverPt(null);
   };
 
@@ -2901,59 +2927,98 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
             />
           )}
 
-          {/* Free Wall (partition) preview: red glow while the live end is
-              attached to a wall, with live corner / thickness / protrusion
-              measurements. */}
+          {/* Free Wall (partition) preview + dimension HUD. The wall stub glows
+              red while attached; the corner / thickness / protrusion figures are
+              drawn as architectural dimensions styled to match the reference. */}
           {tool === 'freewall' &&
             hoverPt &&
             (() => {
               const RED = '#E5484D';
-              const attached = !!freeSnap;
-              const stroke = attached ? RED : ACTION;
+              const T = DEFAULT_WALL_THICKNESS_MM;
+              const half = T / 2;
+              // The snap that drives the HUD: the attach captured at the first
+              // click while the free end is dragged, else the live hover snap.
+              const snap = (wallStart ? startSnapRef.current : null) ?? freeSnap;
+              const attached = !!snap;
+              const stubColor = attached ? RED : ACTION;
               const protrusionMm = wallStart ? distance(wallStart, hoverPt) : 0;
-              const measure = (() => {
-                if (!freeSnap) return null;
-                const w = freeSnap.wall;
+
+              const box = (pos: Point, text: string, key: string) => {
+                const fs = 175;
+                const pad = 66;
+                const bw = text.length * fs * 0.62 + pad * 2;
+                const bh = fs + pad * 2;
+                return (
+                  <Label key={key} x={pos.x - bw / 2} y={pos.y - bh / 2} listening={false}>
+                    <Tag fill="#FFFFFF" opacity={0.98} cornerRadius={55} stroke={INK} strokeWidth={7} />
+                    <Text text={text} fontSize={fs} fontFamily={MONO} fill={INK} padding={pad} />
+                  </Label>
+                );
+              };
+              const dline = (p: Point, q: Point, key: string) => (
+                <Line key={key} points={[p.x, p.y, q.x, q.y]} stroke={ACTION} strokeWidth={14} listening={false} />
+              );
+              const tick = (p: Point, d: Point, key: string) => (
+                <Line
+                  key={key}
+                  points={[p.x - d.x * 120, p.y - d.y * 120, p.x + d.x * 120, p.y + d.y * 120]}
+                  stroke={ACTION}
+                  strokeWidth={14}
+                  listening={false}
+                />
+              );
+
+              const hud = (() => {
+                if (!snap) return null;
+                const w = snap.wall;
                 const len = Math.hypot(w.b.x - w.a.x, w.b.y - w.a.y) || 1;
                 const ux = (w.b.x - w.a.x) / len;
                 const uy = (w.b.y - w.a.y) / len;
+                // Into-room normal: pick the side that lands inside a room.
                 let nx = -uy;
                 let ny = ux;
-                const vx = hoverPt.x - freeSnap.point.x;
-                const vy = hoverPt.y - freeSnap.point.y;
-                if (wallStart && vx * nx + vy * ny < 0) {
+                if (!roomContainingPoint(doc, { x: snap.point.x + nx * 300, y: snap.point.y + ny * 300 })) {
                   nx = -nx;
                   ny = -ny;
                 }
-                const off = 360;
-                const left = {
-                  x: w.a.x + ux * (freeSnap.offsetMm / 2) + nx * off,
-                  y: w.a.y + uy * (freeSnap.offsetMm / 2) + ny * off,
-                };
-                const right = {
-                  x: w.a.x + ux * ((freeSnap.offsetMm + len) / 2) + nx * off,
-                  y: w.a.y + uy * ((freeSnap.offsetMm + len) / 2) + ny * off,
-                };
-                const stub = {
-                  x: freeSnap.point.x + nx * (protrusionMm ? protrusionMm / 2 + 200 : 260),
-                  y: freeSnap.point.y + ny * (protrusionMm ? protrusionMm / 2 + 200 : 260),
-                };
-                return { left, right, stub };
+                const al = (o: number): Point => ({ x: w.a.x + ux * o, y: w.a.y + uy * o });
+                const nOff = (p: Point, d: number): Point => ({ x: p.x + nx * d, y: p.y + ny * d });
+                const leftFace = snap.offsetMm - half;
+                const rightFace = snap.offsetMm + half;
+                const prot = protrusionMm || 500;
+                const thkY = prot + 240;
+                return (
+                  <>
+                    {/* stub outline into the room */}
+                    {dline(al(leftFace), nOff(al(leftFace), prot), 'fw-edgeL')}
+                    {dline(al(rightFace), nOff(al(rightFace), prot), 'fw-edgeR')}
+                    {tick(al(leftFace), { x: nx, y: ny }, 'fw-tkL')}
+                    {tick(al(rightFace), { x: nx, y: ny }, 'fw-tkR')}
+                    {/* left / right corner gaps, boxed on the wall line */}
+                    {box(al(leftFace / 2), formatMmAsM(snap.leftMm), 'fw-left')}
+                    {box(al((rightFace + len) / 2), formatMmAsM(snap.rightMm), 'fw-right')}
+                    {/* thickness cross-dimension over the stub */}
+                    {dline(nOff(al(leftFace), thkY), nOff(al(rightFace), thkY), 'fw-thkline')}
+                    {tick(nOff(al(leftFace), thkY), { x: ux, y: uy }, 'fw-thkA')}
+                    {tick(nOff(al(rightFace), thkY), { x: ux, y: uy }, 'fw-thkB')}
+                    {box(nOff(al(snap.offsetMm), thkY + 220), formatMmAsM(T), 'fw-thk')}
+                    {/* protrusion dimension beside the stub */}
+                    {dline(nOff(al(leftFace - 220), 0), nOff(al(leftFace - 220), prot), 'fw-protline')}
+                    {tick(nOff(al(leftFace - 220), 0), { x: ux, y: uy }, 'fw-protA')}
+                    {tick(nOff(al(leftFace - 220), prot), { x: ux, y: uy }, 'fw-protB')}
+                    {box(nOff(al(leftFace - 220), prot / 2), formatMmAsM(prot), 'fw-prot')}
+                  </>
+                );
               })();
-              const tag = (pos: Point, text: string, key: string) => (
-                <Label key={key} x={pos.x} y={pos.y} listening={false}>
-                  <Tag fill="#FFFFFF" opacity={0.96} cornerRadius={70} stroke={RED} strokeWidth={6} />
-                  <Text text={text} fontSize={190} fontFamily={MONO} fill={RED} padding={70} />
-                </Label>
-              );
+
               return (
                 <>
                   {wallStart && (
                     <Line
                       points={[wallStart.x, wallStart.y, hoverPt.x, hoverPt.y]}
-                      stroke={stroke}
-                      strokeWidth={DEFAULT_WALL_THICKNESS_MM}
-                      opacity={0.6}
+                      stroke={stubColor}
+                      strokeWidth={T}
+                      opacity={0.65}
                       lineCap="square"
                       listening={false}
                     />
@@ -2961,24 +3026,14 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
                   <Circle
                     x={hoverPt.x}
                     y={hoverPt.y}
-                    radius={attached ? 120 : 90}
-                    stroke={stroke}
+                    radius={freeSnap ? 120 : 90}
+                    stroke={freeSnap ? RED : ACTION}
                     strokeWidth={30}
-                    fill={attached ? RED : undefined}
-                    opacity={attached ? 0.9 : 1}
+                    fill={freeSnap ? RED : undefined}
+                    opacity={freeSnap ? 0.9 : 1}
                     listening={false}
                   />
-                  {measure && (
-                    <>
-                      {tag(measure.left, formatMmAsM(freeSnap!.leftMm), 'fw-left')}
-                      {tag(measure.right, formatMmAsM(freeSnap!.rightMm), 'fw-right')}
-                      {tag(
-                        measure.stub,
-                        `${formatMmAsM(protrusionMm)} · t ${formatMmAsM(DEFAULT_WALL_THICKNESS_MM)}`,
-                        'fw-stub',
-                      )}
-                    </>
-                  )}
+                  {hud}
                 </>
               );
             })()}

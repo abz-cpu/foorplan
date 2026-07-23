@@ -5,6 +5,7 @@ import { doorSwingGeometry, openingJambs, wallNormal } from './openings';
 import { wallBodyQuads } from './walljoin';
 import { formatArea, formatDims, formatMmAsM, type AreaUnits } from './format';
 import { SYMBOL_DEFS, type SymbolInstance } from './symbols';
+import { DEFAULT_CEILING_HEIGHT_M } from './types';
 import type { FloorDoc, Opening, Point, RoomRect, RoomType, TextLabel, Wall } from './types';
 
 /**
@@ -702,7 +703,7 @@ export function headingFloorStats(
   if (!ceilingM) {
     const counts = new Map<number, number>();
     for (const r of mine) counts.set(r.ceilingHeightM, (counts.get(r.ceilingHeightM) ?? 0) + 1);
-    ceilingM = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 2.4;
+    ceilingM = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? DEFAULT_CEILING_HEIGHT_M;
   }
   return { areaM2, ceilingM, roomCount: mine.length };
 }

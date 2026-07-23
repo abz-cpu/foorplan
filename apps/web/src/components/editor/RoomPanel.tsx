@@ -1178,7 +1178,7 @@ export function RoomPanel({
                             commit('Set floor height', updateLabel(doc, label.id, { heightM: v }));
                         }}
                         onKeyDown={blurOnEnter}
-                        placeholder="e.g. 2.40"
+                        placeholder="e.g. 2.735"
                         className={textInputClass}
                       />
                       <p className="mt-1 text-[11px] leading-snug text-ink-ghost">

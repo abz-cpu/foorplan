@@ -16,6 +16,7 @@ export * from './labels';
 export * from './symbols';
 export * from './detect';
 export * from './faces';
+export * from './partition';
 export * from './assistant';
 export * from './length';
 export * from './demo';

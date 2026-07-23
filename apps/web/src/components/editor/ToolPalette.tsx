@@ -23,7 +23,7 @@ export const TOOL_HINTS: Record<Tool, string> = {
   select: 'Select — tap anything to edit it, drag empty space to box-select, hold Space to pan',
   pan: 'Pan — drag anywhere to move around the canvas',
   wall: 'Wall-by-Wall — click points; click back on the first corner to close the loop into a room. Arrow key + length + Enter draws an exact wall; hold Shift for straight',
-  freewall: 'Free Wall — draw standalone or partition walls that snap onto existing walls; click points, click the last point again to finish (no room is created)',
+  freewall: 'Free Wall — draw partition walls inside a room; each point stays inside the room and snaps onto existing walls (glows red) with live distances. Click the last point again to finish',
   room: 'QuickDraw — drag a rectangle (it fits around existing rooms), or click corners for any L/T/U shape (Enter to finish)',
   door: 'Door — click a wall to place, drag with Select to slide',
   window: 'Window — click a wall to place, drag with Select to slide',

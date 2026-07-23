@@ -44,6 +44,11 @@ import {
   nearestWall,
   newId,
   pointInPolygon,
+  clampPointInsidePolygon,
+  roomContainingPoint,
+  snapPointToWall,
+  STANDARD_ROOM_HEIGHT_M,
+  type PartitionSnap,
   openingJambs,
   parseLengthToMm,
   pointAlongWall,
@@ -374,6 +379,11 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
   // Full chain of placed vertices for the current wall run (Wall-by-Wall and
   // Free Wall). Lets Wall-by-Wall detect a closed loop and turn it into a room.
   const [wallChain, setWallChain] = useState<Point[]>([]);
+  // Live wall-snap for the Free Wall (partition) tool — drives the red
+  // "attached" glow and the corner/thickness/protrusion measurement HUD.
+  const [freeSnap, setFreeSnap] = useState<PartitionSnap | null>(null);
+  // The room a Free Wall run started inside, so every node stays in that room.
+  const startRoomRef = useRef<RoomRect | null>(null);
   const [hoverPt, setHoverPt] = useState<Point | null>(null);
   const [rectDraft, setRectDraft] = useState<{ a: Point; b: Point; stairs: boolean } | null>(null);
   // Vertices of a shaped (L/T/U/polygon) room being clicked out with the Room
@@ -475,7 +485,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
   /* X toggles internal/external for the wall being drawn (Wall tool only,
      ignored while typing in a field). */
   useEffect(() => {
-    if (tool !== 'wall' && tool !== 'freewall') return;
+    if (tool !== 'wall') return;
     const onKeyDown = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
@@ -491,7 +501,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
      active and a chain is in progress (there's a fixed start point to
      extend from). */
   useEffect(() => {
-    if ((tool !== 'wall' && tool !== 'freewall') || !wallStart) return;
+    if (tool !== 'wall' || !wallStart) return;
     const DIRECTIONS: Record<string, Point> = {
       ArrowUp: { x: 0, y: -1 },
       ArrowDown: { x: 0, y: 1 },
@@ -1154,7 +1164,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
     const raw = pointerWorld();
     if (!raw) return;
 
-    if (tool === 'wall' || tool === 'freewall') {
+    if (tool === 'wall') {
       const pt =
         wallStart && pointerMods.current.shift ? constrainOrthoTo(raw, wallStart) : snapEnd(raw, wallStart);
       if (!wallStart) {
@@ -1162,17 +1172,18 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
         setWallChain([pt]);
         setHoverPt(pt);
       } else if (
-        tool === 'wall' &&
         wallChain.length >= 3 &&
-        Math.hypot((pt.x - wallChain[0].x) * scale, (pt.y - wallChain[0].y) * scale) < 14
+        Math.hypot((pt.x - wallChain[0].x) * scale, (pt.y - wallChain[0].y) * scale) < 16
       ) {
-        // Wall-by-Wall: clicking back on the first corner closes the loop into
-        // a room. Edges already walled by the chain are reused, not doubled.
+        // Wall-by-Wall closes the loop into a room. Edges already walled by the
+        // chain are reused, not doubled; the closed room is stamped with the
+        // standard residential ceiling height so volume/RdSAP data exists at
+        // once.
         let next = doc;
         if (distance(wallStart, wallChain[0]) >= 10) {
           next = addWall(next, { id: newId(), a: wallStart, b: wallChain[0], thickness: drawThickness });
         }
-        const res = buildRoomOnRing(next, wallChain);
+        const res = buildRoomOnRing(next, wallChain, STANDARD_ROOM_HEIGHT_M);
         if (res) {
           commit('Draw room', res.doc);
           select(res.roomId);
@@ -1188,13 +1199,31 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
         setWallStart(pt);
         setWallChain((c) => [...c, pt]);
         setHoverPt(pt);
+      }
+      // A Wall-by-Wall run has no "finish open" gesture: real rooms are closed,
+      // so the only way to finalise is to click back on the first corner (the
+      // fill cue), or Escape to discard the whole run. Clicking the last point
+      // again is a no-op that nudges the user to close the loop.
+    } else if (tool === 'freewall') {
+      const res = resolveFreePoint(raw);
+      if (!res) return; // over open space with no wall to grab — can't place
+      const pt = res.point;
+      if (!wallStart) {
+        setWallStart(pt);
+        setWallChain([pt]);
+        startRoomRef.current = res.room;
+        setHoverPt(pt);
+      } else if (distance(wallStart, pt) >= 10) {
+        const next = addWall(doc, { id: newId(), a: wallStart, b: pt, thickness: DEFAULT_WALL_THICKNESS_MM });
+        commit('Draw partition', next);
+        setWallStart(pt);
+        setWallChain((c) => [...c, pt]);
+        setHoverPt(pt);
       } else {
-        // Clicking the current chain point again finishes an open run.
-        // (Konva's own dblclick fires for any two clicks within 400ms even at
-        // different positions, which would break fast chain-drawing — so chain
-        // termination is position-based instead.)
+        // Clicking the last point again ends the partition run (no room).
         setWallStart(null);
         setWallChain([]);
+        startRoomRef.current = null;
         setHoverPt(pt);
       }
     } else if (isDraftingTool(tool)) {
@@ -1379,7 +1408,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
       }
       return;
     }
-    if (tool === 'wall' || tool === 'freewall') {
+    if (tool === 'wall') {
       const raw = worldFromClient(screen);
       if (raw) {
         // Shift locks to 45° increments — takes priority over corner
@@ -1414,6 +1443,19 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
         setAlignGuides(gx !== null || gy !== null ? { x: gx, y: gy } : null);
         setHoverPt(pt);
       }
+    } else if (tool === 'freewall') {
+      const raw = worldFromClient(screen);
+      if (raw) {
+        setAlignGuides(null);
+        const res = resolveFreePoint(raw);
+        if (res) {
+          setHoverPt(res.point);
+          setFreeSnap(res.snap);
+        } else {
+          setHoverPt(snapFree(raw));
+          setFreeSnap(null);
+        }
+      }
     } else if (tool === 'measure' && measureA) {
       const raw = worldFromClient(screen);
       if (raw) setHoverPt(snapFree(raw));
@@ -1441,7 +1483,11 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
   // in a closed Wall-by-Wall loop — are left alone (wallsForPolygon skips them),
   // so nothing is doubled.
   const buildRoomOnRing = useCallback(
-    (baseDoc: FloorDoc, ring: Point[]): { doc: FloorDoc; roomId: string } | null => {
+    (
+      baseDoc: FloorDoc,
+      ring: Point[],
+      ceilingHeightM = DEFAULT_CEILING_HEIGHT_M,
+    ): { doc: FloorDoc; roomId: string } | null => {
       if (ring.length < 3) return null;
       const b = ringBounds(ring);
       if (b.w < MIN_ROOM_MM || b.h < MIN_ROOM_MM) return null;
@@ -1460,7 +1506,7 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
         ...(isRect ? {} : { polygon: ring }),
         name: `Room ${baseDoc.rooms.length + 1}`,
         type: 'Other',
-        ceilingHeightM: DEFAULT_CEILING_HEIGHT_M,
+        ceilingHeightM,
         includeInGia: true,
       };
       let next = addRoom(baseDoc, room);
@@ -1484,6 +1530,23 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
       select(res.roomId);
     },
     [doc, buildRoomOnRing, commit, select],
+  );
+
+  // Resolve a Free Wall (partition) vertex: attach to a nearby wall when within
+  // tolerance (the red "snapped" state), otherwise keep the point strictly
+  // inside the room the run started in. Returns null when the pointer is over
+  // open space with no wall to grab — a partition can't start outside a room.
+  const resolveFreePoint = useCallback(
+    (raw: Point): { point: Point; room: RoomRect | null; snap: PartitionSnap | null } | null => {
+      const snap = snapPointToWall(doc, raw, wallHitToleranceMm, DEFAULT_WALL_THICKNESS_MM);
+      if (snap && snap.distanceMm <= wallHitToleranceMm) {
+        return { point: snap.point, room: roomContainingPoint(doc, raw) ?? startRoomRef.current, snap };
+      }
+      const room = roomContainingPoint(doc, raw) ?? (wallStart ? startRoomRef.current : null);
+      if (!room) return null;
+      return { point: clampPointInsidePolygon(snapFree(raw), roomPolygon(room)), room, snap: null };
+    },
+    [doc, wallHitToleranceMm, snapFree, wallStart],
   );
 
   /* Polygon room: Enter finishes the outline, Backspace removes the last
@@ -2787,10 +2850,10 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
               )}
             </Group>
           )}
-          {(tool === 'wall' || tool === 'freewall') && hoverPt && !wallStart && (
+          {tool === 'wall' && hoverPt && !wallStart && (
             <Circle x={hoverPt.x} y={hoverPt.y} radius={90} stroke={ACTION} strokeWidth={30} listening={false} />
           )}
-          {(tool === 'wall' || tool === 'freewall') && wallStart && hoverPt && !keyedDirection && (
+          {tool === 'wall' && wallStart && hoverPt && !keyedDirection && (
             <>
               <Line
                 points={[wallStart.x, wallStart.y, hoverPt.x, hoverPt.y]}
@@ -2838,9 +2901,91 @@ export function EditorCanvas({ className = '' }: { className?: string }) {
             />
           )}
 
+          {/* Free Wall (partition) preview: red glow while the live end is
+              attached to a wall, with live corner / thickness / protrusion
+              measurements. */}
+          {tool === 'freewall' &&
+            hoverPt &&
+            (() => {
+              const RED = '#E5484D';
+              const attached = !!freeSnap;
+              const stroke = attached ? RED : ACTION;
+              const protrusionMm = wallStart ? distance(wallStart, hoverPt) : 0;
+              const measure = (() => {
+                if (!freeSnap) return null;
+                const w = freeSnap.wall;
+                const len = Math.hypot(w.b.x - w.a.x, w.b.y - w.a.y) || 1;
+                const ux = (w.b.x - w.a.x) / len;
+                const uy = (w.b.y - w.a.y) / len;
+                let nx = -uy;
+                let ny = ux;
+                const vx = hoverPt.x - freeSnap.point.x;
+                const vy = hoverPt.y - freeSnap.point.y;
+                if (wallStart && vx * nx + vy * ny < 0) {
+                  nx = -nx;
+                  ny = -ny;
+                }
+                const off = 360;
+                const left = {
+                  x: w.a.x + ux * (freeSnap.offsetMm / 2) + nx * off,
+                  y: w.a.y + uy * (freeSnap.offsetMm / 2) + ny * off,
+                };
+                const right = {
+                  x: w.a.x + ux * ((freeSnap.offsetMm + len) / 2) + nx * off,
+                  y: w.a.y + uy * ((freeSnap.offsetMm + len) / 2) + ny * off,
+                };
+                const stub = {
+                  x: freeSnap.point.x + nx * (protrusionMm ? protrusionMm / 2 + 200 : 260),
+                  y: freeSnap.point.y + ny * (protrusionMm ? protrusionMm / 2 + 200 : 260),
+                };
+                return { left, right, stub };
+              })();
+              const tag = (pos: Point, text: string, key: string) => (
+                <Label key={key} x={pos.x} y={pos.y} listening={false}>
+                  <Tag fill="#FFFFFF" opacity={0.96} cornerRadius={70} stroke={RED} strokeWidth={6} />
+                  <Text text={text} fontSize={190} fontFamily={MONO} fill={RED} padding={70} />
+                </Label>
+              );
+              return (
+                <>
+                  {wallStart && (
+                    <Line
+                      points={[wallStart.x, wallStart.y, hoverPt.x, hoverPt.y]}
+                      stroke={stroke}
+                      strokeWidth={DEFAULT_WALL_THICKNESS_MM}
+                      opacity={0.6}
+                      lineCap="square"
+                      listening={false}
+                    />
+                  )}
+                  <Circle
+                    x={hoverPt.x}
+                    y={hoverPt.y}
+                    radius={attached ? 120 : 90}
+                    stroke={stroke}
+                    strokeWidth={30}
+                    fill={attached ? RED : undefined}
+                    opacity={attached ? 0.9 : 1}
+                    listening={false}
+                  />
+                  {measure && (
+                    <>
+                      {tag(measure.left, formatMmAsM(freeSnap!.leftMm), 'fw-left')}
+                      {tag(measure.right, formatMmAsM(freeSnap!.rightMm), 'fw-right')}
+                      {tag(
+                        measure.stub,
+                        `${formatMmAsM(protrusionMm)} · t ${formatMmAsM(DEFAULT_WALL_THICKNESS_MM)}`,
+                        'fw-stub',
+                      )}
+                    </>
+                  )}
+                </>
+              );
+            })()}
+
           {/* Laser-measure keyboard entry preview: an arrow key locked a
               direction, digits are being typed for the exact length. */}
-          {(tool === 'wall' || tool === 'freewall') &&
+          {tool === 'wall' &&
             wallStart &&
             keyedDirection &&
             (() => {
